@@ -14,12 +14,20 @@
     "build:win:portable": "electron-builder --win --config.win.target=portable --publish always",
     "build:mac": "electron-builder --mac --publish always",
     "build:mac:dmg": "electron-builder --mac --config.mac.target=dmg --publish always",
+    "build:linux": "electron-builder --linux --config.linux.target=deb --config.linux.target=rpm --config.linux.target=AppImage --publish always",
+    "build:linux:deb": "electron-builder --linux --config.linux.target=deb --publish always",
+    "build:linux:rpm": "electron-builder --linux --config.linux.target=rpm --publish always",
+    "build:linux:AppImage": "electron-builder --linux --config.linux.target=AppImage --publish always",
     "build:local": "electron-builder --publish never",
     "build:win:local": "electron-builder --win --publish never",
     "build:win:nsis:local": "electron-builder --win --config.win.target=nsis --publish never",
     "build:win:portable:local": "electron-builder --win --config.win.target=portable --publish never",
     "build:mac:local": "electron-builder --mac --publish never",
-    "build:mac:dmg:local": "electron-builder --mac --config.mac.target=dmg --publish never"
+    "build:mac:dmg:local": "electron-builder --mac --config.mac.target=dmg --publish never",
+    "build:linux:local": "electron-builder --linux --config.linux.target=deb --config.linux.target=rpm --config.linux.target=AppImage --publish never",
+    "build:linux:deb:local": "electron-builder --linux --config.linux.target=deb --publish never",
+    "build:linux:rpm:local": "electron-builder --linux --config.linux.target=rpm --publish never",
+    "build:linux:AppImage:local": "electron-builder --linux --config.linux.target=AppImage --publish never"
   },
   "keywords": [
     "deepseek",
@@ -32,6 +40,7 @@
   ],
   "author": {
     "name": "Cuckoo Code Contributors",
+    "email": "wangyongpeng@techsight.cn",
     "url": "https://github.com/wangyongpeng90/cuckoo-code"
   },
   "license": "GPL-3.0-only",

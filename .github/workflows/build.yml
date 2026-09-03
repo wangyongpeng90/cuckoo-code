@@ -54,3 +54,28 @@ jobs:
           files: |
             dist/*.dmg
             dist/*.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 18
+      - run: npm install
+      - run: npm run build:linux
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Linux-build
+          path: dist/
+      - name: Upload to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GH_TOKEN }}
+          files: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage

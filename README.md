@@ -83,8 +83,8 @@ npm start
 
 ## 构建与发布
 
-- 本仓库已配置 GitHub Actions，推送 `v*` 标签（如 `v0.1.0`）会自动构建 Windows 和 macOS 安装包并发布到 Releases
-- 本地手动构建：`npm run build:win` 或 `npm run build:mac`
+- 本仓库已配置 GitHub Actions，推送 `v*` 标签（如 `v0.1.0`）会自动构建 Windows、mac、Linux 安装包并发布到 Releases
+- 本地手动构建：`npm run build:win` 或 `npm run build:mac` 或 `npm run build:linux`
 - 构建产物输出到 `dist/` 目录
 
 ---

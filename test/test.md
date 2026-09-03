@@ -399,6 +399,7 @@ npm start
 # 构建发布包
 npm run build:win      # Windows（nsis + portable）
 npm run build:mac      # macOS（dmg + zip）
+npm run build:linux    # Linux（deb + rpm + AppImage）
 
 # 测试 JsRunner 沙箱与工具桥接
 node tools/test_js_runner.js

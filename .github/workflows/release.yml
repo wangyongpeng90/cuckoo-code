@@ -18,6 +18,8 @@ jobs:
             command: build:win
           - os: macos-latest
             command: build:mac
+          - os: ubuntu-latest
+            command: build:linux
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
