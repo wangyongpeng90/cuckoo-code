@@ -54,6 +54,11 @@ function createSessionStore(profileId, storeDir, windowState) {
       const m = url.match(/\/chat\/([a-zA-Z0-9_-]+)/i);
       return m ? m[1] : null;
     }
+    // ChatGPT: https://chatgpt.com/c/xxx
+    if (url.includes('chatgpt.com') || url.includes('chat.openai.com')) {
+      const cMatch = url.match(/\/c\/([a-zA-Z0-9_-]+)/i);
+      return cMatch ? cMatch[1] : null;
+    }
     // DeepSeek: https://chat.deepseek.com/a/chat/s/xxx
     const match = url.match(/\/chat\/s\/([a-f0-9-]+)/i);
     if (match) return match[1];
@@ -101,10 +106,14 @@ function createSessionStore(profileId, storeDir, windowState) {
         }
       }
     } else {
+      // 提取不到会话 ID（如 ChatGPT 首页 https://chatgpt.com/）：
+      // 若有暂存目录（刚初始化但还没绑定会话），保留目录；否则清空（恢复原行为）。
       state.currentSessionId = null;
-      state.selectedProjectDir = null;
-      if (win && !win.isDestroyed()) {
-        win.webContents.send('project-dir-updated', null);
+      if (!state.pendingProjectDir) {
+        state.selectedProjectDir = null;
+        if (win && !win.isDestroyed()) {
+          win.webContents.send('project-dir-updated', null);
+        }
       }
     }
   }

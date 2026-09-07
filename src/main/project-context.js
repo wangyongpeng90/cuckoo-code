@@ -1,8 +1,8 @@
 /**
- * 项目初始化：目录选择、目录树、系统提示词组合与发送
+ * 项目初始化：目录选择、系统提示词组合与发送
  * 由原 main.js 拆分而来，逻辑保持不变。
  */
-const { dialog } = require('electron');
+const { app, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -14,65 +14,22 @@ const mcpClient = require('./mcp-client');
 const PROMPT_DIR = path.join(__dirname, '..', 'prompt');
 
 /**
- * 递归获取目录树结构字符串
- * @param {string} dir 目录路径
- * @param {number} depth 当前深度
- * @returns {string} 目录树字符串
+ * 同时输出到终端和对应平台的日志文件（与渲染进程日志同目录）
  */
-// 需要忽略的目录（依赖、构建产物、版本控制等）
-const IGNORED_DIRS = new Set([
-  'node_modules', 'target', 'build', 'dist', 'out',
-  '.git', '.svn', '.hg',
-  '__pycache__', '.pytest_cache', '.coverage',
-  'vendor', 'bower_components', 'jspm_packages',
-  '.idea', '.vscode', '.vs',
-  'logs', 'tmp', 'temp',
-  'bin', 'obj',
-]);
-
-/**
- * 递归获取目录树结构字符串（类似 Windows tree 命令风格）
- * @param {string} dir 目录路径
- * @param {string} prefix 当前行前缀（用于绘制树形结构）
- * @returns {string} 目录树字符串
- */
-function getDirectoryTree(dir, prefix = '') {
+function logWithFile(providerId, msg) {
+  console.log(msg);
   try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-    // 过滤：跳过隐藏文件和忽略的目录
-    const visibleEntries = entries
-      .filter(e => !e.name.startsWith('.'))
-      .filter(e => !e.isDirectory() || !IGNORED_DIRS.has(e.name))
-      .sort((a, b) => {
-        // 目录优先，然后按名称排序
-        if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
-        return a.name.localeCompare(b.name);
-      });
-
-    let tree = '';
-
-    visibleEntries.forEach((entry, index) => {
-      const isLast = index === visibleEntries.length - 1;
-      const connector = isLast ? '└── ' : '├── ';
-      const childPrefix = prefix + (isLast ? '    ' : '│   ');
-
-      tree += `${prefix}${connector}${entry.name}${entry.isDirectory() ? '/' : ''}\n`;
-
-      if (entry.isDirectory()) {
-        tree += getDirectoryTree(path.join(dir, entry.name), childPrefix);
-      }
-    });
-
-    return tree;
-  } catch (err) {
-    console.error('[Cuckoo Code] 读取目录失败:', err.message);
-    return `${prefix}└── [无法读取目录: ${dir}]\n`;
-  }
+    if (!app.isPackaged) {
+      const logDir = path.join(app.getPath('userData'), 'wyp', 'log');
+      if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+      const logFile = path.join(logDir, (providerId || 'default') + '.log');
+      fs.appendFileSync(logFile, '[' + new Date().toISOString() + '] ' + msg + '\n', 'utf-8');
+    }
+  } catch (_) {}
 }
 
 /**
- * 初始化项目：选择目录并发送目录树 + systemPrompt
+ * 初始化项目：选择目录并发送 systemPrompt
  * 供 IPC 调用（用户点击初始化按钮时触发）
  * @param {boolean} skipPrompt - 如果为true，只更新目录映射，不发送初始提示（用于修改目录）
  */
@@ -103,6 +60,8 @@ async function initProject(skipPrompt = false, windowContext = null) {
 
   const selectedDir = result[0];
   console.log('[Cuckoo Code] 用户选择目录:', selectedDir);
+  const tStart = Date.now();
+  const stepLog = (msg) => logWithFile(providerId, '[Cuckoo Code][耗时] ' + msg + ' +' + (Date.now() - tStart) + 'ms');
 
   // 保存选中的项目目录（若该窗口有独立的 sessionStore）
   if (sessionStore) {
@@ -132,6 +91,7 @@ async function initProject(skipPrompt = false, windowContext = null) {
     }
   }
 
+  stepLog('目录保存完成');
   // 发送目录更新事件到渲染进程
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('project-dir-updated', selectedDir);
@@ -192,6 +152,7 @@ async function initProject(skipPrompt = false, windowContext = null) {
 
   console.log('[Cuckoo Code] 已读取提示词模板:', templatePath);
 
+  stepLog('读取模板完成');
   // 读取工具 API 类型定义（从 d.ts 文件读取，避免与模板重复维护）
   let toolApiTypes = '';
   try {
@@ -206,6 +167,7 @@ async function initProject(skipPrompt = false, windowContext = null) {
   // 获取工具使用指导（section 机制，仿 dsh）
   const promptSections = toolRegistry.getFormattedPromptSections();
 
+  stepLog('工具描述生成完成');
   // 确保已启用的 MCP server 已连接（8 秒超时，避免阻塞初始化）
   try {
     await Promise.race([
@@ -274,12 +236,14 @@ async function initProject(skipPrompt = false, windowContext = null) {
     combined = combined.split(key).join(value);
   }
 
+  stepLog('提示词组装完成');
   console.log('[Cuckoo Code] 准备发送初始提示（不含目录树），长度:', combined.length);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('initial-prompt', combined);
   }
+  stepLog('initial-prompt 已发送');
 
   return { success: true, message: '初始化完成，已发送系统提示词、工具规则和工具库' };
 }
 
-module.exports = { PROMPT_DIR, IGNORED_DIRS, getDirectoryTree, initProject };
+module.exports = { PROMPT_DIR, initProject };
