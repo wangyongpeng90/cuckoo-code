@@ -64,7 +64,9 @@ function init() {
         lastSentUserName = text;
         window.electronAPI.updateWindowName(text).catch(() => {});
       }
-    } catch (_) {}
+    } catch (e) {
+      console.error('[Cuckoo Code] 轮询用户名异常:', e.message);
+    }
   }, 3000);
 }
 

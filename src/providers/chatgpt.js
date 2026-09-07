@@ -52,13 +52,40 @@ module.exports = {
   },
 
   // 提取当前用户信息文本
+  // 优先从 localStorage 的 accountSwitchSessions 读取（稳定，不受 DOM 渲染影响）；
+  // 失败再回退到侧边栏 DOM 提取。
   extractUserInfo() {
-    const el = document.querySelector('[data-testid="profile-button"]') ||
-      document.querySelector('button[aria-label*="profile"]') ||
-      document.querySelector('button[aria-label*="account"]');
-    if (!el) return '';
-    const aria = el.getAttribute('aria-label') || '';
-    return aria || el.textContent.trim();
+    // 1. localStorage: oai/apps/accountSwitchSessions -> [0].name
+    try {
+      const raw = localStorage.getItem('oai/apps/accountSwitchSessions');
+      if (raw) {
+        const sessions = JSON.parse(raw);
+        if (Array.isArray(sessions) && sessions.length > 0 && sessions[0].name) {
+          return String(sessions[0].name).trim();
+        }
+      }
+    } catch (_) {}
+
+    // 2. 优先用常见按钮选择器
+    const btn = document.querySelector('[data-testid="profile-button"]') ||
+      document.querySelector('button[aria-label*="profile" i]') ||
+      document.querySelector('button[aria-label*="account" i]');
+    if (btn) {
+      const aria = btn.getAttribute('aria-label') || '';
+      if (aria) return aria.trim();
+    }
+
+    // 3. 侧边栏底部用户区：class 含 z-30 的底部固定容器
+    const containers = document.querySelectorAll('nav div[class*="z-30"]');
+    for (const el of containers) {
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('button').forEach(b => b.remove());
+      const text = (clone.textContent || '').trim();
+      if (text && text !== 'ChatGPT' && text.length <= 40) {
+        return text;
+      }
+    }
+    return '';
   },
 
   // 首页判断正则（https://chatgpt.com/ 或 https://chatgpt.com）

@@ -54,10 +54,14 @@ function createSessionStore(profileId, storeDir, windowState) {
       const m = url.match(/\/chat\/([a-zA-Z0-9_-]+)/i);
       return m ? m[1] : null;
     }
-    // ChatGPT: https://chatgpt.com/c/xxx
+    // ChatGPT: https://chatgpt.com/c/{uuid}
+    // 注意：创建会话过程中 URL 会有中间态 /c/WEB:xxx，不能把 WEB 当会话 ID
     if (url.includes('chatgpt.com') || url.includes('chat.openai.com')) {
-      const cMatch = url.match(/\/c\/([a-zA-Z0-9_-]+)/i);
-      return cMatch ? cMatch[1] : null;
+      const uuidMatch = url.match(/\/c\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+      if (uuidMatch) return uuidMatch[1];
+      const genericMatch = url.match(/\/c\/([a-zA-Z0-9_-]+)/i);
+      if (genericMatch && genericMatch[1] !== 'WEB') return genericMatch[1];
+      return null;
     }
     // DeepSeek: https://chat.deepseek.com/a/chat/s/xxx
     const match = url.match(/\/chat\/s\/([a-f0-9-]+)/i);
