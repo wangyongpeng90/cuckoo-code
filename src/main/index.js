@@ -23,6 +23,14 @@ const RENDERER_LOG_DIR = app.isPackaged
   : path.join(app.getPath('userData'), 'wyp', 'log');
 if (RENDERER_LOG_DIR) {
   fs.mkdirSync(RENDERER_LOG_DIR, { recursive: true });
+  // 开发环境每次启动清空平台日志，避免无限累积（与 start.js 清空 electron.log 一致）
+  try {
+    for (const f of fs.readdirSync(RENDERER_LOG_DIR)) {
+      if (f.endsWith('.log')) fs.writeFileSync(path.join(RENDERER_LOG_DIR, f), '', 'utf-8');
+    }
+  } catch (err) {
+    console.warn('[Cuckoo Code] 清空平台日志失败:', err.message);
+  }
 }
 
 const { registerIpcHandlers } = require('./ipc');

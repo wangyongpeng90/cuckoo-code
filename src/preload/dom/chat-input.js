@@ -29,7 +29,7 @@ function randomDelay() {
  * @param {string} msg - 要填入的文本
  * @returns {boolean} 是否成功填入
  */
-function setInputContent(input, msg) {
+async function setInputContent(input, msg) {
   try {
     if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
       input.focus();
@@ -44,7 +44,17 @@ function setInputContent(input, msg) {
     if (input.isContentEditable || input.getAttribute('contenteditable') === 'true') {
       input.focus();
       document.execCommand('selectAll', false, null);
-      document.execCommand('insertText', false, msg);
+      document.execCommand('delete', false, null);
+      // 分块插入：ProseMirror 一次性插入大文本会阻塞主线程（15KB 曾卡 32 秒）
+      const CHUNK_SIZE = 500;
+      for (let i = 0; i < msg.length; i += CHUNK_SIZE) {
+        const chunk = msg.slice(i, i + CHUNK_SIZE);
+        document.execCommand('insertText', false, chunk);
+        // 块间让出主线程，让编辑器处理增量更新
+        if (i + CHUNK_SIZE < msg.length) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      }
       return true;
     }
     return false;
@@ -61,13 +71,13 @@ function setInputContent(input, msg) {
  * @param {Function} [afterSent] - 发送后回调
  * @returns {boolean} 是否成功
  */
-function sendToChat(msg, tag, fixedDelay, afterSent) {
+async function sendToChat(msg, tag, fixedDelay, afterSent) {
   const input = findInputArea();
   if (!input) {
     console.log('[Cuckoo Code] 找不到输入框，无法发送消息');
     return false;
   }
-  if (!setInputContent(input, msg)) {
+  if (!(await setInputContent(input, msg))) {
     return false;
   }
   const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay();
@@ -172,7 +182,7 @@ function isInputVisible(el) {
 /**
  * 发送初始提示（目录树+systemPrompt）到输入框
  */
-function sendInitialPromptToInput() {
+async function sendInitialPromptToInput() {
   if (!state.initialPromptContent) {
     state.pendingInitialPrompt = false;
     return false;
@@ -183,7 +193,7 @@ function sendInitialPromptToInput() {
     return false;
   }
 
-  if (!setInputContent(input, state.initialPromptContent)) {
+  if (!(await setInputContent(input, state.initialPromptContent))) {
     return false;
   }
 
@@ -203,16 +213,22 @@ function sendInitialPromptToInput() {
 function waitForInitialPromptAndSend() {
   let attempts = 0;
   const maxAttempts = 30;
+  console.log('[' + new Date().toISOString() + '] [Cuckoo Code] 开始等待输入框出现（最多 ' + maxAttempts + ' 次，每次 500ms）');
 
   const checkInterval = setInterval(() => {
     attempts++;
     if (attempts > maxAttempts) {
       clearInterval(checkInterval);
       state.pendingInitialPrompt = false;
+      console.log('[' + new Date().toISOString() + '] [Cuckoo Code] 等待输入框超时，放弃发送初始提示');
       return;
     }
 
-    if (findInputArea()) {
+    const found = !!findInputArea();
+    if (attempts === 1 || attempts % 5 === 0 || found) {
+      console.log('[' + new Date().toISOString() + '] [Cuckoo Code] 等待输入框第 ' + attempts + ' 次检查, 输入框=' + (found ? '找到' : '未找到'));
+    }
+    if (found) {
       clearInterval(checkInterval);
       sendInitialPromptToInput();
     }
@@ -250,12 +266,14 @@ function triggerSend(input) {
 function registerIpcListeners() {
 // 监听主进程发送的初始提示
 ipcRenderer.on('initial-prompt', (_event, content) => {
+  console.log('[' + new Date().toISOString() + '] [Cuckoo Code] 收到 initial-prompt 事件, content长度=' + (content || '').length);
   state.initialPromptContent = content || '';
   state.pendingInitialPrompt = true;
   // 如果当前已有新的空会话输入框，立即发送
   if (state.pendingInitialPrompt && state.initialPromptContent) {
     try {
       const input = findInputArea();
+      console.log('[' + new Date().toISOString() + '] [Cuckoo Code] 首次查找输入框结果=' + (input ? '找到' : '未找到'));
       if (input) {
         sendInitialPromptToInput();
       } else {
@@ -263,6 +281,7 @@ ipcRenderer.on('initial-prompt', (_event, content) => {
         waitForInitialPromptAndSend();
       }
     } catch (e) {
+      console.error('[' + new Date().toISOString() + '] [Cuckoo Code] initial-prompt 处理异常:', e.message);
     }
   }
 });
