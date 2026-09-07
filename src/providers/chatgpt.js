@@ -156,9 +156,11 @@ module.exports = {
     return text.includes('我已选择目录：') || text.includes('系统提示词：') || text.includes('工具使用规则：');
   },
 
-  // 提取代码块的语言标记（ChatGPT 使用 code[class*="language-"]）
+  // 提取代码块的语言标记
+  // ChatGPT 代码块的语言标签在 header 里（如 <svg/>cuckoo），不在 class 中。
   getCodeBlockLanguage(pre) {
     if (!pre) return '';
+    // 1. 先尝试 class（兼容其他渲染方式）
     const codeEl = pre.querySelector('code');
     const els = [codeEl, pre].filter(Boolean);
     for (const el of els) {
@@ -166,6 +168,16 @@ module.exports = {
       if (typeof cls === 'string') {
         const langMatch = cls.match(/language-([\w-]+)/);
         if (langMatch) return langMatch[1].toLowerCase();
+      }
+    }
+    // 2. 从代码块 header 提取语言标签
+    const header = pre.querySelector('[class*="items-center"][class*="text-sm"]');
+    if (header) {
+      const clone = header.cloneNode(true);
+      clone.querySelectorAll('svg, button').forEach(el => el.remove());
+      const langText = (clone.textContent || '').trim();
+      if (/^[a-zA-Z0-9_+#.-]{1,20}$/.test(langText)) {
+        return langText.toLowerCase();
       }
     }
     return '';

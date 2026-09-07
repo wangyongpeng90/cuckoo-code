@@ -7,7 +7,7 @@ const {
 } = require('../overlay/ui');
 const { scanForCommands } = require('./detector');
 const { tryParseToolCall } = require('./tool-parser');
-const { getJsCodeBlocksFromMarkdown, looksLikeIncompleteCodeError, FENCE } = require('./js-detector');
+const { getJsCodeBlocksFromMarkdown, looksLikeIncompleteCodeError, hasOnlyCodeContent, FENCE } = require('./js-detector');
 const { sendToolResultToChat, sendCombinedJsResultsToChat, sendMessageToChat } = require('./chat-input');
 const { isAIResponseComplete } = require('./ai-response');
 const { getProviderByUrl } = require('../../../src/providers');
@@ -281,18 +281,20 @@ function processLatestAIResponse(retryCount = 0, force = false) {
     return;
   }
 
-  // 提取文本：优先从 pre code 提取（代码块内容天然不含 json/复制/下载等按钮文字）
+  // 提取文本：
+  // - 整条回复只包含代码块 → 从 pre code 提取（纯净，避免工具栏文字）
+  // - 否则取完整 markdown 文本（剔除工具栏），不能只取 code，
+  //   否则会丢弃 AI 的解释正文（曾导致 ChatGPT 工具回传异常）
   let text = '';
   const codeEl = markdown.querySelector('pre code');
-  if (codeEl) {
+  if (codeEl && hasOnlyCodeContent(markdown)) {
     text = (codeEl.textContent || codeEl.innerText || '').trim();
-    console.log('[Cuckoo Code] 提取方式: pre code 元素');
+    console.log('[Cuckoo Code] 提取方式: pre code 元素（整条回复仅代码块）');
   } else {
-    // 无代码块：克隆节点并剔除可能的工具栏元素
     const clone = markdown.cloneNode(true);
     clone.querySelectorAll('button, [class*="toolbar"], [class*="copy"], [class*="download"], [class*="code-block-header"], [class*="lang"], [class*="header"]').forEach(el => el.remove());
     text = (clone.textContent || clone.innerText || '').trim();
-    console.log('[Cuckoo Code] 提取方式: 克隆节点(剔除工具栏)');
+    console.log('[Cuckoo Code] 提取方式: 完整文本(剔除工具栏)');
   }
 
   if (!text) {

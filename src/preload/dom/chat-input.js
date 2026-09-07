@@ -45,14 +45,22 @@ async function setInputContent(input, msg) {
       input.focus();
       document.execCommand('selectAll', false, null);
       document.execCommand('delete', false, null);
-      // 分块插入：ProseMirror 一次性插入大文本会阻塞主线程（15KB 曾卡 32 秒）
-      const CHUNK_SIZE = 500;
+
+      // 分段 Paste：每段 ≤6000 字符，不会触发 ChatGPT 的附件行为，且每段都很快。
+      // 实测 12000 字符只需约 350ms。
+      const CHUNK_SIZE = 6000;
       for (let i = 0; i < msg.length; i += CHUNK_SIZE) {
         const chunk = msg.slice(i, i + CHUNK_SIZE);
-        document.execCommand('insertText', false, chunk);
-        // 块间让出主线程，让编辑器处理增量更新
+        const dt = new DataTransfer();
+        dt.setData('text/plain', chunk);
+        const pasteEvent = new ClipboardEvent('paste', {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: dt,
+        });
+        input.dispatchEvent(pasteEvent);
         if (i + CHUNK_SIZE < msg.length) {
-          await new Promise(resolve => setTimeout(resolve, 0));
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
       }
       return true;
