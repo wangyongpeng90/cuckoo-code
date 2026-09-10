@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- 多 Agent（子 Agent）框架：主 Agent 可通过 `subagent()` 委派子任务，框架在独立子窗口中复用登录态执行，结果以 `subagent_result` 代码块识别、统一落盘 `.cuckoo/subagent-results/` 并回传
+- 子 Agent 角色模板：内置 `agents/` 目录扫描，支持项目内置与 userData 自定义（同名覆盖），附带 code-reviewer 示例
+- 子 Agent 可靠性兜底：启动双层超时、30 分钟总超时、180 秒空闲提醒、60 轮交互硬顶强制交付、敷衍结果追问
+- 覆盖层新增「多 Agent」机制说明按钮与子 Agent 控制台（实时耗时、切换窗口、确认中止、状态 1 秒推送且无任务即停）
+- 新增 SubagentRunner、SubagentTool 及配套单元测试（共 350 项测试）
+
 ## [0.3.6] - 2026-09-08
 
 ### Fixed

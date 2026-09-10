@@ -49,6 +49,7 @@
 - **MCP 支持**：采用 Claude Desktop 兼容格式配置，支持 stdio / http 类型 server
 - **覆盖层面板**：显示命令预览、执行结果和历史记录，支持 Ctrl+Shift+C 或 Esc 切换
 - **自动重试**：JS 代码执行失败且疑似代码不完整时，自动等待 1 秒重新获取并重试（最多 3 次），仍失败才回传 AI
+- **多 Agent（子 Agent）**：主 Agent 可通过 `subagent()` 委派子任务，框架自动开启独立子窗口执行并回收结果，支持 agents/ 目录自定义角色模板
 - **会话持久化**：登录状态和设置保存到 %APPDATA%/cuckoo-ai-pro-session
 - **安全机制**：30 秒命令超时、60 秒沙箱超时、1MB 输出缓冲区、危险命令确认
 
@@ -128,6 +129,7 @@ await write("src/utils/helper.js", content.replace("formatDate", "formatTime"));
 | `mcpListServers()` | 列出已配置的 MCP server |
 | `mcpGetTools(serverName)` | 查看 MCP server 工具列表 |
 | `mcpCall(server, tool, args)` | 调用 MCP 工具 |
+| `subagent(task, agentType?)` | 委派子任务给子 Agent，在独立子窗口执行并回收结果 |
 | `log(...args)` | 输出中间结果到执行日志 |
 
 所有文件操作均相对于当前绑定的项目目录，确保安全。
@@ -150,6 +152,39 @@ MCP 配置采用 **Claude Desktop 兼容格式**（可直接分享/导入）：
 ```
 
 支持 stdio（command + args）和 http（url + headers）两种类型。启用/禁用状态单独存储，不污染主配置。通过覆盖层的「MCP」按钮打开管理面板。
+
+---
+
+## 多 Agent（子 Agent）
+
+主 Agent 可以把独立子任务委派给子 Agent：框架自动打开一个子窗口，复用当前登录态，向子 Agent 注入角色模板和任务，子 Agent 自主执行完毕后用 `subagent_result` 代码块交付，结果落盘并回传给主 Agent。全程零 API、串行执行（同一时刻只有一个子 Agent），覆盖层提供「多 Agent」说明按钮和子 Agent 控制台（实时耗时、切换窗口、中止任务）。
+
+### 调用方式
+
+````markdown
+```cuckoo
+const r = await subagent({
+  agentType: "code-reviewer",   // 可选，省略则为通用子 Agent
+  task: "审查 src/main/ipc.js 的错误处理并给出结论"
+});
+// r.resultFile：结果文件路径；r.preview：结果摘要
+```
+````
+
+### 自定义子 Agent 角色
+
+在项目根目录 `agents/` 下新建 Markdown 文件即可定义一个角色：
+
+- 文件名即 agentType（`code-reviewer.md` → `code-reviewer`）
+- 第一个非空行（一级标题）是简介，其余内容是角色提示词
+- 内置示例见 [`agents/code-reviewer.md`](agents/code-reviewer.md)，目录约定见 `agents/_README.md`
+- 用户自定义模板放在 userData 的 `agents/` 下，同名时覆盖内置模板
+
+### 可靠性设计
+
+- 子窗口启动双层超时兜底、任务总超时 30 分钟、交互 60 轮硬顶（强制交付）
+- 180 秒无活动自动提醒，连续停顿/敷衍有次数上限，避免子 Agent 挂死
+- 子 Agent 结果统一落盘到项目目录 `.cuckoo/subagent-results/`（不占用主对话上下文）
 
 ---
 
@@ -180,6 +215,7 @@ cuckoo-code/
 │   │   ├── ipc.js          # IPC 处理器
 │   │   ├── profile-manager.js  # 窗口 Profile 管理
 │   │   ├── project-context.js  # 项目初始化、目录树、systemPrompt 组装
+│   │   ├── subagent-runner.js  # 子 Agent 窗口生命周期、结果回收、停住检测
 │   │   ├── session-store.js    # 会话持久化
 │   │   ├── mcp-config.js       # MCP 配置管理
 │   │   ├── mcp-client.js       # MCP SDK 客户端
@@ -199,6 +235,7 @@ cuckoo-code/
 │   ├── ToolRegistry.js     # 工具注册表
 │   ├── JsRunner.js         # JS 沙箱执行器
 │   └── *.js                # 各工具实现
+├── agents/                 # 内置子 Agent 角色模板（.md）
 ├── test/                   # 单元测试
 └── dist/                   # 构建产物
 ```
