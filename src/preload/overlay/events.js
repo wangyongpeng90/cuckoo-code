@@ -480,6 +480,133 @@ function bindEvents() {
       hideFirstTimeDialog();
     }
   });
+
+  // Task 11/12：子 Agent 控制台事件与状态监听
+  bindSubagentConsole();
+}
+
+/* ================= Task 11/12：多 Agent 按钮 + 子 Agent 控制台 ================= */
+
+// 当前运行中的子 Agent 任务（供切换窗口/中止使用）
+let currentSubagentTask = null;
+
+function formatElapsed(ms) {
+  const totalSec = Math.floor((ms || 0) / 1000);
+  const m = String(Math.floor(totalSec / 60)).padStart(2, '0');
+  const s = String(totalSec % 60).padStart(2, '0');
+  return m + ':' + s;
+}
+
+/**
+ * 渲染子 Agent 控制台（运行中任务条目）。
+ * @param {Array} tasks subagent-status 推送的任务列表
+ */
+function renderSubagentConsole(tasks) {
+  const section = document.getElementById('cuckoo-subagent-task');
+  if (!section) return;
+  const list = Array.isArray(tasks) ? tasks : [];
+  if (list.length === 0) {
+    section.classList.add('cuckoo-hidden');
+    currentSubagentTask = null;
+    return;
+  }
+  const t = list[0]; // 仅串行，取第一条
+  currentSubagentTask = t;
+  section.classList.remove('cuckoo-hidden');
+  const nameEl = document.getElementById('cuckoo-subagent-name');
+  const elapsedEl = document.getElementById('cuckoo-subagent-elapsed');
+  if (nameEl) nameEl.textContent = t.agentType || '通用';
+  if (elapsedEl) elapsedEl.textContent = formatElapsed(t.elapsedMs);
+}
+
+/**
+ * 点击"多 Agent"按钮：拉取 agent 清单 → 拼接机制说明 → 发送到聊天框。
+ */
+async function handleMultiAgentButton() {
+  const btn = document.getElementById('cuckoo-btn-multi-agent');
+  if (btn) { btn.disabled = true; setTimeout(() => { btn.disabled = false; }, 2000); }
+  try {
+    const res = await window.electronAPI.getAgentList();
+    const agents = res && res.success ? (res.agents || []) : [];
+    const agentDir = (res && res.agentDir) || '';
+    const lines = [];
+    lines.push('【多 Agent 机制说明】');
+    lines.push('');
+    lines.push('你现在具备搭建子 Agent 的能力。以下是完整机制：');
+    lines.push('');
+    lines.push('## 子 Agent 机制');
+    lines.push('1. Cuckoo 内置了一批通用子 Agent（见下方清单）；你也可以创建自定义子 Agent');
+    lines.push('2. 每个 .md 文件 = 一个子 Agent 类型。文件名是 agentType（如 code-reviewer.md）');
+    lines.push('3. 文件内容 = 该子 Agent 的角色提示词');
+    lines.push('');
+    lines.push('## 当前可用的子 Agent');
+    if (agents.length === 0) {
+      lines.push('暂无预定义子 Agent，可调用通用 subagent');
+    } else {
+      for (const a of agents) lines.push('- ' + a.id + '：' + (a.summary || ''));
+    }
+    lines.push('');
+    lines.push('## 包裹模板（自动应用，无需你在模板中重复）');
+    lines.push('每个子 Agent 收到任务时，框架会自动包裹：');
+    lines.push('- 回复模式：只能用 cuckoo 代码块执行工具，或用 subagent_result 代码块交付结果');
+    lines.push('- 行为规则：自主完成，不向用户提问');
+    lines.push('- 任务内容（由主 Agent 调用时提供）');
+    lines.push('');
+    lines.push('## 你现在可以做什么');
+    if (agentDir) {
+      lines.push('1. 用 write 工具在以下目录创建新的 .md 文件（自定义子 Agent 统一存放于此）：');
+      lines.push('   ' + agentDir);
+    } else {
+      lines.push('1. 创建自定义子 Agent（目录由框架管理）');
+    }
+    lines.push('2. 调用 subagent({ agentType, task }) 委派任务给子 Agent');
+    lines.push('3. 帮用户设计子 Agent 的角色、工作范围、输出规范');
+    lines.push('');
+    lines.push('## 创建子 Agent 的注意事项');
+    lines.push('- 第一行写清楚"你是谁、专注什么"（给主 Agent 看的简介）');
+    lines.push('- 明确工作范围和输出格式');
+    lines.push('- 无需输出使用示范');
+    lines.push('');
+    lines.push('请回复"已理解多 Agent 机制，请告诉我你想创建什么子 Agent"。');
+
+    sendToChat(lines.join(String.fromCharCode(10)), '多Agent机制');
+  } catch (err) {
+    showToast('拉取 agent 清单失败: ' + (err.message || err), 3000);
+  }
+}
+
+/**
+ * 绑定子 Agent 控制台相关事件（多 Agent 按钮/切换窗口/中止）+ 状态监听。
+ */
+function bindSubagentConsole() {
+  const multiBtn = document.getElementById('cuckoo-btn-multi-agent');
+  multiBtn?.addEventListener('click', handleMultiAgentButton);
+
+  const focusBtn = document.getElementById('cuckoo-btn-subagent-focus');
+  focusBtn?.addEventListener('click', async () => {
+    if (!currentSubagentTask || !currentSubagentTask.windowId) return;
+    try { await window.electronAPI.focusSubagentWindow(currentSubagentTask.windowId); } catch (_) {}
+  });
+
+  const abortBtn = document.getElementById('cuckoo-btn-subagent-abort');
+  abortBtn?.addEventListener('click', async () => {
+    if (!currentSubagentTask || !currentSubagentTask.windowId) return;
+    const ok = await showConfirmDialog('确定要中止当前子 Agent 任务吗？', { showCancel: true });
+    if (!ok) return;
+    try {
+      await window.electronAPI.subagentAbort(currentSubagentTask.windowId);
+      showToast('已中止子 Agent 任务', 3000);
+    } catch (err) {
+      showToast('中止失败: ' + (err.message || err), 3000);
+    }
+  });
+
+  // 状态推送监听
+  try {
+    window.electronAPI.onSubagentStatus((payload) => {
+      renderSubagentConsole(payload && payload.tasks);
+    });
+  } catch (_) {}
 }
 
 module.exports = bindEvents;

@@ -11,6 +11,12 @@ const profileManager = require('./profile-manager');
 const { createSessionStore } = require('./session-store');
 const { getProvider } = require('../providers');
 const updater = require('./updater');
+const agentTemplates = require('./agent-templates');
+const { SubagentRunner } = require('./subagent-runner');
+
+// 子 Agent runner（注入 createWindow 作为窗口工厂，复用标准装配链）
+// 注意：createWindow 在下方声明，这里用 let 占位，等函数声明后再实例化
+let subagentRunner = null;
 
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
@@ -45,7 +51,7 @@ async function flushAllSessions() {
  * 创建窗口（绑定指定 profile）
  * @param {object|null} profile profile 对象，null 则使用默认 profile
  */
-function createWindow(profile) {
+function createWindow(profile, options = {}) {
   const profileData = profile || profileManager.getDefaultProfile();
   const provider = getProvider(profileData.providerId || 'deepseek') || getProvider('deepseek');
   const storeDir = app.getPath('userData');
@@ -53,11 +59,16 @@ function createWindow(profile) {
   const hasExplicitProfile = !!profile;
   // providerId 已确定 → 直接打开；未确定 → 显示平台选择页
   const providerChosen = !!profileData.providerId;
+  const isSubagent = options.isSubagent === true;
+  const subagentId = options.subagentId || null;
+  const winTitle = options.title || 'Cuckoo Code Pro - ' + provider.name + ' - ' + profileData.name;
+  const winWidth = isSubagent ? (options.width || 1100) : 1280;
+  const winHeight = isSubagent ? (options.height || 800) : 900;
 
   const mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 900,
-    title: 'Cuckoo Code Pro - ' + provider.name + ' - ' + profileData.name,
+    width: winWidth,
+    height: winHeight,
+    title: winTitle,
     webPreferences: {
       preload: path.join(__dirname, '..', '..', 'preload.js'),
       contextIsolation: true,
@@ -65,7 +76,10 @@ function createWindow(profile) {
       sandbox: false,
       partition: profileData.partition, // 每个 profile 独立持久化 session
       backgroundThrottling: false,
-      additionalArguments: ['--cuckoo-user-data=' + app.getPath('userData')],
+      additionalArguments: [
+        '--cuckoo-user-data=' + app.getPath('userData'),
+        ...(isSubagent && subagentId ? ['--cuckoo-subagent-id=' + subagentId] : []),
+      ],
     },
   });
 
@@ -73,11 +87,14 @@ function createWindow(profile) {
   const winSession = mainWindow.webContents.session;
 
   // 注册窗口上下文（记录 providerId，未确定时为空字符串）
-  windowState.addWindow(mainWindow, profileData.id, profileData.providerId || '', sessionStore);
+  // 子窗口不更新 lastActiveWindowId，避免污染主窗口身份
+  windowState.addWindow(mainWindow, profileData.id, profileData.providerId || '', sessionStore, !isSubagent);
   sessionsToFlush.add(winSession);
 
-  // 更新主窗口引用
-  windowState.setMainWindow(mainWindow);
+  // 更新主窗口引用（子窗口不更新）
+  if (!isSubagent) {
+    windowState.setMainWindow(mainWindow);
+  }
 
   // 初始化自动更新（仅第一个窗口时初始化）
   if (windowState.getAllWindows().length === 1) {
@@ -101,7 +118,9 @@ function createWindow(profile) {
     fs.appendFileSync(logFile, '[' + timeIso + '][' + profileData.name + '] ' + message + '\n', 'utf-8');
   });
 
-  mainWindow.maximize();
+  if (!isSubagent) {
+    mainWindow.maximize();
+  }
 
   // 设置与 Electron 33（Chromium 130）匹配的普通 Chrome UA：
   // 1. 不带 Electron 标识，避免 DeepSeek 识别为第三方客户端
@@ -141,9 +160,15 @@ function createWindow(profile) {
   });
 
   mainWindow.on('closed', () => {
+    // 主窗口关闭：反查并 abort 归属的子任务（子窗口关闭无匹配，安全）
+    if (subagentRunner) {
+      subagentRunner.abortByParentWindow(mainWindow.id);
+    }
     sessionsToFlush.delete(winSession);
     windowState.removeWindow(mainWindow.id);
   });
+
+  return mainWindow;
 }
 
 // ========== 应用菜单 ==========
@@ -266,8 +291,46 @@ function setupAppMenu() {
   Menu.setApplicationMenu(menu);
 }
 
+// ========== 子 Agent 状态推送（Task 12）==========
+// 事件驱动：runner 任务开始/结束时通知，有任务则 1s ticker 推送，无任务即停
+let statusTicker = null;
+function broadcastStatus(tasks) {
+  // 排除子窗口：只有主窗口渲染控制台（子窗口同样注入 overlay，不应显示自己的任务条目）
+  const subagentWindows = new Set();
+  for (const state of subagentRunner.activeTasks.values()) {
+    if (state.win) subagentWindows.add(state.win);
+  }
+  for (const win of windowState.getAllWindows()) {
+    if (win.isDestroyed() || subagentWindows.has(win)) continue;
+    try { win.webContents.send('subagent-status', { tasks }); } catch (_) {}
+  }
+}
+subagentRunner.setStatusChangeHandler((tasks) => {
+  if (tasks.length > 0) {
+    // 有运行任务：立即推一次，并确保 ticker 在跑
+    broadcastStatus(tasks);
+    if (!statusTicker) {
+      statusTicker = setInterval(() => {
+        const cur = subagentRunner.getStatusList();
+        broadcastStatus(cur);
+        if (cur.length === 0) {
+          clearInterval(statusTicker);
+          statusTicker = null;
+        }
+      }, 1000);
+    }
+  } else {
+    // 无运行任务：推一次空列表并停止 ticker
+    broadcastStatus([]);
+    if (statusTicker) {
+      clearInterval(statusTicker);
+      statusTicker = null;
+    }
+  }
+});
+
 // ========== IPC 处理器 ==========
-registerIpcHandlers();
+registerIpcHandlers(subagentRunner);
 
 // 覆盖层"新建窗口"按钮触发
 const { ipcMain: ipcMainForProfile } = require('electron');
