@@ -5,9 +5,11 @@
 const windows = new Map(); // windowId -> { win, profileId, providerId, sessionStore }
 let lastActiveWindowId = null;
 
-function addWindow(win, profileId, providerId, sessionStore) {
+function addWindow(win, profileId, providerId, sessionStore, setAsMain = true) {
   windows.set(win.id, { win, profileId, providerId, sessionStore });
-  lastActiveWindowId = win.id;
+  if (setAsMain !== false) {
+    lastActiveWindowId = win.id;
+  }
   win.on('closed', () => {
     windows.delete(win.id);
     if (lastActiveWindowId === win.id) {

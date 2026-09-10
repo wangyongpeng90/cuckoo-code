@@ -9,6 +9,7 @@ const fakeElectron = {
       if (name === 'appData') return path.join(process.cwd(), 'test', 'tmp');
       return path.join(process.cwd(), 'test', 'tmp');
     },
+    getAppPath: () => path.join(process.cwd(), 'test', 'tmp', 'appPath'),
     setPath: () => {},
     isPackaged: false,
     whenReady: () => Promise.resolve(),

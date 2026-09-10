@@ -12,7 +12,7 @@ const { initProject } = require('./project-context');
 const { isDangerous } = require('./dangerous-commands');
 const { decodeOutput, normalizeCommand } = require('../../tools/decodeOutput');
 
-function registerIpcHandlers() {
+function registerIpcHandlers(subagentRunner = null) {
   // 初始化项目
   ipcMain.handle('init-project', async (event, { skipPrompt = false } = {}) => {
     const ctx = windowState.getContextByWebContents(event.sender);
@@ -103,8 +103,14 @@ function registerIpcHandlers() {
     });
   });
 
-  // 执行工具
+  // 执行工具 → Task 10：子 Agent 活动信号 + 轮次硬顶拦截（markActivity 零新增消息复用）
   ipcMain.handle('execute-tool', async (event, { toolName, params, callId }) => {
+    if (subagentRunner) {
+      const subState = subagentRunner.findTaskByWebContents(event.sender);
+      if (subState && !subagentRunner.markActivity(subState)) {
+        return { callId, success: false, error: '已达到轮次上限，请输出 subagent_result 交付结果' };
+      }
+    }
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
     const selectedDir = store ? store.state.selectedProjectDir : null;
@@ -152,10 +158,16 @@ function registerIpcHandlers() {
     }
   });
 
-  // 执行 JS 脚本
+  // 执行 JS 脚本 → Task 10：子 Agent 活动信号 + 轮次硬顶拦截（markActivity 零新增消息复用）
   ipcMain.handle('execute-js', async (event, { code, callId }) => {
     if (!code || typeof code !== 'string') {
       return { callId, success: false, error: '无效的 JS 代码' };
+    }
+    if (subagentRunner) {
+      const subState = subagentRunner.findTaskByWebContents(event.sender);
+      if (subState && !subagentRunner.markActivity(subState)) {
+        return { callId, success: false, error: '已达到轮次上限，请输出 subagent_result 交付结果' };
+      }
     }
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
@@ -181,6 +193,42 @@ function registerIpcHandlers() {
       console.error('[Cuckoo Code] ❌ 原生 Enter 发送失败:', err.message);
       return false;
     }
+  });
+
+  // 子 Agent observer-ready 握手：preload 上报后 resolve runner 的 readyPromise
+  ipcMain.handle('subagent-ready', async (event, { subagentId } = {}) => {
+    if (!subagentId || !subagentRunner) return { success: false, error: '缺少 subagentId 或 runner 未初始化' };
+    const ok = subagentRunner.markReady(subagentId, event.sender);
+    console.log('[Cuckoo Code] subagent-ready 握手:', subagentId, ok ? 'OK' : '未匹配（可能已超时/终止）');
+    return { success: ok };
+  });
+
+  // 子 Agent 候选结果上报：按 event.sender 反查 activeTasks
+  ipcMain.handle('subagent-candidate-result', async (event, payload = {}) => {
+    if (!subagentRunner) return { success: false, error: 'runner 未初始化' };
+    return subagentRunner.handleCandidateResult(event.sender, payload);
+  });
+
+  // 获取当前可用 agent 清单 + 用户 agent 目录（多 Agent 按钮机制说明拼接用）
+  ipcMain.handle('get-agent-list', async () => {
+    if (!subagentRunner) return { success: false, error: 'runner 未初始化' };
+    const agents = subagentRunner.getAgentList();
+    const { getUserAgentDir } = require('./agent-templates');
+    return { success: true, agents, agentDir: getUserAgentDir() };
+  });
+
+  // 切换/聚焦子 Agent 窗口
+  ipcMain.handle('focus-subagent-window', async (_event, { windowId } = {}) => {
+    if (!subagentRunner || !windowId) return { success: false, error: '缺少 windowId' };
+    const ok = subagentRunner.focusByWindowId(windowId);
+    return { success: ok };
+  });
+
+  // 中止子 Agent 任务
+  ipcMain.handle('subagent-abort', async (_event, { windowId } = {}) => {
+    if (!subagentRunner || !windowId) return { success: false, error: '缺少 windowId' };
+    const ok = subagentRunner.abortByWindowId(windowId);
+    return { success: ok };
   });
 }
 
