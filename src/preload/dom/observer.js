@@ -7,11 +7,12 @@ const {
 } = require('../overlay/ui');
 const { scanForCommands } = require('./detector');
 const { tryParseToolCall } = require('./tool-parser');
-const { getJsCodeBlocksFromMarkdown, looksLikeIncompleteCodeError, FENCE } = require('./js-detector');
+const { getJsCodeBlocksFromMarkdown, getSubagentResultBlocksFromMarkdown, isGenerationInterrupted, looksIncompleteSubagentResult, looksLikeIncompleteCodeError, FENCE } = require('./js-detector');
 const { sendToolResultToChat, sendCombinedJsResultsToChat, sendMessageToChat } = require('./chat-input');
 const { isAIResponseComplete } = require('./ai-response');
 const { getProviderByUrl } = require('../../../src/providers');
 const { hasTool, toolNamesList } = require('../tool-names');
+const state = require('./state');
 
 /**
  * 手动解析按钮点击处理
@@ -73,6 +74,20 @@ let stabilityTimer = null;
 let xmlHintCount = 0;
 const XML_HINT_MAX = 10;
 
+// ========== Task 13.2：生成中断恢复（仅子 Agent 窗口）==========
+// 空内容 / 过短 / 服务器繁忙 → 等 3-5s → 点重试按钮，最多 2 次
+const GENERATION_RETRY_MAX = 2;
+const GENERATION_RETRY_DELAY_MIN = 3000;
+const GENERATION_RETRY_DELAY_MAX = 5000;
+const DEEPSEEK_RETRY_BUTTON_SELECTOR = "div[role='button'].ds-button--warning.ds-button--circle";
+let generationRetryCount = 0;
+// subagent_result XML 格式提示次数（子 Agent 用 <subagent_result> 而非代码块时的熔断）
+let subagentXmlHintCount = 0;
+const SUBAGENT_XML_HINT_MAX = 10;
+// subagent_result 完整性提示次数（疑似截断时提示重试的熔断）
+let subagentIncompleteHintCount = 0;
+const SUBAGENT_INCOMPLETE_HINT_MAX = 3;
+
 // 重置已处理状态（URL 切换/新会话时调用）
 function resetProcessedState() {
   processedMessages = new WeakSet();
@@ -82,6 +97,9 @@ function resetProcessedState() {
     stabilityTimer = null;
   }
   xmlHintCount = 0;
+  subagentXmlHintCount = 0;
+  subagentIncompleteHintCount = 0;
+  generationRetryCount = 0;
 }
 
 // 内容不完整时的最大重试次数（AI 生成长内容可能需 30 秒+）
@@ -90,6 +108,8 @@ const MAX_RETRY_COUNT = 2;
 const RETRY_INTERVAL = 2000;
 // JS 代码块稳定确认窗口（ms）
 const JS_STABILITY_WINDOW = 800;
+// subagent_result 稳定确认窗口（ms）：交付物长、无重试兜底，需更长窗口防中途停顿误判为"稳定"
+const SUBAGENT_RESULT_STABILITY_WINDOW = 3000;
 // interval 兜底轮询间隔（ms）
 const STABILITY_POLL_INTERVAL = 500;
 /**
@@ -315,6 +335,85 @@ function processLatestAIResponse(retryCount = 0, force = false) {
     return;
   }
 
+  // ========== subagent_result 检测（Task 7）==========
+  // 优先级：cuckoo → subagent_result → JSON → 纯文本
+  // 仅子 Agent 窗口处理 subagent_result：主窗口对话中可能正常出现这些字样，不应触发提示/上报
+  if (state.subagentId) {
+  const subagentBlocks = getSubagentResultBlocksFromMarkdown(markdown);
+  // 非法格式检测：子 Agent 用 <subagent_result> XML 标签而非代码块 → 提醒重试（复用主项目 XML 处理机制）
+  if (subagentBlocks.length === 0) {
+    const rawText = (markdown.textContent || '').trim();
+    const hasSubagentXml = /<\s*subagent_result\s*>/i.test(rawText) || /<\s*\/\s*subagent_result\s*>/i.test(rawText);
+    if (hasSubagentXml) {
+      if (!force) processedMessages.add(lastMessage);
+      if (subagentXmlHintCount >= SUBAGENT_XML_HINT_MAX) {
+        console.log('[Cuckoo Code] ⚠️ 已连续提示 ' + subagentXmlHintCount + ' 次 subagent_result XML 格式，熔断');
+        return;
+      }
+      subagentXmlHintCount++;
+      const BT = String.fromCharCode(96);
+      console.log('[Cuckoo Code] ⚠️ 检测到 subagent_result XML 格式（第 ' + subagentXmlHintCount + ' 次提示），提示改用代码块');
+      sendMessageToChat(
+        '请使用 ' + BT + BT + BT + 'subagent_result' + BT + BT + BT + ' 代码块交付最终结果，不要使用 <subagent_result> XML 标签。代码块之外不要有任何文字。',
+        'subagent_result 格式提示'
+      );
+      return;
+    }
+  }
+  if (subagentBlocks.length > 0) {
+    // 与 cuckoo 相同的快照双读稳定性校验
+    if (force) {
+      processedMessages.add(lastMessage);
+      const text = subagentBlocks.join('\n\n---\n\n');
+      window.electronAPI.notifySubagentResult({ type: 'subagent_result', text }).catch(() => {});
+      console.log('[Cuckoo Code] 手动解析模式，subagent_result 已上报');
+      return;
+    }
+
+    const snapshot = markdown.textContent || '';
+    const blocksSig = subagentBlocks.map((b) => b.length).join(',');
+    const now = Date.now();
+    const rec = jsStability.get(lastMessage);
+    if (!rec || rec.snapshot !== snapshot || rec.blocksSig !== ('subagent:' + blocksSig)) {
+      jsStability.set(lastMessage, { snapshot, blocksSig: 'subagent:' + blocksSig, lastChange: now });
+      ensureStabilityTimer();
+      console.log('[Cuckoo Code] ⏳ 检测到 subagent_result，流式渲染中，等待稳定...');
+      return;
+    }
+
+    if (now - rec.lastChange < SUBAGENT_RESULT_STABILITY_WINDOW) {
+      console.log('[Cuckoo Code] ⏳ subagent_result 稳定中（等待 ' + SUBAGENT_RESULT_STABILITY_WINDOW + 'ms 确认）...');
+      return;
+    }
+
+    const text = subagentBlocks.join('\n\n---\n\n');
+    // 完整性校验：疑似截断 → 提示重试（与 XML 格式提示分开的第二种提示）
+    if (looksIncompleteSubagentResult(text)) {
+      if (!force) processedMessages.add(lastMessage);
+      if (subagentIncompleteHintCount >= SUBAGENT_INCOMPLETE_HINT_MAX) {
+        console.log('[Cuckoo Code] ⚠️ subagent_result 完整性提示达上限（' + subagentIncompleteHintCount + '），接受当前内容');
+        // 熔断：接受当前内容（带提示由 runner 端处理）
+      } else {
+        subagentIncompleteHintCount++;
+        console.log('[Cuckoo Code] ⚠️ subagent_result 疑似截断（第 ' + subagentIncompleteHintCount + ' 次提示），提示重试');
+        sendMessageToChat(
+          '你的 subagent_result 似乎被截断了（内容以标题结尾、缺少正文，或为空）。请重新输出【完整】的 subagent_result 代码块，包含所有章节的正文内容。',
+          'subagent_result 完整性提示'
+        );
+        return;
+      }
+    }
+
+    jsStability.delete(lastMessage);
+    processedMessages.add(lastMessage);
+    subagentXmlHintCount = 0; // 正确使用代码块，重置 XML 提示计数
+    subagentIncompleteHintCount = 0; // 完整交付，重置完整性提示计数
+    window.electronAPI.notifySubagentResult({ type: 'subagent_result', text }).catch(() => {});
+    console.log('[Cuckoo Code] ✅ subagent_result 稳定，已上报（长度 ' + text.length + '）');
+    return;
+  }
+  } // end if (state.subagentId) — subagent_result 仅子 Agent 窗口处理
+
   // 无 JS 代码块：文本也可能仍在流式渲染中（先文字后代码块 / 代码块中途不完整）。
   // 若直接处理，会因"疑似工具但未识别"或"普通文本"提前标记 processed，
   // 导致同一条消息后续渲染出的完整代码块被永久跳过（智谱等 SPA 回复中途
@@ -454,8 +553,11 @@ function processLatestAIResponse(retryCount = 0, force = false) {
       }
     } else {
       console.log('[Cuckoo Code] ℹ️ 正常文本回复，未检测到工具调用（无需处理）');
-      // 防重复：同一文本不重复通知（完成检测轮询每 2s 触发一次，避免刷屏）
-      if (lastNotifiedText !== text) {
+      // 子 Agent 窗口：纯文本上报（供 Task 10 停住检测）；主窗口：通知兜底
+      if (state.subagentId) {
+        window.electronAPI.notifySubagentResult({ type: 'plain_text', text }).catch(() => {});
+        console.log('[Cuckoo Code] 子 Agent 纯文本已上报（供停住检测）');
+      } else if (lastNotifiedText !== text) {
         lastNotifiedText = text;
         window.electronAPI.showAiNotification().catch(() => {});
       }
@@ -470,7 +572,69 @@ let lastNotifiedText = '';
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+/**
+ * 取最后一条有内容的 AI 回复文本（仅用于生成中断检测）。
+ */
+function getLastAIText() {
+  const messages = getMessageCandidates();
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const md = getMessageMarkdown(messages[i]);
+    const t = md && (md.textContent || '').trim();
+    if (t) return t;
+  }
+  return '';
+}
+
+/**
+ * 查找 DeepSeek「服务器繁忙」重试按钮。
+ */
+function findRetryButton() {
+  try {
+    return document.querySelector(DEEPSEEK_RETRY_BUTTON_SELECTOR);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * 检测生成中断并按需重试（等待 3-5s → 点重试按钮）。
+ * 仅子 Agent 窗口生效，不改主窗口行为。
+ * @returns {Promise<boolean>} true = 已触发重试（调用方本轮跳过正常处理）
+ */
+async function maybeRetryInterruptedGeneration() {
+  if (!state.subagentId) return false; // 仅子 Agent 窗口
+  if (generationRetryCount >= GENERATION_RETRY_MAX) return false;
+
+  const text = getLastAIText();
+  const reason = isGenerationInterrupted(text);
+  if (!reason) {
+    generationRetryCount = 0; // 正常回复，重置计数
+    return false;
+  }
+
+  console.log('[Cuckoo Code] 检测到生成中断（' + reason + '），准备重试');
+  const delay = GENERATION_RETRY_DELAY_MIN + Math.random() * (GENERATION_RETRY_DELAY_MAX - GENERATION_RETRY_DELAY_MIN);
+  await sleep(delay);
+  const btn = findRetryButton();
+  if (!btn) {
+    console.log('[Cuckoo Code] 未找到重试按钮，放弃本次重试');
+    return false;
+  }
+  generationRetryCount++;
+  console.log('[Cuckoo Code] 点击重试按钮（第 ' + generationRetryCount + '/' + GENERATION_RETRY_MAX + ' 次）');
+  try { btn.click(); } catch (_) {}
+  return true;
+}
 function startObserver() {
+  // 子 Agent 窗口：observer 启动即上报 ready 握手
+  if (state.subagentId) {
+    try {
+      window.electronAPI.notifySubagentReady(state.subagentId).catch(() => {});
+      console.log('[Cuckoo Code] 子 Agent observer-ready 已上报:', state.subagentId);
+    } catch (_) {}
+  }
+
   const observer = new MutationObserver((mutations) => {
     // 100ms 节流：避免页面高频 DOM 变化导致日志与检测刷屏
     const now = Date.now();
@@ -508,6 +672,7 @@ function startObserver() {
       (async () => {
         try {
           if (await isAIResponseComplete()) {
+            if (await maybeRetryInterruptedGeneration()) return; // 生成中断，已触发重试
             processLatestAIResponse();
           }
         } finally {
@@ -532,6 +697,7 @@ function startObserver() {
       (async () => {
         try {
           if (await isAIResponseComplete()) {
+            if (await maybeRetryInterruptedGeneration()) return; // 生成中断，已触发重试
             processLatestAIResponse();
           }
         } catch (_) { /* 轮询失败静默，等待下一轮 */ }

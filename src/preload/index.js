@@ -13,7 +13,18 @@ const projectDir = require('./overlay/project-dir');
 const bindEvents = require('./overlay/events');
 const observer = require('./dom/observer');
 const chatInput = require('./dom/chat-input');
+const state = require('./dom/state');
 const { getProviderByUrl } = require('../providers');
+
+// 检测子 Agent 窗口标识（main 通过 additionalArguments 注入）
+// sandbox: false 下 preload 可访问 process.argv
+try {
+  const subagentArg = process.argv.find((a) => a.startsWith('--cuckoo-subagent-id='));
+  if (subagentArg) {
+    state.subagentId = subagentArg.split('=')[1];
+    console.log('[Cuckoo Code] 检测到子 Agent 窗口标识:', state.subagentId);
+  }
+} catch (_) { /* 非 Electron 环境忽略 */ }
 
 // 注册主进程消息监听（与原 preload.js 顶层注册时机一致）
 chatInput.registerIpcListeners();

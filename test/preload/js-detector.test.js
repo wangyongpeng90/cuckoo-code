@@ -10,7 +10,11 @@ const {
   hasOnlyFences,
   extractJsToolBlocks,
   hasOnlyCodeContent,
+  extractSubagentResultBlocks,
+  getSubagentResultBlocksFromMarkdown,
   getJsCodeBlocksFromMarkdown,
+  isGenerationInterrupted,
+  looksIncompleteSubagentResult,
 } = require('../../src/preload/dom/js-detector');
 
 test('BT 和 FENCE 定义', () => {
@@ -191,4 +195,79 @@ test('js 语言 + 带文字说明 → 不提取（保持原收紧行为）', () 
   });
   const blocks = getJsCodeBlocksFromMarkdown(root);
   assert.deepStrictEqual(blocks, []);
+});
+
+test('extractSubagentResultBlocks 提取 subagent_result 块', () => {
+  const text = FENCE + 'subagent_result\n任务完成\n修改文件：a.js\n' + FENCE;
+  const blocks = extractSubagentResultBlocks(text);
+  assert.deepStrictEqual(blocks, ['任务完成\n修改文件：a.js']);
+});
+
+test('extractSubagentResultBlocks 忽略其他语言', () => {
+  const text = FENCE + 'cuckoo\nawait read("a")\n' + FENCE + '\n' + FENCE + 'subagent_result\n交付\n' + FENCE;
+  const blocks = extractSubagentResultBlocks(text);
+  assert.deepStrictEqual(blocks, ['交付']);
+});
+
+test('extractSubagentResultBlocks 空输入', () => {
+  assert.deepStrictEqual(extractSubagentResultBlocks(''), []);
+  assert.deepStrictEqual(extractSubagentResultBlocks(null), []);
+});
+
+test('isGenerationInterrupted 过短判中断', () => {
+  assert.strictEqual(isGenerationInterrupted(''), 'too_short');
+  assert.strictEqual(isGenerationInterrupted('hi'), 'too_short');
+  assert.strictEqual(isGenerationInterrupted('   '), 'too_short');
+});
+
+test('isGenerationInterrupted 服务器繁忙判中断', () => {
+  assert.strictEqual(isGenerationInterrupted('服务器繁忙，请稍后再试'), 'server_busy'); // 11 字，命中关键词
+  assert.strictEqual(isGenerationInterrupted('很抱歉，当前服务器繁忙，请稍后再试。'), 'server_busy');
+  assert.strictEqual(isGenerationInterrupted('服务繁忙，请稍后重试一下'), 'server_busy');
+});
+
+test('isGenerationInterrupted 正常回复返回 null', () => {
+  assert.strictEqual(isGenerationInterrupted('这是一段足够长的正常回复内容，超过了十个字符。'), null);
+});
+
+test('isGenerationInterrupted 长文本含繁忙词不误判', () => {
+  // 长度 > 200 时，即使含"服务器繁忙"也是正常讨论，不判中断
+  const longText = '服务器繁忙'.repeat(50); // 250 字符
+  assert.strictEqual(isGenerationInterrupted(longText), null);
+});
+
+test('looksIncompleteSubagentResult 空内容判不完整', () => {
+  assert.strictEqual(looksIncompleteSubagentResult(''), true);
+  assert.strictEqual(looksIncompleteSubagentResult('   '), true);
+  assert.strictEqual(looksIncompleteSubagentResult(null), true);
+});
+
+test('looksIncompleteSubagentResult 以标题结尾判不完整', () => {
+  // 复现真机截断：标题后无正文
+  assert.strictEqual(looksIncompleteSubagentResult('## 任务执行结果\n\n### 1. 当前工作目录'), true);
+  assert.strictEqual(looksIncompleteSubagentResult('# 报告'), true);
+});
+
+test('looksIncompleteSubagentResult 有正文判完整', () => {
+  assert.strictEqual(looksIncompleteSubagentResult('# 报告\n\n这是正文内容。'), false);
+  assert.strictEqual(looksIncompleteSubagentResult('完成任务，修改了 a.js 文件。'), false);
+});
+
+test('getSubagentResultBlocksFromMarkdown 从 DOM 提取', () => {
+  global.window = { location: { href: 'https://chat.deepseek.com/' } };
+  const root = {
+    tagName: 'DIV',
+    querySelectorAll: (sel) => {
+      if (sel === 'pre') return [{
+        tagName: 'PRE',
+        getAttribute: () => 'subagent_result',
+        closest: () => null,
+        querySelector: () => ({ textContent: '交付内容' }),
+        textContent: '交付内容',
+      }];
+      return [];
+    },
+  };
+  const blocks = getSubagentResultBlocksFromMarkdown(root);
+  assert.deepStrictEqual(blocks, ['交付内容']);
 });

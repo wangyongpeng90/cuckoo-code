@@ -117,6 +117,80 @@ function hasOnlyCodeContent(root) {
 }
 
 /**
+ * 从原始文本（含 Markdown 围栏）中提取 subagent_result 代码块内容。
+ * subagent_result 是子 Agent 的最终交付物，与 cuckoo 工具脚本不同——不执行，直接作为结果提取。
+ */
+function extractSubagentResultBlocks(text) {
+  const blocks = [];
+  if (!text || typeof text !== 'string') return blocks;
+
+  const lines = text.split(String.fromCharCode(10));
+  let inBlock = false;
+  let lang = '';
+  let buf = [];
+
+  const flush = () => {
+    const code = buf.join(String.fromCharCode(10)).trim();
+    const l = (lang || '').toLowerCase();
+    if (code && l === 'subagent_result') {
+      blocks.push(code);
+    }
+    inBlock = false;
+    lang = '';
+    buf = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    if (!inBlock) {
+      if (trimmed.startsWith(FENCE)) {
+        lang = (trimmed.slice(3) || '').split(' ')[0];
+        inBlock = true;
+        buf = [];
+      }
+      continue;
+    }
+    if (trimmed.startsWith(FENCE)) {
+      flush();
+      continue;
+    }
+    buf.push(line.replace(String.fromCharCode(13), ''));
+  }
+  if (inBlock) flush();
+  return blocks;
+}
+
+/**
+ * 从渲染后的 DOM（markdown 容器或单个 pre 元素）中提取 subagent_result 代码块。
+ * 与 cuckoo 块不同：subagent_result 是最终交付物，不执行，原样提取返回。
+ */
+function getSubagentResultBlocksFromMarkdown(root) {
+  const blocks = [];
+  if (!root) return blocks;
+
+  const pres = [];
+  if (root.tagName === 'PRE') pres.push(root);
+  if (root.querySelectorAll) {
+    const nested = root.querySelectorAll('pre');
+    for (const p of nested) pres.push(p);
+    if (pres.length === 0) {
+      const mdCodes = root.querySelectorAll('.md-code');
+      for (const c of mdCodes) pres.push(c);
+    }
+  }
+
+  for (const pre of pres) {
+    const lang = getCodeBlockLanguage(pre);
+    if (lang !== 'subagent_result') continue;
+    const codeEl = pre.querySelector('code');
+    const code = ((codeEl ? codeEl.textContent : pre.textContent) || '').trim();
+    if (code) blocks.push(code);
+  }
+  return blocks;
+}
+
+/**
  * 从渲染后的 DOM（markdown 容器或单个 pre 元素）中提取 JS 工具代码块
  * 规则同 extractJsToolBlocks：js/javascript 块要求整条回复只包含代码块
  */
@@ -160,6 +234,44 @@ function getJsCodeBlocksFromMarkdown(root) {
   return blocks;
 }
 
+// ========== Task 13.2：生成中断判定（纯函数，供 observer 复用）==========
+const GENERATION_BUSY_KEYWORDS = ['服务器繁忙', '服务繁忙', '请稍后再试'];
+const GENERATION_MIN_LENGTH = 10;      // 低于此长度视为过短（生成中断）
+const GENERATION_BUSY_SCAN_LIMIT = 200; // 仅短文本扫描关键词（长文本中的这些词是正常讨论）
+
+/**
+ * 判断 subagent_result 内容是否疑似截断（不完整）。
+ * 启发式：空内容；或以 Markdown 标题行结尾（标题后应有正文，缺失即疑似截断）。
+ * @param {string} text 提取到的 subagent_result 文本
+ * @returns {boolean}
+ */
+function looksIncompleteSubagentResult(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;
+  const lines = t.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length === 0) return true;
+  const lastLine = lines[lines.length - 1].trim();
+  // 以 Markdown 标题行结尾 → 标题后缺正文，疑似截断
+  if (/^#{1,6}\s+\S/.test(lastLine)) return true;
+  return false;
+}
+
+/**
+ * 判断回复是否为「生成中断」：过短或含服务器繁忙关键词。
+ * @param {string} text AI 回复文本
+ * @returns {string|null} 中断原因（too_short / server_busy），正常返回 null
+ */
+function isGenerationInterrupted(text) {
+  const t = String(text || '').trim();
+  if (t.length < GENERATION_MIN_LENGTH) return 'too_short';
+  if (t.length < GENERATION_BUSY_SCAN_LIMIT) {
+    for (const kw of GENERATION_BUSY_KEYWORDS) {
+      if (t.includes(kw)) return 'server_busy';
+    }
+  }
+  return null;
+}
+
 module.exports = {
   BT,
   FENCE,
@@ -169,5 +281,9 @@ module.exports = {
   hasOnlyFences,
   extractJsToolBlocks,
   hasOnlyCodeContent,
+  extractSubagentResultBlocks,
+  getSubagentResultBlocksFromMarkdown,
   getJsCodeBlocksFromMarkdown,
+  isGenerationInterrupted,
+  looksIncompleteSubagentResult,
 };
