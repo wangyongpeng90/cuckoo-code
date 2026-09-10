@@ -72,6 +72,130 @@ function getDirectoryTree(dir, prefix = '') {
 }
 
 /**
+ * 组装完整系统提示词（模板 + 占位符替换）。
+ * 主窗口与子 Agent 共用，避免两套不一致。
+ * @param {string} providerId 平台 id（deepseek/claude），空则用 default 模板
+ * @param {string} projectDir 项目根目录（用于 PROJECT_DIR 占位符）
+ * @returns {string} 组装后的完整提示词
+ */
+function buildPrompt(providerId, projectDir, mcpSection = '', excludeTools = null) {
+  const fsMod = require('fs');
+  const pathMod = require('path');
+
+  let templateContent = '';
+  let templatePath = '';
+
+  // 1. provider.getPromptTemplate() → 2. src/prompt/{providerId}.md → 3. default.md
+  const provider = require('../providers').getProvider(providerId);
+  if (provider && typeof provider.getPromptTemplate === 'function') {
+    try {
+      const fromMethod = provider.getPromptTemplate();
+      if (fromMethod && typeof fromMethod === 'string' && fromMethod.trim()) {
+        templateContent = fromMethod;
+        templatePath = '(provider.getPromptTemplate)';
+      }
+    } catch (err) {
+      console.warn('[Cuckoo Code] provider.getPromptTemplate 失败:', err.message);
+    }
+  }
+
+  if (!templateContent && providerId) {
+    const candidate = pathMod.join(PROMPT_DIR, providerId + '.md');
+    if (fsMod.existsSync(candidate)) {
+      templatePath = candidate;
+      templateContent = fsMod.readFileSync(candidate, 'utf-8');
+    }
+  }
+
+  if (!templateContent) {
+    templatePath = pathMod.join(PROMPT_DIR, 'default.md');
+    templateContent = fsMod.readFileSync(templatePath, 'utf-8');
+  }
+
+  // 2. 工具 API 类型定义
+  let toolApiTypes = '';
+  try {
+    toolApiTypes = fsMod.readFileSync(pathMod.join(__dirname, '..', '..', 'tools', 'cuckoo-tools.d.ts'), 'utf-8');
+  } catch (err) {
+    console.error('[Cuckoo Code] 读取 cuckoo-tools.d.ts 失败:', err.message);
+  }
+
+  // 子 Agent 通过 excludeTools 过滤类型声明（如 subagent 段）：块级过滤
+  if (excludeTools && excludeTools.length > 0) {
+    const excluded = new Set(excludeTools);
+    const lines = toolApiTypes.split('\n');
+    const result = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\/\/ =+ /.test(line)) {
+        // 段注释开始：收集整块（到下一个段注释）
+        const blockLines = [line];
+        i++;
+        while (i < lines.length && !/^\/\/ =+ /.test(lines[i])) {
+          blockLines.push(lines[i]);
+          i++;
+        }
+        const blockText = blockLines.join('\n');
+        const hasExcluded = [...excluded].some((t) => blockText.includes('declare function ' + t + '('));
+        if (!hasExcluded) result.push(...blockLines);
+      } else {
+        result.push(line);
+        i++;
+      }
+    }
+    toolApiTypes = result.join('\n');
+  }
+
+  // 3. 工具清单 + 使用指导（子 Agent 可通过 excludeTools 过滤 subagent）
+  const toolsDescription = toolRegistry.getFormattedJsApiForPrompt(excludeTools);
+  const promptSections = toolRegistry.getFormattedPromptSections(excludeTools);
+
+  // 4. 平台信息
+  const platform = process.platform;
+  const arch = process.arch;
+  let platformInfo = '';
+  if (platform === 'win32') {
+    platformInfo = '- 操作系统：Windows（' + arch + '）\n  - bash 使用 cmd.exe（Windows 命令：cd / dir / echo %cd% / type / findstr）\n  - pwsh 使用 PowerShell（Get-Location / $env:VAR / Get-ChildItem）\n  - 路径分隔符为反斜杠 \\，传给工具的相对路径统一用正斜杠 /';
+  } else if (platform === 'darwin') {
+    platformInfo = '- 操作系统：macOS（' + arch + '）\n  - bash 使用 zsh/bash（Unix 命令：pwd / ls / cat / grep）\n  - 路径分隔符为正斜杠 /';
+  } else {
+    platformInfo = '- 操作系统：Linux（' + arch + '）\n  - bash 使用 bash（Unix 命令：pwd / ls / cat / grep）\n  - 路径分隔符为正斜杠 /';
+  }
+
+  // 5. 项目介绍 CUCKOO.md
+  let projectIntro = '';
+  if (projectDir) {
+    const cuckooMdPath = pathMod.join(projectDir, '.cuckooCode', 'CUCKOO.md');
+    if (fsMod.existsSync(cuckooMdPath)) {
+      try { projectIntro = fsMod.readFileSync(cuckooMdPath, 'utf-8'); } catch (_) {}
+    }
+  }
+  const projectIntroSection = projectIntro ? '---\n## 项目介绍\n' + projectIntro : '';
+
+  // 6. 占位符替换
+  const placeholders = {
+    '{{TOOL_API_TYPES}}': toolApiTypes,
+    '{{TOOLS_LIST}}': toolsDescription,
+    '{{TOOL_SECTIONS}}': promptSections,
+    '{{PLATFORM_INFO}}': platformInfo,
+    '{{PROJECT_DIR}}': projectDir || '',
+    '{{PROJECT_INTRO_SECTION}}': projectIntroSection,
+    '{{MCP_SECTION}}': mcpSection,
+  };
+  let combined = templateContent;
+  for (const [key, value] of Object.entries(placeholders)) {
+    combined = combined.split(key).join(value);
+  }
+
+  // 模板无 {{MCP_SECTION}} 占位符时，追加到末尾（主窗口注入 MCP 能力说明）
+  if (mcpSection && !combined.includes(mcpSection)) {
+    combined += '\n\n---\n\n' + mcpSection;
+  }
+  return combined;
+}
+
+/**
  * 初始化项目：选择目录并发送目录树 + systemPrompt
  * 供 IPC 调用（用户点击初始化按钮时触发）
  * @param {boolean} skipPrompt - 如果为true，只更新目录映射，不发送初始提示（用于修改目录）
@@ -142,81 +266,7 @@ async function initProject(skipPrompt = false, windowContext = null) {
     return { success: true, message: '项目目录已更新' };
   }
 
-  // 初始化项目时读取对应平台模板并替换占位符
-  // 模板选择优先级：
-  // 1. provider.getPromptTemplate() 返回的非空字符串
-  // 2. src/prompt/{providerId}.md
-  // 3. src/prompt/default.md
-  const provider = require('../providers').getProvider(providerId);
-  let templateContent = '';
-  let templatePath = '';
-
-  if (provider && typeof provider.getPromptTemplate === 'function') {
-    try {
-      const fromMethod = provider.getPromptTemplate();
-      if (fromMethod && typeof fromMethod === 'string' && fromMethod.trim()) {
-        templateContent = fromMethod;
-        templatePath = '(provider.getPromptTemplate)';
-      }
-    } catch (err) {
-      console.warn('[Cuckoo Code] 调用 provider.getPromptTemplate 失败:', err.message);
-    }
-  }
-
-  if (!templateContent && providerId) {
-    const candidate = path.join(PROMPT_DIR, providerId + '.md');
-    if (fs.existsSync(candidate)) {
-      templatePath = candidate;
-    }
-  }
-
-  if (!templateContent && templatePath) {
-    try {
-      templateContent = fs.readFileSync(templatePath, 'utf-8');
-    } catch (err) {
-      console.error('[Cuckoo Code] 读取提示词模板失败:', err.message);
-      return { success: false, message: '读取提示词模板失败: ' + err.message };
-    }
-  }
-
-  if (!templateContent) {
-    templatePath = path.join(PROMPT_DIR, 'default.md');
-    try {
-      templateContent = fs.readFileSync(templatePath, 'utf-8');
-      console.warn('[Cuckoo Code] 未找到平台模板，使用默认模板:', templatePath);
-    } catch (err) {
-      console.error('[Cuckoo Code] 读取默认模板失败:', err.message);
-      return { success: false, message: '读取默认提示词模板失败: ' + err.message };
-    }
-  }
-
-  console.log('[Cuckoo Code] 已读取提示词模板:', templatePath);
-
-  // 读取工具 API 类型定义（从 d.ts 文件读取，避免与模板重复维护）
-  let toolApiTypes = '';
-  try {
-    toolApiTypes = fs.readFileSync(path.join(__dirname, '..', '..', 'tools', 'cuckoo-tools.d.ts'), 'utf-8');
-  } catch (err) {
-    console.error('[Cuckoo Code] 读取 cuckoo-tools.d.ts 失败:', err.message);
-  }
-
-  // 获取工具库描述（JS API 格式：AI 通过生成 JS 代码调用这些函数）
-  const toolsDescription = toolRegistry.getFormattedJsApiForPrompt();
-
-  // 获取工具使用指导（section 机制，仿 dsh）
-  const promptSections = toolRegistry.getFormattedPromptSections();
-
-  // 确保已启用的 MCP server 已连接（8 秒超时，避免阻塞初始化）
-  try {
-    await Promise.race([
-      mcpClient.connectEnabledServers(),
-      new Promise(resolve => setTimeout(resolve, 8000))
-    ]);
-  } catch (err) {
-    console.error('[MCP] 初始化时连接失败:', err.message);
-  }
-
-  // MCP 章节：按需查看模式，不在提示词中全量注入工具列表
+  // MCP 章节（主窗口全量注入；子 Agent 走 buildPrompt 默认空，不注入）
   const mcpSection = [
     '## MCP 能力',
     '',
@@ -230,48 +280,17 @@ async function initProject(skipPrompt = false, windowContext = null) {
     '注意：MCP server 可能未连接或未启用，以 mcpListServers() 的实时返回为准。'
   ].join('\n');
 
-  // 动态生成平台信息（不硬编码，根据实际运行环境）
-  const platform = process.platform;
-  const arch = process.arch;
-  let platformInfo = '';
-  if (platform === 'win32') {
-    platformInfo = '- 操作系统：Windows（' + arch + '）\n  - bash 使用 cmd.exe（Windows 命令：cd / dir / echo %cd% / type / findstr）\n  - pwsh 使用 PowerShell（Get-Location / $env:VAR / Get-ChildItem）\n  - 路径分隔符为反斜杠 \\，传给工具的相对路径统一用正斜杠 /';
-  } else if (platform === 'darwin') {
-    platformInfo = '- 操作系统：macOS（' + arch + '）\n  - bash 使用 zsh/bash（Unix 命令：pwd / ls / cat / grep）\n  - 路径分隔符为正斜杠 /';
-  } else {
-    platformInfo = '- 操作系统：Linux（' + arch + '）\n  - bash 使用 bash（Unix 命令：pwd / ls / cat / grep）\n  - 路径分隔符为正斜杠 /';
-  }
+  // 复用统一提示词组装（buildPrompt 同时处理模板选择 + 占位符替换）
+  const combined = buildPrompt(providerId, selectedDir, mcpSection);
 
-  // 读取项目介绍（CUCKOO.md）
-  let projectIntro = '';
-  const cuckooMdPath = path.join(selectedDir, '.cuckooCode', 'CUCKOO.md');
-  if (fs.existsSync(cuckooMdPath)) {
-    try {
-      projectIntro = fs.readFileSync(cuckooMdPath, 'utf-8');
-      console.log('[Cuckoo Code] 已读取 CUCKOO.md 内容');
-    } catch (err) {
-      console.error('[Cuckoo Code] 读取 CUCKOO.md 失败:', err.message);
-    }
-  }
-
-  // 项目介绍占位符：无内容则整体置空
-  const projectIntroSection = projectIntro
-    ? '---\n## 项目介绍\n' + projectIntro
-    : '';
-
-  // 统一替换模板中的双花括号占位符（全量替换，支持同一占位符多次出现）
-  const placeholders = {
-    '{{TOOL_API_TYPES}}': toolApiTypes,
-    '{{TOOLS_LIST}}': toolsDescription,
-    '{{TOOL_SECTIONS}}': promptSections,
-    '{{PLATFORM_INFO}}': platformInfo,
-    '{{PROJECT_DIR}}': selectedDir,
-    '{{PROJECT_INTRO_SECTION}}': projectIntroSection,
-    '{{MCP_SECTION}}': mcpSection,
-  };
-  let combined = templateContent;
-  for (const [key, value] of Object.entries(placeholders)) {
-    combined = combined.split(key).join(value);
+  // MCP 连接仍保持非阻塞（放在组装后连接，不影响主窗口初始化）
+  try {
+    await Promise.race([
+      mcpClient.connectEnabledServers(),
+      new Promise(resolve => setTimeout(resolve, 8000))
+    ]);
+  } catch (err) {
+    console.error('[MCP] 初始化时连接失败:', err.message);
   }
 
   console.log('[Cuckoo Code] 准备发送初始提示（不含目录树），长度:', combined.length);
@@ -282,4 +301,4 @@ async function initProject(skipPrompt = false, windowContext = null) {
   return { success: true, message: '初始化完成，已发送系统提示词、工具规则和工具库' };
 }
 
-module.exports = { PROMPT_DIR, IGNORED_DIRS, getDirectoryTree, initProject };
+module.exports = { PROMPT_DIR, IGNORED_DIRS, getDirectoryTree, initProject, buildPrompt };

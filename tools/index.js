@@ -25,6 +25,7 @@ const { OpenBrowserWindowTool } = require('./OpenBrowserWindowTool');
 const { InjectJSTool } = require('./InjectJSTool');
 const { McpCallTool } = require('./McpCallTool');
 const { McpListServersTool, McpGetToolsTool } = require('./McpQueryTools');
+const { SubagentTool } = require('./SubagentTool');
 
 // 创建全局工具注册表
 const registry = new ToolRegistry();
@@ -52,6 +53,7 @@ registry.register(new InjectJSTool());
 registry.register(new McpCallTool());
 registry.register(new McpListServersTool());
 registry.register(new McpGetToolsTool());
+registry.register(new SubagentTool());
 
 // 导出
 module.exports = {
