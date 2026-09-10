@@ -23,6 +23,7 @@ const { WebFetchTool } = require('./WebFetchTool');
 const { MySQLTool } = require('./MySQLTool');
 const { OpenBrowserWindowTool } = require('./OpenBrowserWindowTool');
 const { InjectJSTool } = require('./InjectJSTool');
+const { AttachFileTool } = require('./AttachFileTool');
 const { McpCallTool } = require('./McpCallTool');
 const { McpListServersTool, McpGetToolsTool } = require('./McpQueryTools');
 
@@ -49,6 +50,7 @@ registry.register(new WebFetchTool());
 registry.register(new MySQLTool());
 registry.register(new OpenBrowserWindowTool());
 registry.register(new InjectJSTool());
+registry.register(new AttachFileTool());
 registry.register(new McpCallTool());
 registry.register(new McpListServersTool());
 registry.register(new McpGetToolsTool());

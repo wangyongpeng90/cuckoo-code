@@ -57,6 +57,7 @@ function createWindow(profile) {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 900,
+    icon: path.join(__dirname, '..', '..', 'assets', 'icon.png'),
     title: 'Cuckoo Code Pro - ' + provider.name + ' - ' + profileData.name,
     webPreferences: {
       preload: path.join(__dirname, '..', '..', 'preload.js'),

@@ -23,7 +23,14 @@
     font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
   }
 
-  .logo { width: 190px; height: 190px; color: var(--fg); }
+  .logo {
+    width: 190px;
+    height: 190px;
+    color: var(--fg);
+    background: #161E2E;
+    border-radius: 42px;
+    padding: 0;
+  }
   .logo svg { width: 100%; height: 100%; display: block; }
 
   .brand {
@@ -45,7 +52,7 @@
 <body>
 
   <div class="logo">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-label="Cuckoo Code">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="34 48 188 188" aria-label="Cuckoo Code">
       <defs>
         <!-- 用鸟巢的上沿把蛋的下半部分切掉 -->
         <mask id="nestCut">
@@ -61,16 +68,12 @@
       </g>
 
       <!-- 鸟巢：一根线，两端圆头，中间略粗 -->
-      <path d="M37 112
-               Q128 189 219 112
-               L219 118
-               Q128 200 37 118 Z"
+      <path d="M37 110
+               Q128 192 219 110
+               Q128 212 37 110 Z"
             fill="currentColor"/>
     </svg>
   </div>
-
-  <div class="brand">CUCKOO</div>
-  <div class="slogan">鸠 占 鹊 巢</div>
 
 </body>
 </html>

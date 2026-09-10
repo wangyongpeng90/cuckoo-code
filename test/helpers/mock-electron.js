@@ -20,7 +20,13 @@ const fakeElectron = {
     showMessageBox: async () => ({ response: 1 }),
   },
   ipcMain: { handle: () => {}, on: () => {} },
-  BrowserWindow: function BrowserWindow() {},
+  BrowserWindow: Object.assign(function BrowserWindow() {}, {
+    // 测试用：注册 windowId -> fake window，供 AttachFileTool 等通过 fromId 查找
+    _registry: new Map(),
+    fromId(id) {
+      return fakeElectron.BrowserWindow._registry.get(id) || null;
+    },
+  }),
   Notification: {
     isSupported: () => false,
   },

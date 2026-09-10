@@ -23,6 +23,7 @@ const TOOL_NAMES = [
   'web_fetch',
   'open_browser_window',
   'inject_js',
+  'attach_file',
   'mcp_list_servers',
   'mcp_get_tools',
 ];

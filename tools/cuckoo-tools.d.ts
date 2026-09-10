@@ -275,6 +275,18 @@ declare function openBrowserWindow(url: string, options?: { id?: string; width?:
  */
 declare function injectJS(windowId: string, code: string): Promise<any>;
 
+// ================= 附件上传 =================
+
+/**
+ * 将本地项目文件作为附件上传到当前对话输入框（不发送）。
+ * 上传成功后附件会随下一条消息一起发出。
+ * 需要当前窗口上下文（由运行时自动注入，AI 无需传）。
+ * @param filePath 要上传的文件路径（相对项目根目录或绝对路径）
+ * @returns { fileName: string, size: number, message: string }
+ * @throws 文件不存在、不是文件、超过 30MB、缺少窗口上下文或上传超时时抛出异常
+ */
+declare function attachFile(filePath: string): Promise<{ fileName: string; size: number; message: string }>;
+
 // ================= MCP =================
 
 /**

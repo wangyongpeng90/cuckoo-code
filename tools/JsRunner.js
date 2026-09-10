@@ -151,6 +151,9 @@ const BOOTSTRAP = [
 "  globalThis.injectJS = async function (windowId, code) {",
 "    return await __call('inject_js', { windowId: windowId, code: code });",
 "  };",
+"  globalThis.attachFile = async function (filePath) {",
+"    return await __call('attach_file', { filePath: filePath });",
+"  };",
 "",
 "  if (!globalThis.projectDir) {",
 "    globalThis.log('[提示] 尚未初始化项目目录，相对路径将基于系统目录解析。可点击覆盖层“初始化项目”。');",
@@ -246,9 +249,10 @@ class JsRunner {
    * 执行 AI 生成的 JS 工具代码
    * @param {string} code - AI 生成的 JavaScript 代码（无需函数包裹，支持顶层 await）
    * @param {string|null} projectDir - 当前项目目录（相对路径基准）
+   * @param {number|null} windowId - 当前对话窗口 id（attachFile 等需要窗口上下文的工具使用）
    * @returns {Promise<{success: boolean, output?: string, error?: string}>}
    */
-  async run(code, projectDir) {
+  async run(code, projectDir, windowId) {
     if (!code || typeof code !== 'string' || !code.trim()) {
       return { success: false, error: '无效的 JS 代码' };
     }
@@ -279,7 +283,7 @@ class JsRunner {
           result = { success: false, error: '未知工具: ' + op };
         } else {
           try {
-            result = await tool.execute(Object.assign({}, args, { projectDir }));
+            result = await tool.execute(Object.assign({}, args, { projectDir, currentWindowId: windowId }));
           } catch (err) {
             result = { success: false, error: '工具 ' + op + ' 执行异常: ' + (err.message || String(err)) };
           }

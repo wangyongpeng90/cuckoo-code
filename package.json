@@ -69,6 +69,7 @@
       "output": "dist"
     },
     "win": {
+      "icon": "build/icon.png",
       "target": [
         "nsis",
         "portable",
@@ -77,6 +78,7 @@
       "artifactName": "cuckoo-code-win-v${version}-${arch}.${ext}"
     },
     "mac": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "dmg",

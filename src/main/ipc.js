@@ -108,8 +108,10 @@ function registerIpcHandlers() {
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
     const selectedDir = store ? store.state.selectedProjectDir : null;
+    const win = ctx ? ctx.win : null;
+    const windowId = win && !win.isDestroyed() ? win.id : null;
     try {
-      const result = await toolRegistry.execute(toolName, { ...params, projectDir: selectedDir });
+      const result = await toolRegistry.execute(toolName, { ...params, projectDir: selectedDir, currentWindowId: windowId });
       return { callId, success: result.success, data: result.data, error: result.error };
     } catch (err) {
       return { callId, success: false, error: err.message };
@@ -160,8 +162,10 @@ function registerIpcHandlers() {
     const ctx = windowState.getContextByWebContents(event.sender);
     const store = ctx ? ctx.sessionStore : null;
     const selectedDir = store ? store.state.selectedProjectDir : null;
+    const win = ctx ? ctx.win : null;
+    const windowId = win && !win.isDestroyed() ? win.id : null;
     try {
-      const result = await jsRunner.run(code, selectedDir);
+      const result = await jsRunner.run(code, selectedDir, windowId);
       return { callId, ...result };
     } catch (err) {
       return { callId, success: false, error: err.message };
