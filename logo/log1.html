@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cuckoo Code · Logo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0A0E17;
+    --fg: #FFFFFF;
+  }
+
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 26px;
+    background: var(--bg);
+    font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+
+  .logo { width: 190px; height: 190px; color: var(--fg); }
+  .logo svg { width: 100%; height: 100%; display: block; }
+
+  .brand {
+    font-size: 24px;
+    letter-spacing: 10px;
+    font-weight: 700;
+    color: var(--fg);
+    text-indent: 10px;
+  }
+
+  .slogan {
+    font-size: 11px;
+    letter-spacing: 7px;
+    color: rgba(255,255,255,0.35);
+    text-indent: 7px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="logo">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" aria-label="Cuckoo Code">
+      <defs>
+        <!-- 用鸟巢的上沿把蛋的下半部分切掉 -->
+        <mask id="nestCut">
+          <rect width="256" height="256" fill="#fff"/>
+          <path d="M37 118 Q128 198 219 118 L219 256 L37 256 Z" fill="#000"/>
+        </mask>
+      </defs>
+
+      <!-- 两个蛋：一大一小 -->
+      <g mask="url(#nestCut)" fill="currentColor">
+        <ellipse cx="102" cy="119" rx="30" ry="44"/>
+        <ellipse cx="164" cy="135" rx="20" ry="28"/>
+      </g>
+
+      <!-- 鸟巢：一根线，两端圆头，中间略粗 -->
+      <path d="M37 112
+               Q128 189 219 112
+               L219 118
+               Q128 200 37 118 Z"
+            fill="currentColor"/>
+    </svg>
+  </div>
+
+  <div class="brand">CUCKOO</div>
+  <div class="slogan">鸠 占 鹊 巢</div>
+
+</body>
+</html>
