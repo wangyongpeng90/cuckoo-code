@@ -13,4 +13,6 @@ module.exports = {
   sendDelayMax: 4000,
   // 当前项目目录（null 表示未初始化）
   currentProjectDir: null,
+  // 子 Agent 窗口标识（由 main 通过 additionalArguments 注入；主窗口为 null）
+  subagentId: null,
 };

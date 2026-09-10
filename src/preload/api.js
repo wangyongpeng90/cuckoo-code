@@ -68,6 +68,24 @@ let electronAPI = {
   getMcpTools: () => {
     return ipcRenderer.invoke('get-mcp-tools');
   },
+  notifySubagentReady: (subagentId) => {
+    return ipcRenderer.invoke('subagent-ready', { subagentId });
+  },
+  notifySubagentResult: (payload) => {
+    return ipcRenderer.invoke('subagent-candidate-result', payload);
+  },
+  getAgentList: () => {
+    return ipcRenderer.invoke('get-agent-list');
+  },
+  focusSubagentWindow: (windowId) => {
+    return ipcRenderer.invoke('focus-subagent-window', { windowId });
+  },
+  subagentAbort: (windowId) => {
+    return ipcRenderer.invoke('subagent-abort', { windowId });
+  },
+  onSubagentStatus: (callback) => {
+    ipcRenderer.on('subagent-status', (_event, payload) => callback(payload));
+  },
   // ========== 平台相关 API ==========
   listProviders: () => {
     return ipcRenderer.invoke('list-providers');

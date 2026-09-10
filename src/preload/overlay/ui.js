@@ -331,6 +331,11 @@ function updateHomeMode() {
  * 显示首次使用提示浮窗（居中）
  */
 function showFirstTimeDialog() {
+  // 子 Agent 窗口不显示首次使用提示（projectDir 由主进程 pendingProjectDir 注入，无需用户操作）
+  if (state.subagentId) {
+    hideFirstTimeDialog();
+    return;
+  }
   if (state.currentProjectDir) {
     hideFirstTimeDialog();
     return;

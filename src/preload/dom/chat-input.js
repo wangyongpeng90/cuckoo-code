@@ -270,6 +270,54 @@ function fallbackSend(provider, input) {
     console.log('[Cuckoo Code] 已通过 Enter 键触发发送 (未找到发送按钮)');
   }
 }
+// 子 Agent 输入框锁定状态（事件拦截，不用 disabled 避免破坏自动填发）
+let subagentInputLocked = false;
+let subagentLockHandlers = [];
+
+/**
+ * 锁定子 Agent 输入框：捕获阶段拦截用户键盘/粘贴事件。
+ * 不设 disabled 属性——textarea disabled 会挡掉 React 发送处理器，
+ * contenteditable=false 会让 execCommand('insertText') 失效。
+ */
+function lockInputArea(input) {
+  if (subagentInputLocked) return;
+  subagentInputLocked = true;
+
+  const blockUserInput = (e) => {
+    // 只拦真实用户输入，程序化事件（isTrusted=false）不受影响
+    if (e.isTrusted) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  };
+
+  input.addEventListener('keydown', blockUserInput, true);
+  input.addEventListener('keyup', blockUserInput, true);
+  input.addEventListener('input', blockUserInput, true);
+  input.addEventListener('paste', blockUserInput, true);
+  input.addEventListener('beforeinput', blockUserInput, true);
+
+  subagentLockHandlers.push({ input, blockUserInput });
+  console.log('[Cuckoo Code] 子 Agent 输入框已锁定（拦截用户输入）');
+}
+
+/**
+ * 解锁子 Agent 输入框（任务结束/abort 时调用；completed 关窗场景下可不调用，窗口销毁自动清理）。
+ */
+function unlockInputArea() {
+  if (!subagentInputLocked) return;
+  for (const { input, blockUserInput } of subagentLockHandlers) {
+    input.removeEventListener('keydown', blockUserInput, true);
+    input.removeEventListener('keyup', blockUserInput, true);
+    input.removeEventListener('input', blockUserInput, true);
+    input.removeEventListener('paste', blockUserInput, true);
+    input.removeEventListener('beforeinput', blockUserInput, true);
+  }
+  subagentLockHandlers = [];
+  subagentInputLocked = false;
+  console.log('[Cuckoo Code] 子 Agent 输入框已解锁');
+}
+
 /**
  * 注册主进程消息监听（initial-prompt）
  * 与原 preload.js 顶层注册时机一致：preload 入口加载时同步调用。
@@ -293,6 +341,50 @@ ipcRenderer.on('initial-prompt', (_event, content) => {
     }
   }
 });
+
+// 监听子 Agent 追问/提醒消息（subagent-reminder）
+ipcRenderer.on('subagent-reminder', (_event, { message }) => {
+  if (!message || typeof message !== 'string') return;
+  const input = findInputArea();
+  if (!input) {
+    console.log('[Cuckoo Code] 子 Agent 提醒到达，但未找到输入框');
+    return;
+  }
+  sendToChat(message, '子Agent提醒', 1500);
+});
+
+// 监听子 Agent 任务消息（subagent-task）
+ipcRenderer.on('subagent-task', (_event, { task }) => {
+  if (!task || typeof task !== 'string') return;
+
+  // 等输入框出现再锁定+发送（最多 30 次 × 500ms = 15s），复用 initial-prompt 的等待模式
+  let attempts = 0;
+  const maxAttempts = 30;
+  const checkInterval = setInterval(() => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(checkInterval);
+      console.log('[Cuckoo Code] 子 Agent 任务等待输入框超时（15s），消息丢弃');
+      return;
+    }
+
+    try {
+      const input = findInputArea();
+      if (!input) return;
+
+      clearInterval(checkInterval);
+      lockInputArea(input); // 6.3：条件禁用（检测到输入框后才锁，登录表单不锁）
+      const sent = sendToChat(task, '子Agent任务', 1500);
+      if (!sent) {
+        console.log('[Cuckoo Code] 子 Agent 任务填入失败');
+        unlockInputArea();
+      }
+    } catch (err) {
+      clearInterval(checkInterval);
+      console.error('[Cuckoo Code] 子 Agent 任务发送异常:', err);
+    }
+  }, 500);
+});
 }
 
 
@@ -309,4 +401,6 @@ module.exports = {
   waitForInitialPromptAndSend,
   triggerSend,
   registerIpcListeners,
+  lockInputArea,
+  unlockInputArea,
 };

@@ -116,9 +116,12 @@
       "!build",
       "!**/*.md",
       "!LICENSE",
+      "!**/backup/**",
+      "!coverage.lcov",
       "systemPrompt.md",
       "tools/rules.md",
-      "src/prompt/*.md"
+      "src/prompt/*.md",
+      "agents/*.md"
     ]
   },
   "dependencies": {

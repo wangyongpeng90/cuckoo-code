@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { installElectronMock } = require('../helpers/mock-electron');
 installElectronMock();
-const { getDirectoryTree, IGNORED_DIRS } = require('../../src/main/project-context');
+const { getDirectoryTree, IGNORED_DIRS, buildPrompt } = require('../../src/main/project-context');
 
 const tmpRoot = path.join(process.cwd(), 'test', 'tmp', 'tree');
 
@@ -42,4 +42,15 @@ test('IGNORED_DIRS 包含关键目录', () => {
   for (const d of ['node_modules', '.git', 'dist', 'build']) {
     assert.ok(IGNORED_DIRS.has(d));
   }
+});
+
+test('buildPrompt 透传 MCP 章节（C-1 防回归）', () => {
+  const mcpSection = '## MCP 能力\n\nmcpListServers 测试标记';
+  const out = buildPrompt('deepseek', process.cwd(), mcpSection);
+  assert.ok(out.includes('mcpListServers 测试标记'), 'MCP 章节应透传到输出');
+});
+
+test('buildPrompt 默认空 MCP 不追加（子 Agent 场景）', () => {
+  const out = buildPrompt('deepseek', process.cwd());
+  assert.ok(!out.includes('{{MCP_SECTION}}'), '占位符应被替换（空值）');
 });

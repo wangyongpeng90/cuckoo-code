@@ -19,6 +19,9 @@ const { decodeOutput, normalizeCommand } = require('./decodeOutput');
 const SYNC_TIMEOUT = 30 * 1000;
 // 整体运行截止时间（配合宿主桥接检查，覆盖 async 死循环）
 const RUN_DEADLINE = 60 * 1000;
+// 长时工具：自身具备独立超时机制（如 subagent 默认 30 分钟），
+// 调用期间豁免 JsRunner 的整体 60s 超时（双闸门豁免）。
+const LONG_RUNNING_TOOLS = new Set(['subagent']);
 // 输出长度上限
 const OUTPUT_LIMIT = 20000;
 
@@ -151,6 +154,14 @@ const BOOTSTRAP = [
 "  globalThis.injectJS = async function (windowId, code) {",
 "    return await __call('inject_js', { windowId: windowId, code: code });",
 "  };",
+"  globalThis.subagent = async function (options) {",
+"    options = options || {};",
+"    return await __call('subagent', {",
+"      agentType: options.agentType,",
+"      task: options.task,",
+"      timeoutMs: options.timeoutMs",
+"    });",
+"  };",
 "",
 "  if (!globalThis.projectDir) {",
 "    globalThis.log('[提示] 尚未初始化项目目录，相对路径将基于系统目录解析。可点击覆盖层“初始化项目”。');",
@@ -238,8 +249,12 @@ class JsRunner {
   /**
    * @param {import('./ToolRegistry').ToolRegistry} registry 工具注册表
    */
-  constructor(registry) {
+  constructor(registry, options = {}) {
     this.registry = registry;
+    // 可注入的整体运行截止时间（测试用），默认 60s
+    this.runDeadlineMs = typeof options.runDeadlineMs === 'number' && options.runDeadlineMs > 0
+      ? options.runDeadlineMs
+      : RUN_DEADLINE;
   }
 
   /**
@@ -253,13 +268,22 @@ class JsRunner {
       return { success: false, error: '无效的 JS 代码' };
     }
 
-    const startTime = Date.now();
-    const deadlineMs = RUN_DEADLINE;
+    let startTime = Date.now();
+    const deadlineMs = this.runDeadlineMs;
+    let settleTimer = null;
+    let timeoutReject = null;
 
     // 唯一跨域桥接函数：AI 代码中的每个工具调用都通过它回到主进程执行。
     // 注意：该函数绝不向沙箱抛出宿主对象（错误一律包装成 { success:false, error } 结果），
     // 避免沙箱内出现宿主 realm 的 Error / Function 逃逸通道。
     const hostBridge = async (op, argsJson) => {
+      // 长时工具豁免：调用前挂起整体超时定时器，返回后重置计时基准并重启
+      const isLongRunning = LONG_RUNNING_TOOLS.has(op);
+      if (isLongRunning && settleTimer) {
+        clearTimeout(settleTimer);
+        settleTimer = null;
+      }
+
       if (Date.now() - startTime > deadlineMs) {
         return JSON.stringify({ success: false, error: 'JS 脚本执行超时（' + Math.round(deadlineMs / 1000) + ' 秒）' });
       }
@@ -285,6 +309,18 @@ class JsRunner {
           }
         }
       }
+
+      // 长时工具返回：重置超时基准，并重启整体超时定时器（配对）
+      if (isLongRunning) {
+        startTime = Date.now();
+        if (timeoutReject) {
+          settleTimer = setTimeout(
+            () => timeoutReject(new Error('JS 脚本执行超时（' + Math.round(deadlineMs / 1000) + ' 秒）')),
+            deadlineMs
+          );
+        }
+      }
+
       return JSON.stringify(result);
     };
 
@@ -326,9 +362,9 @@ class JsRunner {
     // 包装为 async IIFE：支持顶层 await、return 返回值
     const script = new vm.Script('(async () => {\n' + code + '\n})()', { filename: 'cuckoo-js-tool-script.js' });
 
-    let settleTimer = null;
     try {
       const deadline = new Promise((_resolve, reject) => {
+        timeoutReject = reject;
         settleTimer = setTimeout(
           () => reject(new Error('JS 脚本执行超时（' + Math.round(deadlineMs / 1000) + ' 秒）')),
           deadlineMs

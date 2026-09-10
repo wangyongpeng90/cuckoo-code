@@ -34,7 +34,11 @@ temp/
 
 # Project specific
 .cuckooCode/
+.cuckoo/
 .claude/
+
+# Local timestamped backups (workflow-mandated, never committed)
+**/backup/
 
 # Coverage reports
 coverage.lcov

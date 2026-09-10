@@ -303,3 +303,41 @@ declare function mcpListServers(): Promise<string>;
  * @throws server 不存在或连接失败时抛出异常
  */
 declare function mcpGetTools(serverName: string): Promise<string>;
+
+// ================= 子 Agent 委派 =================
+
+/** subagent 的入参 */
+interface SubagentOptions {
+  /** 子 Agent 模板 id（对应 agents/ 目录下的 .md 文件名，不含扩展名）。省略则用通用子 Agent。 */
+  agentType?: string;
+  /** 委派给子 Agent 的任务描述（必填）。子 Agent 是无状态的，任务描述要自包含、边界清晰。 */
+  task: string;
+  /** 任务总超时（毫秒）。默认 1800000（30 分钟）。 */
+  timeoutMs?: number;
+}
+
+/** subagent 的返回值 */
+interface SubagentResult {
+  /** 完整结果的落盘文件绝对路径（结果统一写入 .cuckoo/subagent-results/{taskId}.md） */
+  resultFile: string;
+  /** 结果前 500 字预览，供快速判断交付内容 */
+  preview: string;
+  /** 质量检测/真实性校验发现的问题（Task 9 后可能存在） */
+  warning?: string;
+}
+
+/**
+ * 委派一个边界清晰的子任务给独立子 Agent 窗口执行，并阻塞等待其最终交付。
+ * 子 Agent 拥有与主 Agent 相同的工具能力（read/write/bash 等）。
+ *
+ * 使用要点：
+ * 1. task 要写清楚交付格式：让子 Agent 在 subagent_result 代码块中给出「纯文本/JSON」交付物。
+ * 2. 返回值是对象，不是字符串——用 log(result.preview) 看摘要，用 read(result.resultFile) 读完整内容。
+ * 3. 任务完成后子窗口会自动关闭；不要依赖子 Agent 保留上下文，续作时把上一轮 resultFile 路径写进 task。
+ * 4. 串行执行：同一时间只会有一个子 Agent 在跑。
+ *
+ * @param options 入参：agentType / task / timeoutMs
+ * @returns Promise<SubagentResult>（工具层统一包装：{ resultFile, preview, warning? }）
+ * @throws task 为空、agentType 不存在、子 Agent 执行失败或超时
+ */
+declare function subagent(options: SubagentOptions): Promise<SubagentResult>;
