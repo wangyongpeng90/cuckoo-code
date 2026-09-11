@@ -1,6 +1,6 @@
 {
   "name": "cuckoo-code",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "DeepSeek 桌面应用——内嵌浏览器，自动识别 AI 回复中的命令和工具调用并执行",
   "main": "main.js",
   "scripts": {

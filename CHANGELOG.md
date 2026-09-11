@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.8] - 2026-09-11
+
+### Changed
+- **DeepSeek / Claude / ChatGPT 三个平台的 AI 回复获取，从 DOM 抓取改为网络请求拦截**
+  - 在页面主世界（main world）注入拦截器，被动观察平台自身的 completion SSE 流，
+    直接解析回复文本，不再依赖 MutationObserver + DOM 稳定性轮询
+  - 仅旁路读取（response.clone / responseText 快照），不修改请求与响应
+  - 正文提取区分并排除 THINK / reasoning 片段
+  - DeepSeek：解析 response/fragments 的 THINK / RESPONSE 分片
+  - Claude：解析 content_block_delta 的 text_delta（忽略 thinking_delta）
+  - ChatGPT：解析 /backend-api/f/conversation 的裸 v 追加、patch 批量操作、
+    message 快照（仅采纳 assistant）与 message/status 结束信号
+  - 工具执行结果回传仍沿用原有模拟输入框发送方式
+
 ## [0.3.6] - 2026-09-08
 
 ### Fixed
