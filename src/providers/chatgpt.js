@@ -12,6 +12,8 @@ const MIN_GENERATING_MS = 1500;
 module.exports = {
   id: 'chatgpt',
   name: 'ChatGPT',
+  // 使用网络请求拦截方式获取 AI 回复（替代 DOM 抓取）
+  useIntercept: true,
   homeUrl: 'https://chatgpt.com/',
   sessionUrlBase: 'https://chatgpt.com/c/',
 

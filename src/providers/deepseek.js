@@ -15,6 +15,8 @@ const ACTION_BTN_SELECTOR =
 module.exports = {
   id: 'deepseek',
   name: 'DeepSeek',
+  // 使用网络请求拦截方式获取 AI 回复（替代 DOM 抓取）
+  useIntercept: true,
   homeUrl: 'https://chat.deepseek.com/',
   sessionUrlBase: 'https://chat.deepseek.com/a/chat/s/',
 

@@ -7,6 +7,8 @@ let stopBtnVisible = false;
 module.exports = {
   id: 'claude',
   name: 'Claude',
+  // 使用网络请求拦截方式获取 AI 回复（替代 DOM 抓取）
+  useIntercept: true,
   homeUrl: 'https://claude.ai/new',
   sessionUrlBase: 'https://claude.ai/chat/',
 
