@@ -164,12 +164,18 @@ function chatgptHookInstaller() {
     };
   }
 
-  // 调试：每个请求打印前 3 个原始事件，便于定位格式
+  // 调试：打印前若干条原始 chunk/事件，便于定位格式
   var debugCount = 0;
+  var rawDebugCount = 0;
   function debugRaw(parsed) {
     if (debugCount >= 3) return;
     debugCount++;
     try { console.log('[Cuckoo Code][GPT-Hook] raw#' + debugCount + ':', JSON.stringify(parsed).slice(0, 800)); } catch (e) {}
+  }
+  function debugRawRaw(msg) {
+    if (rawDebugCount >= 6) return;
+    rawDebugCount++;
+    try { console.log('[Cuckoo Code][GPT-Hook] chunk#' + rawDebugCount + ':', String(msg).slice(0, 1200)); } catch (e) {}
   }
 
   function observeBody(body) {
@@ -185,12 +191,16 @@ function chatgptHookInstaller() {
       if (r.done) { extractor.markDone(); return; }
       if (r.data == null) return;
       var parsed;
-      try { parsed = JSON.parse(r.data); } catch (e) { return; }
+      try { parsed = JSON.parse(r.data); } catch (e) {
+        debugRawRaw('[解析失败] ' + r.data);
+        return;
+      }
       debugRaw(parsed);
       extractor.consume(parsed);
     }
 
     function feed(chunk) {
+      debugRawRaw('[chunk] ' + chunk.slice(0, 1000));
       var frames = frameDecoder.push(chunk);
       for (var i = 0; i < frames.length; i++) flushFrame(frames[i]);
       if (extractor.finished && !dispatched) {
