@@ -4,9 +4,12 @@
  * 提取 AI 回复文本，通过 'cuckoo-ai-response' CustomEvent 交给隔离世界。
  * 仅旁路读取，不修改请求与响应。
  *
- * 兼容两种流格式：
- *   1) 快照格式：每个事件含 message.content.parts（累积全文）→ 直接替换
- *   2) patch 格式：{"p":"/message/content/parts/0","o":"append","v":"..."} → 追加
+ * 实测流格式（/backend-api/f/conversation）：
+ *   data: {"v":"文本"}                                      → 裸 v，追加正文
+ *   data: {"p":"","o":"add","v":{"message":{...}}}          → 消息快照
+ *   data: {"p":"","o":"patch","v":[ {p,o,v}, ... ]}         → 批量操作
+ *   data: {"p":"/message/content/parts/0","o":"append","v":"..."} → 正文追加
+ *   data: {"p":"/message/status","o":"replace","v":"finished_successfully"} → 结束
  */
 function chatgptHookInstaller() {
   var MARKER = '__cuckooChatgptHookInstalled__';
@@ -80,7 +83,6 @@ function chatgptHookInstaller() {
   function createExtractor() {
     var text = '';
     var finished = false;
-    var sawSnapshot = false;
 
     function extractParts(content) {
       if (!content || !Array.isArray(content.parts)) return null;
@@ -93,89 +95,54 @@ function chatgptHookInstaller() {
       return out;
     }
 
-    // 递归寻找快照文本（message.content.parts / content.parts）
-    function findSnapshot(node) {
-      if (!node || typeof node !== 'object') return null;
-      if (node.message && node.message.content) {
-        var r = extractParts(node.message.content);
-        if (r !== null) return r;
-      }
-      if (node.content && Array.isArray(node.content.parts)) {
-        var r2 = extractParts(node.content);
-        if (r2 !== null) return r2;
-      }
-      if (node.o === 'BATCH' && Array.isArray(node.v)) {
-        for (var i = 0; i < node.v.length; i++) {
-          var rr = findSnapshot(node.v[i]);
-          if (rr !== null) return rr;
-        }
-      }
-      return null;
-    }
-
-    function isFinish(node) {
-      if (!node || typeof node !== 'object') return false;
-      if (node.type === 'message_stream_complete' || node.type === 'message_stream_completed') return true;
-      if (node.status === 'finished_successfully') return true;
-      if (node.message && node.message.status === 'finished_successfully') return true;
-      if (node.o === 'BATCH' && Array.isArray(node.v)) {
-        for (var i = 0; i < node.v.length; i++) { if (isFinish(node.v[i])) return true; }
-      }
-      return false;
-    }
-
-    function isNoisePath(p) {
-      if (typeof p !== 'string') return false;
-      return /metadata|recipient|channel|author|content_type|thinking|reasoning/i.test(p);
-    }
-
-    function applyPatch(node) {
+    function applyOp(node) {
       if (!node || typeof node !== 'object') return;
-      if (node.o === 'BATCH' && Array.isArray(node.v)) {
-        for (var i = 0; i < node.v.length; i++) applyPatch(node.v[i]);
-        return;
-      }
-      var p = node.p, o = node.o, v = node.v;
-      if (typeof p !== 'string') return;
-      if (isNoisePath(p)) return;
-      if (!/content\/parts\/\d+$/.test(p)) return;
-      if (typeof v !== 'string') return;
-      if (o === 'append' || o === 'add') text += v;
-      else text = v;
-    }
 
-    function consume(parsed) {
-      if (!parsed || typeof parsed !== 'object') return;
-      if (isFinish(parsed)) finished = true;
-      var snap = findSnapshot(parsed);
-      if (snap !== null) {
-        sawSnapshot = true;
-        text = snap; // 快照累积，直接替换
+      // 1) 批量操作：o='patch' / 'BATCH'，v 为操作数组
+      if (Array.isArray(node.v) && (node.o === 'patch' || node.o === 'BATCH')) {
+        for (var i = 0; i < node.v.length; i++) applyOp(node.v[i]);
         return;
       }
-      if (!sawSnapshot) applyPatch(parsed);
+
+      // 2) 消息快照：v.message（仅采纳 assistant）
+      if (node.v && typeof node.v === 'object' && node.v.message) {
+        var m = node.v.message;
+        var role = m.author && m.author.role;
+        if (role === 'assistant') {
+          var snap = extractParts(m.content);
+          if (snap !== null) text = snap;
+        }
+        return;
+      }
+
+      // 3) 路径操作
+      if (typeof node.p === 'string' && node.p !== '') {
+        if (node.p === '/message/status' && node.v === 'finished_successfully') { finished = true; return; }
+        if (node.p === '/message/end_turn' && node.v === true) { finished = true; return; }
+        if (/\/message\/content\/parts\/\d+$/.test(node.p)) {
+          if (typeof node.v === 'string') {
+            if (node.o === 'append' || node.o === 'add') text += node.v;
+            else text = node.v;
+          }
+        }
+        return;
+      }
+
+      // 4) 裸 v 字符串（无有效 p）：追加正文
+      if (typeof node.v === 'string') { text += node.v; return; }
+
+      // 5) 类型化结束事件
+      if (node.type === 'message_stream_complete' || node.type === 'message_stream_completed') {
+        finished = true;
+      }
     }
 
     return {
-      consume: consume,
+      consume: function (parsed) { applyOp(parsed); },
       markDone: function () { finished = true; },
       get text() { return text; },
       get finished() { return finished; }
     };
-  }
-
-  // 调试：打印前若干条原始 chunk/事件，便于定位格式
-  var debugCount = 0;
-  var rawDebugCount = 0;
-  function debugRaw(parsed) {
-    if (debugCount >= 3) return;
-    debugCount++;
-    try { console.log('[Cuckoo Code][GPT-Hook] raw#' + debugCount + ':', JSON.stringify(parsed).slice(0, 800)); } catch (e) {}
-  }
-  function debugRawRaw(msg) {
-    if (rawDebugCount >= 6) return;
-    rawDebugCount++;
-    try { console.log('[Cuckoo Code][GPT-Hook] chunk#' + rawDebugCount + ':', String(msg).slice(0, 1200)); } catch (e) {}
   }
 
   function observeBody(body) {
@@ -191,16 +158,11 @@ function chatgptHookInstaller() {
       if (r.done) { extractor.markDone(); return; }
       if (r.data == null) return;
       var parsed;
-      try { parsed = JSON.parse(r.data); } catch (e) {
-        debugRawRaw('[解析失败] ' + r.data);
-        return;
-      }
-      debugRaw(parsed);
+      try { parsed = JSON.parse(r.data); } catch (e) { return; }
       extractor.consume(parsed);
     }
 
     function feed(chunk) {
-      debugRawRaw('[chunk] ' + chunk.slice(0, 1000));
       var frames = frameDecoder.push(chunk);
       for (var i = 0; i < frames.length; i++) flushFrame(frames[i]);
       if (extractor.finished && !dispatched) {
@@ -238,7 +200,6 @@ function chatgptHookInstaller() {
       var method = (init && init.method) || (input && input.method) || 'GET';
       var p = origFetch.apply(this, arguments);
       if (!isCompletion(url, method)) return p;
-      console.log('[Cuckoo Code][GPT-Hook] 命中 completion 请求:', url);
       return p.then(function (response) {
         try {
           if (response && response.body) observeBody(response.clone().body);
@@ -259,7 +220,6 @@ function chatgptHookInstaller() {
   XMLHttpRequest.prototype.send = function () {
     var info = xhrInfo.get(this);
     if (info && isCompletion(info.url, info.method)) {
-      console.log('[Cuckoo Code][GPT-Hook] 命中 completion 请求(XHR):', info.url);
       try { observeXhr(this); } catch (e) { /* ignore */ }
     }
     return origSend.apply(this, arguments);
@@ -277,7 +237,6 @@ function chatgptHookInstaller() {
       if (r.data == null) return;
       var parsed;
       try { parsed = JSON.parse(r.data); } catch (e) { return; }
-      debugRaw(parsed);
       extractor.consume(parsed);
     }
 
