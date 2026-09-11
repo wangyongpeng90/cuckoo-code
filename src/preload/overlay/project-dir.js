@@ -48,6 +48,7 @@ function initProjectDirSection() {
 function updateProjectDirDisplay(dirPath) {
   state.currentProjectDir = dirPath || null;
   const display = document.getElementById('cuckoo-project-dir-display');
+  const section = document.querySelector('.cuckoo-project-dir-section');
   if (display) {
     const span = display.querySelector('.cuckoo-dir-path');
     if (span) {
@@ -55,7 +56,6 @@ function updateProjectDirDisplay(dirPath) {
     }
   }
   // 控制整个section的显示隐藏
-  const section = document.querySelector('.cuckoo-project-dir-section');
   if (section) {
     if (dirPath && dirPath.trim() !== '') {
       section.style.display = '';

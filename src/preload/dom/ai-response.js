@@ -6,9 +6,10 @@ const { getProviderByUrl } = require('../../../src/providers');
 
 async function isAIResponseComplete() {
   try {
-    const provider = getProviderByUrl(window.location.href);
+    const url = window.location.href;
+    const provider = getProviderByUrl(url);
     if (!provider || typeof provider.isResponseComplete !== 'function') {
-      console.warn('[Cuckoo Code] 当前平台未提供 isResponseComplete 方法');
+      console.warn('[Cuckoo Code] 当前平台未提供 isResponseComplete 方法, url=' + url + ', provider=' + (provider ? provider.id : 'null'));
       return false;
     }
     const result = await provider.isResponseComplete();

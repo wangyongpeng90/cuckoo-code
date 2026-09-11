@@ -23,6 +23,14 @@ const RENDERER_LOG_DIR = app.isPackaged
   : path.join(app.getPath('userData'), 'wyp', 'log');
 if (RENDERER_LOG_DIR) {
   fs.mkdirSync(RENDERER_LOG_DIR, { recursive: true });
+  // 开发环境每次启动清空平台日志，避免无限累积（与 start.js 清空 electron.log 一致）
+  try {
+    for (const f of fs.readdirSync(RENDERER_LOG_DIR)) {
+      if (f.endsWith('.log')) fs.writeFileSync(path.join(RENDERER_LOG_DIR, f), '', 'utf-8');
+    }
+  } catch (err) {
+    console.warn('[Cuckoo Code] 清空平台日志失败:', err.message);
+  }
 }
 
 const { registerIpcHandlers } = require('./ipc');
@@ -398,7 +406,7 @@ ipcMainForProfile.handle('replace-provider', async (event, { providerId }) => {
   }
 });
 
-// 用户在平台选择页选择平台后，绑定 profile 并加载平台首页
+// 用户在平台选择页选择平台后，绑定 profile 并重建窗口（partition 必须随 profile 更新）
 ipcMainForProfile.handle('select-platform', async (event, { providerId }) => {
   if (!providerId) return { success: false, error: '缺少平台ID' };
   const ctx = windowState.getContextByWebContents(event.sender);
@@ -408,15 +416,17 @@ ipcMainForProfile.handle('select-platform', async (event, { providerId }) => {
   if (!provider) return { success: false, error: '平台不存在: ' + providerId };
 
   // 更新该窗口 profile 的 providerId 和 partition
-  profileManager.updateProfileProvider(ctx.profileId, providerId);
+  const updatedProfile = profileManager.updateProfileProvider(ctx.profileId, providerId);
+  if (!updatedProfile) return { success: false, error: '更新 profile 失败' };
 
-  // 记录窗口上下文 providerId
-  ctx.providerId = providerId;
-
-  // 原地跳转到平台首页
-  if (ctx.win && !ctx.win.isDestroyed()) {
-    await ctx.win.loadURL(provider.homeUrl);
+  // 关闭旧窗口（其 session 仍是旧 partition）
+  const oldWin = ctx.win;
+  if (oldWin && !oldWin.isDestroyed()) {
+    oldWin.destroy();
   }
+
+  // 用新 profile（含新 partition）重建窗口
+  createWindow(updatedProfile);
   return { success: true };
 });
 
