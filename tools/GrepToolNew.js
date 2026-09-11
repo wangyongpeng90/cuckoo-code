@@ -83,6 +83,9 @@ function runRipgrep(args, cwd) {
       const child = spawn(rgPath, ['--no-config', ...args], {
         cwd,
         windowsHide: true,
+        // stdin 必须忽略：无显式 path 参数时，rg 若发现 stdin 是管道（非 TTY）
+        // 会改为从 stdin 读取搜索目标，导致无限等待、grep 卡死。
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
       let stdout = '';
       let stderr = '';
