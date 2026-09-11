@@ -85,8 +85,33 @@ function loadProviderFromFile(filePath) {
   return provider;
 }
 
+// 自定义 Provider 缓存：getProviderByUrl 会被高频调用（轮询、DOM 检测等），
+// 若每次都重新读配置 + require 文件会刷屏日志并浪费性能。
+// 缓存挂在 process 上：preload 在多个 frame / 多次导航时模块可能被重新求值，
+// 模块级变量会失效，而 process 在同一渲染进程内始终共享。
+// 缓存按 userData 路径分桶，路径变化时自动失效。
+// 仅在导入/替换/删除时失效。
+function getCurrentCacheKey() {
+  return getUserDataPath() || '__none__';
+}
+
+function getCacheHolder() {
+  const key = getCurrentCacheKey();
+  if (!process.__cuckooCustomProvidersCache ||
+      process.__cuckooCustomProvidersCache.key !== key) {
+    process.__cuckooCustomProvidersCache = { key, providers: null };
+  }
+  return process.__cuckooCustomProvidersCache;
+}
+
+function invalidateCustomProvidersCache() {
+  getCacheHolder().providers = null;
+}
+
 function loadCustomProviders() {
   if (isRenderer && !rendererUserDataPath) return [];
+  const cache = getCacheHolder();
+  if (cache.providers) return cache.providers;
   const config = readConfig();
   const providers = [];
   for (const p of config.paths || []) {
@@ -103,11 +128,11 @@ function loadCustomProviders() {
       }
       provider._customPath = p;
       providers.push(provider);
-      console.log('[CustomProvider] 已加载:', provider.id, '来自', p);
     } catch (err) {
       console.error('[CustomProvider] 加载失败:', p, err.message);
     }
   }
+  cache.providers = providers;
   return providers;
 }
 
@@ -147,6 +172,7 @@ function importCustomProvider(sourcePath, options = {}) {
   }
   writeConfig(config);
 
+  invalidateCustomProvidersCache();
   return { success: true, targetPath, provider };
 }
 
@@ -176,6 +202,7 @@ function removeCustomProviderPath(filePath) {
   const config = readConfig();
   config.paths = (config.paths || []).filter(p => p !== filePath);
   writeConfig(config);
+  invalidateCustomProvidersCache();
 
   const dir = getCustomProvidersDir();
   if (filePath && filePath.startsWith(dir + path.sep) && fs.existsSync(filePath)) {
