@@ -3,15 +3,16 @@
  * 被动观察 chatgpt.com / chat.openai.com 的 conversation SSE 响应，
  * 提取 AI 回复文本，通过 'cuckoo-ai-response' CustomEvent 交给隔离世界。
  * 仅旁路读取，不修改请求与响应。
+ *
+ * 兼容两种流格式：
+ *   1) 快照格式：每个事件含 message.content.parts（累积全文）→ 直接替换
+ *   2) patch 格式：{"p":"/message/content/parts/0","o":"append","v":"..."} → 追加
  */
 function chatgptHookInstaller() {
   var MARKER = '__cuckooChatgptHookInstalled__';
   if (window[MARKER]) return;
   window[MARKER] = true;
 
-  // ChatGPT 流式端点：
-  //   /backend-api/conversation
-  //   /backend-api/f/conversation（新版）
   function isCompletion(url, method) {
     if (!url) return false;
     if (String(method || 'GET').toUpperCase() !== 'POST') return false;
@@ -19,7 +20,7 @@ function chatgptHookInstaller() {
       var u = new URL(url, document.baseURI);
       var host = u.hostname;
       if (host.indexOf('chatgpt.com') === -1 && host.indexOf('chat.openai.com') === -1) return false;
-      return /\/backend-api\/(f\/)?conversation$/.test(u.pathname);
+      return /\/backend-api\/(?:f\/)?conversation\/?$/.test(u.pathname);
     } catch (e) {
       return false;
     }
@@ -58,7 +59,7 @@ function chatgptHookInstaller() {
     };
   }
 
-  // 返回 { data: string | null, done: boolean }
+  // 返回 { data: string|null, done: boolean }
   function parseBlock(block) {
     if (!block || !block.trim()) return { data: null, done: false };
     var data = null;
@@ -75,64 +76,84 @@ function chatgptHookInstaller() {
     return { data: data, done: false };
   }
 
-  // ---------- 回复文本提取（ChatGPT patch 流）----------
-  // 关注：
-  //   {"p":"/message/content/parts/0","o":"append","v":"..."}  → 追加正文
-  //   {"o":"BATCH","v":[...]}                                  → 递归
-  //   {"type":"message_stream_complete"}                       → finished
-  //   data: [DONE]                                             → finished
-  // 过滤：路径含 metadata / recipient / channel / author / thinking / reasoning
+  // ---------- 回复文本提取 ----------
   function createExtractor() {
     var text = '';
     var finished = false;
+    var sawSnapshot = false;
+
+    function extractParts(content) {
+      if (!content || !Array.isArray(content.parts)) return null;
+      var out = '';
+      for (var i = 0; i < content.parts.length; i++) {
+        var p = content.parts[i];
+        if (typeof p === 'string') out += p;
+        else if (p && typeof p === 'object' && typeof p.text === 'string') out += p.text;
+      }
+      return out;
+    }
+
+    // 递归寻找快照文本（message.content.parts / content.parts）
+    function findSnapshot(node) {
+      if (!node || typeof node !== 'object') return null;
+      if (node.message && node.message.content) {
+        var r = extractParts(node.message.content);
+        if (r !== null) return r;
+      }
+      if (node.content && Array.isArray(node.content.parts)) {
+        var r2 = extractParts(node.content);
+        if (r2 !== null) return r2;
+      }
+      if (node.o === 'BATCH' && Array.isArray(node.v)) {
+        for (var i = 0; i < node.v.length; i++) {
+          var rr = findSnapshot(node.v[i]);
+          if (rr !== null) return rr;
+        }
+      }
+      return null;
+    }
+
+    function isFinish(node) {
+      if (!node || typeof node !== 'object') return false;
+      if (node.type === 'message_stream_complete' || node.type === 'message_stream_completed') return true;
+      if (node.status === 'finished_successfully') return true;
+      if (node.message && node.message.status === 'finished_successfully') return true;
+      if (node.o === 'BATCH' && Array.isArray(node.v)) {
+        for (var i = 0; i < node.v.length; i++) { if (isFinish(node.v[i])) return true; }
+      }
+      return false;
+    }
 
     function isNoisePath(p) {
       if (typeof p !== 'string') return false;
-      return /\/metadata\/|\/recipient|\/channel|\/author|\/content_type|thinking|reasoning/i.test(p);
+      return /metadata|recipient|channel|author|content_type|thinking|reasoning/i.test(p);
     }
 
-    function isAssistantTextPath(p) {
-      return typeof p === 'string' && /^\/message\/content\/parts\/\d+$/.test(p);
-    }
-
-    function applyNode(node) {
+    function applyPatch(node) {
       if (!node || typeof node !== 'object') return;
-
       if (node.o === 'BATCH' && Array.isArray(node.v)) {
-        for (var i = 0; i < node.v.length; i++) applyNode(node.v[i]);
+        for (var i = 0; i < node.v.length; i++) applyPatch(node.v[i]);
         return;
       }
-
-      // 显式结束
-      if (node.type === 'message_stream_complete' || node.type === 'message_stream_completed') {
-        finished = true;
-        return;
-      }
-
-      var p = node.p;
-      var o = node.o;
-      var v = node.v;
-
-      if (typeof p === 'string') {
-        if (isNoisePath(p)) return;
-        if (isAssistantTextPath(p) && typeof v === 'string') {
-          if (o === 'append' || o === 'add') {
-            text += v;
-          } else if (o === 'replace') {
-            text = v;
-          } else if (o === undefined || o === null) {
-            // 无操作符的覆盖
-            text = v;
-          }
-          return;
-        }
-        return; // 其他路径忽略
-      }
+      var p = node.p, o = node.o, v = node.v;
+      if (typeof p !== 'string') return;
+      if (isNoisePath(p)) return;
+      if (!/content\/parts\/\d+$/.test(p)) return;
+      if (typeof v !== 'string') return;
+      if (o === 'append' || o === 'add') text += v;
+      else text = v;
     }
 
     function consume(parsed) {
       if (!parsed || typeof parsed !== 'object') return;
-      applyNode(parsed);
+      if (isFinish(parsed)) finished = true;
+      var snap = findSnapshot(parsed);
+      if (snap !== null) {
+        sawSnapshot = true;
+        text = snap; // 快照累积，直接替换
+        return;
+      }
+      if (!sawSnapshot) applyPatch(parsed);
     }
 
     return {
@@ -141,6 +162,14 @@ function chatgptHookInstaller() {
       get text() { return text; },
       get finished() { return finished; }
     };
+  }
+
+  // 调试：每个请求打印前 3 个原始事件，便于定位格式
+  var debugCount = 0;
+  function debugRaw(parsed) {
+    if (debugCount >= 3) return;
+    debugCount++;
+    try { console.log('[Cuckoo Code][GPT-Hook] raw#' + debugCount + ':', JSON.stringify(parsed).slice(0, 800)); } catch (e) {}
   }
 
   function observeBody(body) {
@@ -157,6 +186,7 @@ function chatgptHookInstaller() {
       if (r.data == null) return;
       var parsed;
       try { parsed = JSON.parse(r.data); } catch (e) { return; }
+      debugRaw(parsed);
       extractor.consume(parsed);
     }
 
@@ -198,6 +228,7 @@ function chatgptHookInstaller() {
       var method = (init && init.method) || (input && input.method) || 'GET';
       var p = origFetch.apply(this, arguments);
       if (!isCompletion(url, method)) return p;
+      console.log('[Cuckoo Code][GPT-Hook] 命中 completion 请求:', url);
       return p.then(function (response) {
         try {
           if (response && response.body) observeBody(response.clone().body);
@@ -218,6 +249,7 @@ function chatgptHookInstaller() {
   XMLHttpRequest.prototype.send = function () {
     var info = xhrInfo.get(this);
     if (info && isCompletion(info.url, info.method)) {
+      console.log('[Cuckoo Code][GPT-Hook] 命中 completion 请求(XHR):', info.url);
       try { observeXhr(this); } catch (e) { /* ignore */ }
     }
     return origSend.apply(this, arguments);
@@ -235,6 +267,7 @@ function chatgptHookInstaller() {
       if (r.data == null) return;
       var parsed;
       try { parsed = JSON.parse(r.data); } catch (e) { return; }
+      debugRaw(parsed);
       extractor.consume(parsed);
     }
 
