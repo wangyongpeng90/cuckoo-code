@@ -25,6 +25,9 @@ const TOOL_NAMES = [
   'inject_js',
   'mcp_list_servers',
   'mcp_get_tools',
+  'skill_list',
+  'skill_load',
+  'skill_execute',
 ];
 
 /** 判断工具名是否存在（原 toolManager.tools.has(name)） */

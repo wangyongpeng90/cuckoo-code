@@ -148,5 +148,7 @@ log(r);
 ## 当前目录说明
 {{PROJECT_INTRO_SECTION}}
 
+{{SKILL_SECTION}}
+
 ---
 

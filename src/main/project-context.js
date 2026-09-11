@@ -9,6 +9,7 @@ const path = require('path');
 const windowState = require('./window');
 const { toolRegistry } = require('./tool-registry');
 const mcpClient = require('./mcp-client');
+const { getSkillManager } = require('../main/skill-manager');
 
 // 提示词模板目录
 const PROMPT_DIR = path.join(__dirname, '..', 'prompt');
@@ -221,6 +222,24 @@ async function initProject(skipPrompt = false, windowContext = null) {
     ? '---\n## 项目介绍\n' + projectIntro
     : '';
 
+  // Skill 按需加载：AI 通过 skillList() 发现、skillLoad() 加载、skillExecute() 执行
+  const skillManager = getSkillManager();
+  skillManager.unloadAll();
+
+  // Skill 章节：仅提示可用性，不自动加载
+  const skillSection = [
+    '---',
+    '## 自定义 Skill',
+    '',
+    '本项目支持自定义 Skill，可按需加载执行。',
+    '',
+    '- 调用 skillList() 查看当前项目可用的 Skill 列表',
+    '- 调用 skillLoad(name) 加载需要的 Skill（读取 SKILL.md 指令和 tool.js 函数）',
+    '- 调用 skillExecute(skill, function, args) 执行已加载 Skill 的函数',
+    '',
+    'Skill 位于 <projectDir>/.cuckoo/skills/<skill-name>/，其中 SKILL.md 为指令文件，tool.js 可选导出可执行函数。',
+  ].join('\n');
+
   // 统一替换模板中的双花括号占位符（全量替换，支持同一占位符多次出现）
   const placeholders = {
     '{{TOOL_API_TYPES}}': toolApiTypes,
@@ -229,6 +248,7 @@ async function initProject(skipPrompt = false, windowContext = null) {
     '{{PLATFORM_INFO}}': platformInfo,
     '{{PROJECT_DIR}}': selectedDir,
     '{{PROJECT_INTRO_SECTION}}': projectIntroSection,
+    '{{SKILL_SECTION}}': skillSection,
     '{{MCP_SECTION}}': mcpSection,
   };
   let combined = templateContent;

@@ -128,6 +128,9 @@ Supported tools (called through `cuckoo` code blocks):
 | `mcpListServers()` | List configured MCP servers |
 | `mcpGetTools(serverName)` | List tools of an MCP server |
 | `mcpCall(server, tool, args)` | Call an MCP tool |
+| `skillList()` | List Skills available in the current project |
+| `skillLoad(name)` | Load a Skill (returns SKILL.md instructions) |
+| `skillExecute(skill, fn, args)` | Execute a Skill's tool.js function |
 | `log(...args)` | Output intermediate results to the execution log |
 
 All file operations are relative to the currently bound project directory for safety.

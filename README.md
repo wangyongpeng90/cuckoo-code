@@ -128,9 +128,67 @@ await write("src/utils/helper.js", content.replace("formatDate", "formatTime"));
 | `mcpListServers()` | 列出已配置的 MCP server |
 | `mcpGetTools(serverName)` | 查看 MCP server 工具列表 |
 | `mcpCall(server, tool, args)` | 调用 MCP 工具 |
+| `skillList()` | 列出当前项目可用的 Skill |
+| `skillLoad(name)` | 加载 Skill（返回 SKILL.md 指令） |
+| `skillExecute(skill, fn, args)` | 执行 Skill 的 tool.js 函数 |
 | `log(...args)` | 输出中间结果到执行日志 |
 
 所有文件操作均相对于当前绑定的项目目录，确保安全。
+
+### Skill 支持
+
+自定义 Skill 让 AI 可以按需加载并执行特定领域的专业知识。Skill 存储在项目的 `.cuckoo/skills/<skill-name>/` 目录下。
+
+**Skill 结构：**
+
+```
+.cuckoo/skills/
+  my-skill/
+    SKILL.md    # 必选：指令文件（Markdown）
+    tool.js     # 可选：导出可执行函数
+```
+
+**SKILL.md** — AI 加载 Skill 后获得完整指令，指导其完成特定任务。
+
+**tool.js** — 导出异步函数，AI 通过 `skillExecute()` 调用：
+
+```js
+// tool.js
+async function analyze(args, context) {
+  const targetDir = (args && args.targetDir) || context.projectDir;
+  // ... 执行逻辑
+  return { result: 'done' };
+}
+module.exports = { analyze };
+```
+
+**Skill 工具函数：**
+
+| JS 函数 | 功能描述 |
+|----------|----------|
+| `skillList()` | 列出当前项目可用的 Skill |
+| `skillLoad(name)` | 加载 Skill（返回 SKILL.md 指令内容） |
+| `skillExecute(skill, fn, args)` | 执行 Skill 的 tool.js 函数 |
+
+AI 会自主决定何时加载和使用 Skill。加载后，SKILL.md 的指令会指导 AI 的行为。
+
+**示例：**
+
+```cuckoo
+// 查看可用 Skill
+const skills = await skillList();
+log(skills);
+
+// 加载 Skill
+const loaded = await skillLoad("my-skill");
+log(loaded);
+
+// 执行 Skill 函数
+const result = await skillExecute("my-skill", "analyze", { targetDir: "src" });
+log(result);
+```
+
+Skill 在受限沙箱中执行，仅能访问项目目录和自身目录内的文件。
 
 ---
 

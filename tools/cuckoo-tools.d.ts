@@ -303,3 +303,30 @@ declare function mcpListServers(): Promise<string>;
  * @throws server 不存在或连接失败时抛出异常
  */
 declare function mcpGetTools(serverName: string): Promise<string>;
+
+// ================= Skill =================
+
+/**
+ * 列出当前项目可用的自定义 Skill（含加载状态）。
+ * Skill 位于 <projectDir>/.cuckoo/skills/<skill-name>/。
+ * @returns 纯文本 Skill 列表
+ */
+declare function skillList(): Promise<string>;
+
+/**
+ * 加载指定名称的自定义 Skill（读取 SKILL.md 和可选 tool.js）。
+ * @param name Skill 名称（对应 .cuckoo/skills/<name> 目录）
+ * @returns 加载结果
+ * @throws Skill 不存在或加载失败时抛出异常
+ */
+declare function skillLoad(name: string): Promise<string>;
+
+/**
+ * 执行已加载 Skill 的 tool.js 中导出的函数。
+ * @param skill Skill 名称
+ * @param functionName 要调用的函数名
+ * @param args 传给函数的参数对象
+ * @returns 函数执行结果
+ * @throws Skill 未加载或函数不存在时抛出异常
+ */
+declare function skillExecute(skill: string, functionName: string, args?: Record<string, unknown>): Promise<string>;
