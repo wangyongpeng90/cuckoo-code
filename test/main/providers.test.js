@@ -5,6 +5,7 @@ const assert = require('node:assert');
 const { getProvider, getAllProviders, getProviderByUrl } = require('../../src/providers');
 const deepseek = require('../../src/providers/deepseek');
 const claude = require('../../src/providers/claude');
+const chatgpt = require('../../src/providers/chatgpt');
 
 test('getAllProviders 包含 deepseek 和 claude', () => {
   const all = getAllProviders();
@@ -97,6 +98,58 @@ test('claude getMessageMarkdown 优先 standard-markdown', () => {
     querySelector: (sel) => sel === '[class*="standard-markdown"]' ? 'STD' : null,
   };
   assert.strictEqual(claude.getMessageMarkdown(msg), 'STD');
+});
+
+test('chatgpt matchesUrl', () => {
+  assert.strictEqual(chatgpt.matchesUrl('https://chatgpt.com/'), true);
+  assert.strictEqual(chatgpt.matchesUrl('https://chat.openai.com/c/abc'), true);
+  assert.strictEqual(chatgpt.matchesUrl('https://chat.deepseek.com'), false);
+});
+
+test('chatgpt extractSessionId 排除 WEB 中间态', () => {
+  assert.strictEqual(chatgpt.extractSessionId('https://chatgpt.com/c/abc-123_def'), 'abc-123_def');
+  // 创建会话中间态 /c/WEB:xxx 不应把 WEB 当会话 ID（正则只匹配 UUID 片段）
+  assert.notStrictEqual(chatgpt.extractSessionId('https://chatgpt.com/c/WEB:abc'), 'WEB');
+  assert.strictEqual(chatgpt.extractSessionId('https://chatgpt.com/'), null);
+});
+
+test('chatgpt getCodeBlockLanguage 从 class 提取', () => {
+  const pre = {
+    querySelector: () => ({ className: 'language-cuckoo' }),
+    className: '',
+  };
+  assert.strictEqual(chatgpt.getCodeBlockLanguage(pre), 'cuckoo');
+});
+
+test('chatgpt getCodeBlockLanguage 从 header 文本提取', () => {
+  // 无 class 语言标记时，从 header（移除 svg/button 后）取纯文本
+  const header = {
+    cloneNode: () => ({
+      querySelectorAll: () => [],
+      textContent: 'cuckoo',
+    }),
+  };
+  const pre = {
+    querySelector: (sel) => sel.includes('items-center') ? header : null,
+    className: '',
+  };
+  assert.strictEqual(chatgpt.getCodeBlockLanguage(pre), 'cuckoo');
+});
+
+test('chatgpt getMessageCandidates 过滤用户消息', () => {
+  const origDoc = global.document;
+  const assistant = { getAttribute: (n) => n === 'data-message-author-role' ? 'assistant' : '' };
+  const user = { getAttribute: (n) => n === 'data-message-author-role' ? 'user' : '' };
+  global.document = {
+    querySelectorAll: () => [assistant, user],
+  };
+  try {
+    const list = chatgpt.getMessageCandidates();
+    assert.strictEqual(list.length, 1);
+    assert.strictEqual(list[0], assistant);
+  } finally {
+    global.document = origDoc;
+  }
 });
 
 test('渲染进程经注入的 userData 路径可加载自定义 Provider', () => {

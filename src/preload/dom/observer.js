@@ -199,10 +199,16 @@ function ensureStabilityTimer() {
   if (stabilityTimer) return;
   stabilityTimer = setInterval(() => {
     const now = Date.now();
+    let needRescan = false;
     for (const [msg, rec] of jsStability) {
       // 节点已被页面卸载：清理
       if (typeof msg.isConnected === 'boolean' && !msg.isConnected) {
         jsStability.delete(msg);
+        // ChatGPT 等 React 应用流式渲染会替换消息节点，旧节点 isConnected 变 false。
+        // 若该节点尚未执行（卡在稳定性校验期间被替换），需重新扫描新节点，
+        // 否则新节点不会被稳定性通道跟踪，导致工具永不执行。
+        // 已执行过的节点则不再扫描，避免重渲染后被重复执行。
+        if (!processedMessages.has(msg)) needRescan = true;
         continue;
       }
       if (now - rec.lastChange >= JS_STABILITY_WINDOW) {
@@ -212,6 +218,10 @@ function ensureStabilityTimer() {
         // 内容已稳定满窗口 → force 直接执行（避免重新 set 快照导致死循环）
         processLatestAIResponse(0, true);
       }
+    }
+    // 有未执行节点被替换卸载 → 重新扫描最新消息，跟踪新节点
+    if (needRescan) {
+      processLatestAIResponse(0, false);
     }
     if (jsStability.size === 0) {
       clearInterval(stabilityTimer);

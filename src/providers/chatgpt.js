@@ -3,6 +3,11 @@
  * 基于 chatgpt.com 页面结构，输入框为 ProseMirror（contenteditable）。
  */
 let stopBtnVisible = false;
+// 停止按钮首次出现的时间戳
+let stopBtnFirstSeen = 0;
+// 停止按钮需持续存在超过此阈值，才视为真正进入生成态。
+// 过滤发送瞬间发送按钮↔停止按钮的短暂切换，避免误判为"回复完成"。
+const MIN_GENERATING_MS = 1500;
 
 module.exports = {
   id: 'chatgpt',
@@ -92,10 +97,17 @@ module.exports = {
   homeUrlPattern: /^https:\/\/chatgpt\.com\/?$/,
 
   // 从 URL 提取会话 ID（ChatGPT 是 /c/xxx 格式）
+  // 从 URL 提取会话 ID（ChatGPT 是 /c/{uuid} 格式）
+  // 注意：创建会话过程中 URL 有中间态 /c/WEB:xxx，不能把 WEB 当会话 ID。
+  // session-store 会优先使用本方法的返回值，故此处必须自行排除 WEB。
   extractSessionId(url) {
     if (!url) return null;
-    const match = url.match(/\/c\/([a-zA-Z0-9_-]+)/i);
-    if (match) return match[1];
+    // 优先匹配完整 UUID（正式会话 ID）
+    const uuidMatch = url.match(/\/c\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+    if (uuidMatch) return uuidMatch[1];
+    // 回退通用匹配，排除中间态 WEB
+    const genericMatch = url.match(/\/c\/([a-zA-Z0-9_-]+)/i);
+    if (genericMatch && genericMatch[1] !== 'WEB') return genericMatch[1];
     return null;
   },
 
@@ -112,15 +124,26 @@ module.exports = {
   async isResponseComplete() {
     const stopBtn = document.querySelector('button[data-testid="stop-button"]');
     const visible = !!stopBtn;
+    const now = Date.now();
 
     if (visible) {
+      if (!stopBtnVisible) {
+        // 停止按钮首次出现，记录时间，避免发送瞬间的短暂切换被误判
+        stopBtnFirstSeen = now;
+      }
       stopBtnVisible = true;
       return false;
     }
 
-    // 上一次可见、本次不可见 → 回答刚结束
+    // 上一次可见、本次不可见 → 需确认生成态持续足够久，才认定为回复结束
     if (stopBtnVisible) {
       stopBtnVisible = false;
+      const generatingMs = now - stopBtnFirstSeen;
+      if (generatingMs < MIN_GENERATING_MS) {
+        // 生成态过短：发送按钮↔停止按钮的短暂切换，忽略，避免误判完成
+        console.log('[' + new Date().toISOString() + '] [Cuckoo Code] ChatGPT 停止按钮仅存在 ' + generatingMs + 'ms（<' + MIN_GENERATING_MS + 'ms），忽略本次完成信号');
+        return false;
+      }
       console.log('[' + new Date().toISOString() + '] [Cuckoo Code] ChatGPT 回复完成，等待 500ms 后解析');
       await new Promise(resolve => setTimeout(resolve, 500));
       console.log('[' + new Date().toISOString() + '] [Cuckoo Code] ChatGPT 500ms 等待结束');
