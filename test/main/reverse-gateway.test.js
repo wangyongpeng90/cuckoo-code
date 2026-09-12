@@ -77,14 +77,16 @@ function request(port, path, method, body, headers = {}) {
   });
 }
 
-test('reverse gateway: /health 与 /v1/models', async () => {
+test('reverse gateway: /health 免鉴权，/v1/models 需鉴权', async () => {
   const { gw } = await startGateway();
   try {
     const p = gw.address.port;
     const h = await request(p, '/health', 'GET');
     assert.strictEqual(h.status, 200);
     assert.ok(h.body.includes('ok'));
-    const m = await request(p, '/v1/models', 'GET');
+    const m0 = await request(p, '/v1/models', 'GET');
+    assert.strictEqual(m0.status, 401, '/v1/models 不得免鉴权');
+    const m = await request(p, '/v1/models', 'GET', null, { Authorization: 'Bearer sk-test' });
     assert.strictEqual(m.status, 200);
     assert.ok(m.body.includes('gpt-4o'));
   } finally { await gw.close(); }
@@ -144,7 +146,7 @@ test('reverse gateway: 空 messages / 非法 JSON / 未知路径', async () => {
     assert.strictEqual(e1.status, 400);
     const e2 = await request(p, '/v1/chat/completions', 'POST', { messages: [{ role: 'user', content: '   ' }] }, { Authorization: 'Bearer sk-test' });
     assert.strictEqual(e2.status, 400);
-    const e3 = await request(p, '/nope', 'GET');
+    const e3 = await request(p, '/nope', 'GET', null, { Authorization: 'Bearer sk-test' });
     assert.strictEqual(e3.status, 404);
   } finally { await gw.close(); }
 });

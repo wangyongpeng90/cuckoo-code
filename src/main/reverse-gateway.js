@@ -182,6 +182,17 @@ function createReverseGateway(opts) {
         sendJSON(res, 200, { status: 'ok', service: 'cuckoo-reverse-gateway', pending: pendingCount });
         return;
       }
+
+      // 鉴权（/health 除外，便于本地探活）
+      {
+        const auth = req.headers['authorization'] || '';
+        const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+        if (token !== apiKey) {
+          sendJSON(res, 401, { error: { message: 'Invalid API key', type: 'invalid_request_error', code: 'invalid_api_key' } });
+          return;
+        }
+      }
+
       if (req.method === 'GET' && url === '/v1/models') {
         sendJSON(res, 200, {
           object: 'list',
@@ -192,16 +203,6 @@ function createReverseGateway(opts) {
       if (!(req.method === 'POST' && url.startsWith('/v1/chat/completions'))) {
         sendJSON(res, 404, { error: { message: 'Not found: ' + url, type: 'invalid_request_error' } });
         return;
-      }
-
-      // 鉴权
-      {
-        const auth = req.headers['authorization'] || '';
-        const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-        if (token !== apiKey) {
-          sendJSON(res, 401, { error: { message: 'Invalid API key', type: 'invalid_request_error', code: 'invalid_api_key' } });
-          return;
-        }
       }
 
       let payload;
