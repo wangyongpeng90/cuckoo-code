@@ -12,6 +12,14 @@ const { createSessionStore } = require('./session-store');
 const { getProvider } = require('../providers');
 const updater = require('./updater');
 
+// 普通 Chrome UA（与 Electron 33 / Chromium 130 匹配）：
+// 1. 不带 Electron 标识，避免站点识别为第三方客户端 / 触发 Cloudflare 质询
+// 2. 与内核版本一致，避免 Google OAuth 因 UA/sec-ch-ua 不一致报"浏览器不安全"
+// 注意：cf_clearance 等 Cloudflare 凭据与 UA 绑定——所有共享同一 session 的
+// 窗口（含反向网关隐藏窗）必须使用完全相同的 UA。
+const CHROME_UA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
 app.setPath('userData', path.join(app.getPath('appData'), SESSION_DIR));
@@ -116,12 +124,7 @@ function createWindow(profile) {
 
   mainWindow.maximize();
 
-  // 设置与 Electron 33（Chromium 130）匹配的普通 Chrome UA：
-  // 1. 不带 Electron 标识，避免 DeepSeek 识别为第三方客户端
-  // 2. 与内核版本一致，避免 Google OAuth 因 UA/sec-ch-ua 不一致报“浏览器不安全”
-  const userAgent =
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
-  mainWindow.webContents.setUserAgent(userAgent);
+  mainWindow.webContents.setUserAgent(CHROME_UA);
 
   if (providerChosen) {
     // 平台已确定，直接进入平台首页
@@ -574,6 +577,7 @@ function startReverseGatewayIfEnabled() {
     reverseGatewayWindows = createReverseGatewayWindow({
       createBrowserWindow: (options) => new BrowserWindow(options),
       listChatgptContexts: () => windowState.getAllContexts().filter(c => c.providerId === 'chatgpt'),
+      userAgent: CHROME_UA,
     });
 
     const gateway = createReverseGateway({

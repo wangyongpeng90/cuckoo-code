@@ -99,3 +99,26 @@ test('缺依赖抛错', () => {
   assert.throws(() => createReverseGatewayWindow({}), /createBrowserWindow/);
   assert.throws(() => createReverseGatewayWindow({ createBrowserWindow: (o) => o }), /listChatgptContexts/);
 });
+
+test('隐藏窗必须设置与主窗口一致的 UA（cf_clearance 与 UA 绑定）', async () => {
+  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+  const seen = [];
+  class Win extends (makeFakeWindowClass(['https://chatgpt.com/'])) {
+    constructor(o) { super(o); }
+  }
+  // 直接给 fake 实例补 setUserAgent 记录
+  const deps = {
+    createBrowserWindow: (o) => {
+      const w = new Win(o);
+      w.webContents.setUserAgent = (ua) => seen.push(ua);
+      return w;
+    },
+    listChatgptContexts: () => [fakeCtx({})],
+    userAgent: UA,
+  };
+  const mgr = createReverseGatewayWindow(deps);
+  await mgr.getWebContents();
+  assert.strictEqual(seen.length, 1, '应在 loadURL 前设置 UA');
+  assert.strictEqual(seen[0], UA);
+  assert.ok(!/electron/i.test(seen[0]), 'UA 不得含 Electron 标识');
+});

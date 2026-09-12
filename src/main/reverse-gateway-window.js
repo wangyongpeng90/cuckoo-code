@@ -22,6 +22,7 @@ const POLL_MS = 500;
 function createReverseGatewayWindow(deps, opts = {}) {
   if (typeof deps.createBrowserWindow !== 'function') throw new Error('需要 createBrowserWindow');
   if (typeof deps.listChatgptContexts !== 'function') throw new Error('需要 listChatgptContexts');
+  const userAgent = deps.userAgent || null; // 应与主窗口 UA 完全一致（cf_clearance 与 UA 绑定）
   const loadTimeoutMs = opts.loadTimeoutMs || LOAD_TIMEOUT_MS;
   const pollMs = opts.pollMs || POLL_MS;
 
@@ -55,6 +56,11 @@ function createReverseGatewayWindow(deps, opts = {}) {
         // 注意：刻意不设置 preload —— 反向网关页不应有覆盖层/观察器/工具管线
       },
     });
+    // UA 必须与主窗口完全一致：cf_clearance 等 Cloudflare 凭据与 UA 绑定，
+    // UA 不一致会导致共享 cookie 失效并触发质询
+    if (userAgent && typeof win.webContents.setUserAgent === 'function') {
+      win.webContents.setUserAgent(userAgent);
+    }
     await win.loadURL(CHATGPT_URL);
     return win;
   }
