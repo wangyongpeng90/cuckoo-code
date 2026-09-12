@@ -106,6 +106,8 @@ async function streamCompletion(opts) {
   const frameDecoder = cuckooSSECreateFrameDecoder();
   let lastDispatchedLen = 0;
 
+  // 流空闲超时：chunk 之间超过 idleTimeoutMs 无数据则中止，防止上游卡死挂满 socket 超时
+  const idleTimeoutMs = opts.idleTimeoutMs != null ? opts.idleTimeoutMs : 90000;
   try {
     await consumeStream(resp.stream, (chunkText) => {
       const frames = frameDecoder.push(chunkText);
@@ -124,7 +126,7 @@ async function streamCompletion(opts) {
           lastDispatchedLen = cur.length;
         }
       }
-    });
+    }, idleTimeoutMs);
   } catch (err) {
     // 流中断：仍返回已累计文本，但标记 error
     if (extractor.text) return { ok: false, text: extractor.text, error: '流中断: ' + (err && err.message ? err.message : err) };
@@ -134,21 +136,36 @@ async function streamCompletion(opts) {
   return { ok: true, text: extractor.text, error: null };
 }
 
-/** 把 Node 流按文本块喂给回调，直到结束。 */
-function consumeStream(stream, onText) {
+/** 把 Node 流按文本块喂给回调，直到结束。idleMs：chunk 间最大无数据间隔（0/缺省 = 不限制）。 */
+function consumeStream(stream, onText, idleMs) {
   return new Promise((resolve, reject) => {
     if (!stream) return resolve();
     let decoder = new (require('string_decoder').StringDecoder)('utf8');
+    let idleTimer = null;
+    const armIdle = () => {
+      if (!idleMs) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        try { stream.destroy(new Error('流空闲超时（' + idleMs + 'ms 无数据）')); } catch (_) {}
+        reject(new Error('流空闲超时'));
+      }, idleMs);
+    };
+    armIdle();
     stream.on('data', (buf) => {
+      armIdle();
       const s = decoder.write(buf);
       if (s) onText(s);
     });
     stream.on('end', () => {
+      if (idleTimer) clearTimeout(idleTimer);
       const tail = decoder.end();
       if (tail) onText(tail);
       resolve();
     });
-    stream.on('error', reject);
+    stream.on('error', (e) => {
+      if (idleTimer) clearTimeout(idleTimer);
+      reject(e);
+    });
   });
 }
 

@@ -158,6 +158,13 @@ function createGatewayStore(storeDir) {
     return setHistory(sessionId, []);
   }
 
+  /** 回滚：移除最后一条指定角色的消息（补全失败时撤销悬挂的 user 消息） */
+  function removeLastIfRole(sessionId, role) {
+    const hist = getHistory(sessionId);
+    if (hist.length === 0 || hist[hist.length - 1].role !== role) return false;
+    return setHistory(sessionId, hist.slice(0, -1));
+  }
+
   return {
     getConfig,
     getConfigSafe,
@@ -166,6 +173,7 @@ function createGatewayStore(storeDir) {
     setHistory,
     appendMessages,
     clearHistory,
+    removeLastIfRole,
   };
 }
 

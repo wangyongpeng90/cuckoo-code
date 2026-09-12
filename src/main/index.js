@@ -551,12 +551,14 @@ if (!gotSingleInstanceLock) {
  * sendPrompt 从当前窗口里挑一个 chatgpt.com 页面驱动；找不到则返回明确错误。
  */
 let reverseGatewayHandle = null;
+let reverseGatewayWindows = null;
 function startReverseGatewayIfEnabled() {
   const cfg = buildConfig.reverseGateway;
   if (!cfg || !cfg.enabled) return;
   try {
     const { createReverseGateway, ensureApiToken } = require('./reverse-gateway');
     const { createChatgptDriver } = require('./chatgpt-driver');
+    const { createReverseGatewayWindow } = require('./reverse-gateway-window');
 
     // 鉴权 token：配置非空则用配置；否则首启自动生成随机 token 持久化到 userData
     const tokenInfo = (cfg.apiKey && String(cfg.apiKey).trim())
@@ -567,14 +569,12 @@ function startReverseGatewayIfEnabled() {
       console.log('[反向网关] TOKEN=' + tokenInfo.token);
     }
 
-    // 找到承载 chatgpt.com 的窗口（多窗口时优先第一个匹配的）
-    function findChatgptWebContents() {
-      for (const ctx of windowState.getAllContexts()) {
-        const wc = ctx.win && !ctx.win.isDestroyed() ? ctx.win.webContents : null;
-        if (wc && !wc.isDestroyed() && /chatgpt\.com/.test(wc.getURL() || '')) return wc;
-      }
-      return null;
-    }
+    // 专用隐藏窗口：不注入 preload（无覆盖层/观察器/工具管线），
+    // 复用 ChatGPT 平台窗口的 session 共享登录态 → API 调用与用户工作窗完全隔离
+    reverseGatewayWindows = createReverseGatewayWindow({
+      createBrowserWindow: (options) => new BrowserWindow(options),
+      listChatgptContexts: () => windowState.getAllContexts().filter(c => c.providerId === 'chatgpt'),
+    });
 
     const gateway = createReverseGateway({
       host: cfg.host,
@@ -582,8 +582,8 @@ function startReverseGatewayIfEnabled() {
       apiKey: tokenInfo.token,
       defaultModel: cfg.defaultModel,
       sendPrompt: async (messages, opts) => {
-        const wc = findChatgptWebContents();
-        if (!wc) throw new Error('未找到已登录的 ChatGPT 窗口，请先在平台选择页进入 ChatGPT 并登录');
+        const wc = await reverseGatewayWindows.getWebContents();
+        if (!wc) throw new Error('未找到 ChatGPT 平台窗口，请先在平台选择页进入 ChatGPT（登录态会被反向网关共享）');
         const driver = createChatgptDriver((script) => wc.executeJavaScript(script, true));
         return driver.ask(opts.prompt);
       },
@@ -617,9 +617,10 @@ app.on('before-quit', (event) => {
   if (quitFlushed) return;
   event.preventDefault();
   quitFlushed = true;
-  const closeGateway = reverseGatewayHandle
-    ? reverseGatewayHandle.close().catch(() => {})
-    : Promise.resolve();
+  const closeGateway = Promise.all([
+    reverseGatewayHandle ? reverseGatewayHandle.close().catch(() => {}) : Promise.resolve(),
+    reverseGatewayWindows ? Promise.resolve(reverseGatewayWindows.closeAll()) : Promise.resolve(),
+  ]);
   closeGateway.finally(() => {
     flushAllSessions().finally(() => {
       app.quit();

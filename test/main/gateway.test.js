@@ -296,3 +296,34 @@ test('trimMessages 奇数上限时尾部条数取偶（不产生孤儿消息）'
   assert.deepStrictEqual(out[0], msgs[0], '首条必须保留');
   assert.strictEqual((out.length - 1) % 2, 0, '尾部消息数应为偶数（不产生孤儿）');
 });
+
+test('store removeLastIfRole 回滚悬挂的 user 消息', () => {
+  const s = createGatewayStore(tmpDir());
+  s.appendMessages('r1', [{ role: 'user', content: 'q' }]);
+  assert.strictEqual(s.removeLastIfRole('r1', 'assistant'), false, '末条不是 assistant 不动');
+  assert.strictEqual(s.removeLastIfRole('r1', 'user'), true);
+  assert.deepStrictEqual(s.getHistory('r1'), []);
+  // 已是空历史时安全
+  assert.strictEqual(s.removeLastIfRole('r1', 'user'), false);
+});
+
+// ---------- 流空闲超时 ----------
+
+
+test('streamCompletion: 流空闲超过 idleTimeoutMs 时中止并保留部分文本', async () => {
+  const stalled = new PassThrough();
+  // 先发一帧，然后长时间沉默（不 end）
+  setImmediate(() => stalled.write('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));
+  const t0 = Date.now();
+  const r = await streamCompletion({
+    baseUrl: 'https://gw/v1', apiKey: 'sk', model: 'm',
+    messages: [{ role: 'user', content: 'hi' }],
+    idleTimeoutMs: 250,
+    transport: async () => ({ statusCode: 200, stream: stalled }),
+  });
+  assert.strictEqual(r.ok, false);
+  assert.ok(r.error.includes('流空闲超时'), '应报告空闲超时: ' + r.error);
+  assert.strictEqual(r.text, 'partial', '已收到的部分文本应保留');
+  assert.ok(Date.now() - t0 < 2000, '应快速中止而非等 socket 超时');
+  stalled.end(); // 清理测试句柄
+});

@@ -256,6 +256,9 @@ function registerIpcHandlers() {
       } else if (result.ok) {
         // 空回复也记录，避免后续请求出现连续 user 消息
         store.appendMessages(sessionId, [{ role: 'assistant', content: '' }]);
+      } else if (!result.text) {
+        // 失败且无部分文本：回滚悬挂的 user 消息，保持历史连贯
+        store.removeLastIfRole(sessionId, 'user');
       }
       return result;
     } finally {
