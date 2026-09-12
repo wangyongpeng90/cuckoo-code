@@ -540,7 +540,55 @@ if (!gotSingleInstanceLock) {
     mcpClient.connectEnabledServers().catch(err => {
       console.error('[MCP] 初始化连接失败:', err.message);
     });
+
+    // 反向网关：把已登录的 ChatGPT 窗口暴露成本地 OpenAI 兼容 API
+    startReverseGatewayIfEnabled();
   });
+}
+
+/**
+ * 启动反向网关（若配置启用）。
+ * sendPrompt 从当前窗口里挑一个 chatgpt.com 页面驱动；找不到则返回明确错误。
+ */
+let reverseGatewayHandle = null;
+function startReverseGatewayIfEnabled() {
+  const cfg = buildConfig.reverseGateway;
+  if (!cfg || !cfg.enabled) return;
+  try {
+    const { createReverseGateway } = require('./reverse-gateway');
+    const { createChatgptDriver } = require('./chatgpt-driver');
+
+    // 找到承载 chatgpt.com 的窗口（多窗口时优先第一个匹配的）
+    function findChatgptWebContents() {
+      for (const ctx of windowState.getAllContexts()) {
+        const wc = ctx.win && !ctx.win.isDestroyed() ? ctx.win.webContents : null;
+        if (wc && !wc.isDestroyed() && /chatgpt\.com/.test(wc.getURL() || '')) return wc;
+      }
+      return null;
+    }
+
+    const gateway = createReverseGateway({
+      host: cfg.host,
+      port: cfg.port,
+      apiKey: cfg.apiKey,
+      defaultModel: cfg.defaultModel,
+      sendPrompt: async (messages, opts) => {
+        const wc = findChatgptWebContents();
+        if (!wc) throw new Error('未找到已登录的 ChatGPT 窗口，请先在平台选择页进入 ChatGPT 并登录');
+        const driver = createChatgptDriver((script) => wc.executeJavaScript(script, true));
+        return driver.ask(opts.prompt);
+      },
+    });
+
+    gateway.listen().then((addr) => {
+      reverseGatewayHandle = gateway;
+      console.log('[反向网关] 已启动 http://' + addr.host + ':' + addr.port + '/v1/chat/completions');
+    }).catch((err) => {
+      console.error('[反向网关] 启动失败:', err.message);
+    });
+  } catch (err) {
+    console.error('[反向网关] 初始化异常:', err.message);
+  }
 }
 
 app.on('window-all-closed', () => {
@@ -553,14 +601,19 @@ app.on('window-all-closed', () => {
   });
 });
 
-// 退出前刷新所有 session 数据
+// 退出前刷新所有 session 数据，并关闭反向网关
 let quitFlushed = false;
 app.on('before-quit', (event) => {
   if (quitFlushed) return;
   event.preventDefault();
   quitFlushed = true;
-  flushAllSessions().finally(() => {
-    app.quit();
+  const closeGateway = reverseGatewayHandle
+    ? reverseGatewayHandle.close().catch(() => {})
+    : Promise.resolve();
+  closeGateway.finally(() => {
+    flushAllSessions().finally(() => {
+      app.quit();
+    });
   });
 });
 
