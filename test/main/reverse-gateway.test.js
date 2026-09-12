@@ -224,3 +224,41 @@ test('ensureApiToken 首次生成并持久化，之后复用', () => {
 test('reverse gateway: createReverseGateway 缺 sendPrompt 抛错', () => {
   assert.throws(() => createReverseGateway({ apiKey: 'k' }), /sendPrompt/);
 });
+
+test('reverse gateway: 队列深度上限，超额返回 429 且名额正确释放', async () => {
+  let running = 0, maxConcurrent = 0;
+  const { gw } = await startGateway({
+    maxPending: 3,
+    sendPrompt: async () => {
+      running++;
+      maxConcurrent = Math.max(maxConcurrent, running);
+      await new Promise(r => setTimeout(r, 400)); // 拉长占位，确保 6 个请求都在占满窗口内到达
+      running--;
+      return 'ok';
+    },
+  });
+  try {
+    const p = gw.address.port;
+    const body = { messages: [{ role: 'user', content: 'x' }] };
+    const headers = { Authorization: 'Bearer sk-test' };
+    // 6 个并发：1 执行 + 2 排队（maxPending=3 含执行中），其余 3 个应 429
+    const rs = await Promise.all([
+      request(p, '/v1/chat/completions', 'POST', body, headers),
+      request(p, '/v1/chat/completions', 'POST', body, headers),
+      request(p, '/v1/chat/completions', 'POST', body, headers),
+      request(p, '/v1/chat/completions', 'POST', body, headers),
+      request(p, '/v1/chat/completions', 'POST', body, headers),
+      request(p, '/v1/chat/completions', 'POST', body, headers),
+    ]);
+    const statuses = rs.map(r => r.status).sort();
+    assert.strictEqual(statuses.filter(s => s === 429).length, 3, '超额请求应 429');
+    assert.strictEqual(statuses.filter(s => s === 200).length, 3, '上限内请求应 200');
+    assert.ok(maxConcurrent <= 1, 'sendPrompt 仍须严格串行');
+    // 名额已释放：再次请求应 200
+    const after = await request(p, '/v1/chat/completions', 'POST', body, headers);
+    assert.strictEqual(after.status, 200);
+    // /health 暴露当前队列占用
+    const h = await request(p, '/health', 'GET');
+    assert.ok(h.body.includes('"pending"'));
+  } finally { await gw.close(); }
+});

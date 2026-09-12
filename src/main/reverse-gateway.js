@@ -169,13 +169,17 @@ function createReverseGateway(opts) {
 
   // 并发防护：底层只有一个 ChatGPT 页面，必须串行。
   // 用 promise 链排队；先到先得，后到的等前面的完成后再发。
+  // 队列深度上限：排队超过 maxPending 的请求直接 429，
+  // 防止突发请求把串行队列堵死 N×timeoutMs。
   let queueTail = Promise.resolve();
+  let pendingCount = 0;
+  const maxPending = opts.maxPending != null ? opts.maxPending : 3;
 
   const server = http.createServer(async (req, res) => {
     try {
       const url = req.url || '';
       if (req.method === 'GET' && (url === '/health' || url === '/')) {
-        sendJSON(res, 200, { status: 'ok', service: 'cuckoo-reverse-gateway' });
+        sendJSON(res, 200, { status: 'ok', service: 'cuckoo-reverse-gateway', pending: pendingCount });
         return;
       }
       if (req.method === 'GET' && url === '/v1/models') {
@@ -221,6 +225,13 @@ function createReverseGateway(opts) {
         return;
       }
 
+      // 队列深度上限（含正在执行的 1 个）
+      if (pendingCount >= maxPending) {
+        sendJSON(res, 429, { error: { message: '队列已满（' + pendingCount + '/' + maxPending + '），请稍后重试', type: 'rate_limit_error' } });
+        return;
+      }
+      pendingCount++;
+
       const id = nextId();
       let text;
       // 串行队列：把「完整执行（含 sendPrompt 到返回）」链入队列。
@@ -239,6 +250,7 @@ function createReverseGateway(opts) {
         return;
       } finally {
         if (timer) clearTimeout(timer);
+        pendingCount--; // 无论成败都释放队列名额
       }
 
       if (wantStream) {
