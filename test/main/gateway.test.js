@@ -215,9 +215,8 @@ const HTML_PATH = require('path').join(__dirname, '..', '..', 'src', 'ui', 'gate
 test('gateway.html 页面脚本语法合法且 DOM/事件契约完整', () => {
   const html = fs.readFileSync(HTML_PATH, 'utf-8');
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
-  assert.strictEqual(scripts.length, 1, '应恰好一个内联脚本块');
-  // 语法检查：页面脚本若编译失败，网关页直接白屏
-  new Function(scripts[0]);
+  assert.strictEqual(scripts.length, 2, '应为纯函数区 + 应用区两个脚本块');
+  for (const src of scripts) new Function(src); // 语法检查：页面脚本若编译失败，网关页直接白屏
 
   // Provider/主进程依赖的 DOM 锚点必须存在
   for (const id of ['gateway-input', 'gateway-send', 'gateway-model-label', 'gateway-config-toggle']) {
@@ -226,14 +225,41 @@ test('gateway.html 页面脚本语法合法且 DOM/事件契约完整', () => {
   // 跨世界收发契约
   assert.ok(html.includes("addEventListener('cuckoo-gateway-send'"), '缺少 triggerSend 跨世界接收端');
   assert.ok(html.includes("dispatchEvent(new CustomEvent('cuckoo-ai-response'"), '缺少回复事件派发');
-  // 会话与流式契约
-  assert.ok(/[#?&]session=|session=' \+/.test(html) || html.includes("location.hash = 'session='"), '缺少会话 hash 携带');
+  assert.ok(html.includes("location.hash = 'session='"), '缺少会话 hash 携带');
   assert.ok(html.includes('onGatewayDelta'), '缺少流式增量订阅');
   // 安全：页面不得包含明文 key 处理痕迹（key 只经主进程）
   assert.ok(!/apiKey\s*[:=]\s*['"][^'"]{8,}/.test(html), '页面内不应硬编码 API Key');
 });
 
-// ---------- 历史裁剪（保首条 + 成对裁剪） ----------
+test('gateway.html Markdown 渲染器：转义优先，杜绝 XSS', () => {
+  const html = fs.readFileSync(HTML_PATH, 'utf-8');
+  const utils = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)][0][1];
+  assert.ok(!/\bdocument\b/.test(utils), '纯函数区不得引用 DOM');
+  const get = new Function('window', utils + '\n;return window.__gwMD;');
+  const md = get({});
+  assert.ok(md && typeof md.renderMD === 'function');
+
+  // XSS 用例：script/img onerror/javascript: 必须被转义或拒绝
+  const xss = md.renderMD('<script>alert(1)<\/script> [x](javascript:alert(2)) <img src=x onerror=alert(3)>');
+  // 安全不变量：恶意输入不得以任何可执行形式出现
+  assert.ok(!xss.includes('<img'), 'img 标签必须被转义');
+  assert.ok(!xss.includes('<script'), 'script 标签必须被转义');
+  assert.ok(!/href\s*=\s*["']?\s*javascript:/i.test(xss), 'javascript: 不得成为可点击链接');
+  assert.ok(xss.includes('&lt;script&gt;') && xss.includes('&lt;img'), '恶意内容应以转义实体呈现（惰性文本）');
+
+  // 功能用例：代码块/行内代码/粗体/列表
+  const r = md.renderMD('```cuckoo\nawait read("a")\n```\n- 项目 `x` 与 **粗体**');
+  assert.ok(r.includes('class="code-block"'), '应渲染代码块');
+  assert.ok(r.includes('>cuckoo<'), '应显示语言标签');
+  assert.ok(r.includes('class="copy-btn"'), '应有一键复制');
+  assert.ok(r.includes('<code class="inline">x</code>'), '应渲染行内代码');
+  assert.ok(r.includes('<strong>粗体</strong>'), '应渲染粗体');
+  assert.ok(r.includes('<li>'), '应渲染列表');
+  // 代码体内含 HTML 时必须转义（无特殊字符的正常代码保持原样）
+  const r2 = md.renderMD('```html\n<img src=x onerror=alert(1)>\n```');
+  assert.ok(!r2.includes('<img'), '代码体内的 HTML 必须转义');
+  assert.ok(r2.includes('&lt;img'), '代码体应输出转义实体');
+});// ---------- 历史裁剪（保首条 + 成对裁剪） ----------
 
 const { trimMessages } = require('../../src/main/gateway-store');
 
