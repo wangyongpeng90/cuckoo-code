@@ -87,6 +87,24 @@ let electronAPI = {
   replaceProvider: (providerId) => {
     return ipcRenderer.invoke('replace-provider', { providerId });
   },
+  // ========== 网关（OpenAI 兼容）API ==========
+  gatewayGetConfig: () => {
+    return ipcRenderer.invoke('gateway-get-config');
+  },
+  gatewaySaveConfig: (patch) => {
+    return ipcRenderer.invoke('gateway-save-config', { patch });
+  },
+  gatewayGetHistory: (sessionId) => {
+    return ipcRenderer.invoke('gateway-get-history', { sessionId });
+  },
+  gatewaySend: (payload) => {
+    return ipcRenderer.invoke('gateway-send', payload);
+  },
+  onGatewayDelta: (callback) => {
+    ipcRenderer.on('gateway-delta', (_event, payload) => {
+      try { callback(payload); } catch (_) {}
+    });
+  },
 };
 
 try {

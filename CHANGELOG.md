@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased] - feature/chatgpt-compat
+
+### Added
+- **「网关 (OpenAI 兼容)」内置 Provider**：无需网页账号，直接对接任意
+  OpenAI 兼容网关（OpenAI / Azure / one-api / 自建推理服务等）
+  - 内置本地聊天页 `src/ui/gateway.html`（file:// 加载，asar 内可用），
+    复用覆盖层/项目初始化/工具调用全链路，工具结果经 `cuckoo-ai-response`
+    事件约定自动回传，agent 循环与网页平台完全一致
+  - API Key 只保存在主进程（`gateway.json`，userData 目录），页面仅能读取
+    脱敏展示；请求由主进程发起（`gateway-client.js`），密钥永不进入渲染进程
+  - 会话历史按 sessionId 持久化于 `gateway-conversations.json`，
+    支持 ?session= / #session= 两种 URL 形式，会话与项目目录绑定沿用
+    session-store 既有机制
+  - 新增 IPC：gateway-get-config / gateway-save-config / gateway-get-history /
+    gateway-send（流式增量经 gateway-delta 事件推送）
+  - 新增提示词模板 `src/prompt/gateway.md` 与平台 Logo
+
+### Changed
+- **ChatGPT 网页流解析重构为共享模块** `src/shared/sse-extract.js`
+  - 帧解码 / data 块解析 / 回复提取（裸 v、patch 批量、assistant 快照、
+    status/end_turn 完成信号）抽为纯函数，Node 侧可直接单测；
+    `chatgpt-hook.js` 注入源码改由共享函数 `.toString()` 拼装，
+    保证测试覆盖的就是页面实际运行的代码，行为不变
+- preload 对声明 `selfDispatches` 的 Provider 跳过主世界 hook 注入
+  （本地网关页自行派发回复事件）
+
 ## [0.3.8] - 2026-09-11
 
 ### Changed

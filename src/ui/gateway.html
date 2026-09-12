@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<title>网关聊天 - Cuckoo Code</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #0d0f1a; color: #dde1ff; height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  header {
+    padding: 10px 16px; background: #14172a; border-bottom: 1px solid #262b4d;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  header .brand { font-weight: 700; color: #8b93ff; }
+  #gateway-model-label { color: #8a90b8; font-size: 12px; }
+  header .spacer { flex: 1; }
+  #gateway-new-chat {
+    background: rgba(139,147,255,.15); color: #c8ccff; border: 1px solid rgba(139,147,255,.35);
+    border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 12px;
+  }
+  #messages { flex: 1; overflow-y: auto; padding: 20px 15%; }
+  .msg { margin-bottom: 18px; white-space: pre-wrap; word-break: break-word; line-height: 1.55; font-size: 14px; }
+  .msg .role { font-size: 11px; color: #8a90b8; margin-bottom: 4px; }
+  .msg.user { color: #b9c2ff; }
+  .msg.assistant { color: #e6e9ff; background: rgba(255,255,255,.03); border: 1px solid #232949; border-radius: 10px; padding: 10px 14px; }
+  .msg.error { color: #ff8b98; background: rgba(255,107,122,.08); border: 1px solid rgba(255,107,122,.3); border-radius: 10px; padding: 10px 14px; }
+  footer { padding: 12px 15% 18px; background: #10131f; border-top: 1px solid #262b4d; }
+  #gateway-input {
+    width: 100%; min-height: 64px; max-height: 240px; resize: vertical;
+    background: #1a1d33; color: #dde1ff; border: 1px solid #2c3157; border-radius: 10px;
+    padding: 10px 12px; font-size: 14px; font-family: inherit;
+  }
+  #gateway-input:focus { outline: none; border-color: #8b93ff; }
+  .send-row { display: flex; justify-content: flex-end; margin-top: 8px; gap: 8px; align-items: center; }
+  #gateway-status { color: #8a90b8; font-size: 12px; margin-right: auto; }
+  #gateway-send {
+    background: #6d76ff; color: #fff; border: none; border-radius: 10px;
+    padding: 8px 22px; cursor: pointer; font-size: 14px;
+  }
+  #gateway-send:disabled { opacity: .5; cursor: not-allowed; }
+  #gateway-config {
+    position: fixed; right: 16px; bottom: 110px; width: 380px; z-index: 9999;
+    background: #171b30; border: 1px solid #2c3157; border-radius: 14px; padding: 16px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5); display: none;
+  }
+  #gateway-config.open { display: block; }
+  #gateway-config label { display: block; font-size: 12px; color: #8a90b8; margin: 10px 0 4px; }
+  #gateway-config input {
+    width: 100%; background: #1a1d33; border: 1px solid #2c3157; border-radius: 8px;
+    color: #dde1ff; padding: 7px 10px; font-size: 13px;
+  }
+  #gateway-config .row { display: flex; gap: 8px; margin-top: 14px; }
+  #gateway-config button { flex: 1; border-radius: 8px; padding: 7px 0; cursor: pointer; border: 1px solid #2c3157; background: #232949; color: #c8ccff; }
+  #gateway-config button.primary { background: #6d76ff; border-color: #6d76ff; color: #fff; }
+  #gateway-config .hint { font-size: 11px; color: #6b7196; margin-top: 8px; line-height: 1.5; }
+  #gateway-config-toggle { background: none; border: 1px solid #2c3157; color: #8a90b8; border-radius: 8px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+</style>
+</head>
+<body>
+  <header>
+    <span class="brand">网关 (OpenAI 兼容)</span>
+    <span id="gateway-model-label">未配置</span>
+    <span class="spacer"></span>
+    <button id="gateway-config-toggle">⚙ 网关设置</button>
+    <button id="gateway-new-chat">＋ 新会话</button>
+  </header>
+
+  <div id="messages"></div>
+
+  <footer>
+    <textarea id="gateway-input" placeholder="输入消息，Ctrl+Enter 发送…（工具结果会自动回传，无需手动操作）"></textarea>
+    <div class="send-row">
+      <span id="gateway-status"></span>
+      <button id="gateway-send">发送</button>
+    </div>
+  </footer>
+
+  <div id="gateway-config">
+    <div style="font-weight:600;color:#c8ccff;">网关设置</div>
+    <label>网关地址（OpenAI 兼容 Base URL，如 https://api.openai.com/v1）</label>
+    <input id="cfg-baseurl" placeholder="https://api.openai.com/v1" />
+    <label>API Key（仅保存在本机主进程，页面永远拿不到明文）</label>
+    <input id="cfg-apikey" type="password" placeholder="留空 = 不修改；输入新值覆盖" />
+    <label>模型名</label>
+    <input id="cfg-model" placeholder="gpt-4o-mini" />
+    <label>温度 temperature（0-2）</label>
+    <input id="cfg-temperature" placeholder="0.7" />
+    <div class="row">
+      <button id="cfg-cancel">取消</button>
+      <button id="cfg-save" class="primary">保存</button>
+    </div>
+    <div class="hint">支持任何 OpenAI 兼容网关（OpenAI / Azure / one-api / 自建推理服务等）。<br>密钥仅存于 %APPDATA% 本地配置，只由主进程携带发起请求。</div>
+  </div>
+
+<script>
+(function () {
+  'use strict';
+  // electronAPI 由 preload 注入；未就绪时轮询等待
+  function api() { return window.electronAPI || null; }
+
+  var messagesEl = document.getElementById('messages');
+  var inputEl = document.getElementById('gateway-input');
+  var sendBtn = document.getElementById('gateway-send');
+  var statusEl = document.getElementById('gateway-status');
+  var modelLabel = document.getElementById('gateway-model-label');
+  var streamingEl = null;
+  var busy = false;
+
+  // ---------- 会话 ID：?session= 或 #session= 携带；hash 变化触发会话绑定 ----------
+  // file:// 下 pushState 被 Chromium 禁用，hash 导航不受限且会触发 did-navigate-in-page，
+  // 让主进程 session-store 能像网页平台一样把会话与项目目录绑定。
+  function genSid() {
+    return 'gw-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  }
+  function currentSessionId() {
+    var m = location.search.match(/[?&]session=([A-Za-z0-9_-]+)/);
+    if (m) return m[1];
+    m = location.hash.match(/session=([A-Za-z0-9_-]+)/);
+    if (m) return m[1];
+    return null;
+  }
+  var sessionId = currentSessionId() || genSid();
+
+  function ensureUrlSession() {
+    if (location.hash !== '#session=' + sessionId) {
+      location.hash = 'session=' + sessionId;
+    }
+  }
+
+  // ---------- 渲染 ----------
+  function el(tag, cls, text) {
+    var d = document.createElement(tag);
+    if (cls) d.className = cls;
+    if (text != null) d.textContent = text;
+    return d;
+  }
+  function addMessage(role, text) {
+    var box = el('div', 'msg ' + role);
+    box.setAttribute('data-message-author-role', role === 'assistant' ? 'assistant' : 'user');
+    box.appendChild(el('div', 'role', role === 'user' ? '你' : (role === 'error' ? '错误' : 'AI')));
+    box.appendChild(el('div', 'content', text || ''));
+    messagesEl.appendChild(box);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return box.querySelector('.content');
+  }
+  function renderHistory(history) {
+    messagesEl.innerHTML = '';
+    (history || []).forEach(function (m) {
+      if (m && (m.role === 'user' || m.role === 'assistant')) addMessage(m.role, m.content);
+    });
+  }
+
+  // ---------- 发送 ----------
+  async function send(text) {
+    if (busy) return false;
+    var a = api();
+    if (!a || typeof a.gatewaySend !== 'function') { setStatus('electronAPI 未就绪'); return false; }
+    text = (text || '').trim();
+    if (!text) return false;
+
+    busy = true;
+    sendBtn.disabled = true;
+    addMessage('user', text);
+    ensureUrlSession();
+    streamingEl = addMessage('assistant', '');
+    setStatus('生成中…');
+
+    try {
+      var res = await a.gatewaySend({ sessionId: sessionId, text: text });
+      if (res && res.ok) {
+        if (streamingEl) streamingEl.textContent = res.text || '';
+        // 与网络拦截 hook 完全一致的事件约定，工具解析零改动
+        try {
+          window.dispatchEvent(new CustomEvent('cuckoo-ai-response', {
+            detail: { text: res.text || '', finished: true }
+          }));
+        } catch (e) {}
+        setStatus('');
+      } else {
+        var msg = (res && res.error) || '未知错误';
+        if (streamingEl && streamingEl.parentElement) streamingEl.parentElement.remove();
+        addMessage('error', msg);
+        setStatus('');
+      }
+      return !!(res && res.ok);
+    } catch (err) {
+      if (streamingEl && streamingEl.parentElement) streamingEl.parentElement.remove();
+      addMessage('error', '发送异常: ' + (err && err.message ? err.message : err));
+      setStatus('');
+      return false;
+    } finally {
+      busy = false;
+      sendBtn.disabled = false;
+      streamingEl = null;
+    }
+  }
+
+  // provider.triggerSend（隔离世界）经 CustomEvent 跨世界触发发送：
+  // 用于工具结果回传、初始提示词等非按钮路径（与 cuckoo-ai-response 反向对称）
+  window.addEventListener('cuckoo-gateway-send', function (ev) {
+    var text = ev && ev.detail && ev.detail.text;
+    if (!text) return;
+    inputEl.value = '';
+    send(text);
+  });
+
+  function setStatus(t) { statusEl.textContent = t || ''; }
+
+  sendBtn.addEventListener('click', function () {
+    var v = inputEl.value;
+    inputEl.value = '';
+    send(v);
+  });
+  inputEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      var v = inputEl.value; inputEl.value = ''; send(v);
+    }
+  });
+
+  // 主进程流式增量
+  document.addEventListener('DOMContentLoaded', function () {});
+  var deltaTimer = null;
+  if (window.electronAPI && window.electronAPI.onGatewayDelta) {
+    window.electronAPI.onGatewayDelta(function (p) {
+      if (!p || p.sessionId !== sessionId) return;
+      if (p.delta && streamingEl) {
+        streamingEl.textContent += p.delta;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+      if (p.done) setStatus('');
+    });
+  }
+
+  // ---------- 配置面板 ----------
+  var cfgPanel = document.getElementById('gateway-config');
+  document.getElementById('gateway-config-toggle').addEventListener('click', async function () {
+    cfgPanel.classList.toggle('open');
+    if (cfgPanel.classList.contains('open')) await loadConfigIntoPanel();
+  });
+  document.getElementById('cfg-cancel').addEventListener('click', function () {
+    cfgPanel.classList.remove('open');
+  });
+  async function loadConfigIntoPanel() {
+    var a = api(); if (!a) return;
+    try {
+      var res = await a.gatewayGetConfig();
+      if (res && res.success) {
+        document.getElementById('cfg-baseurl').value = res.config.baseUrl || '';
+        document.getElementById('cfg-model').value = res.config.model || '';
+        document.getElementById('cfg-temperature').value = res.config.temperature;
+        document.getElementById('cfg-apikey').placeholder = res.config.hasKey
+          ? '已保存 (' + res.config.apiKeyMasked + ')，留空则不修改'
+          : '尚未配置，输入 API Key';
+        modelLabel.textContent = res.config.configured
+          ? (res.config.baseUrl + ' · ' + res.config.model)
+          : '未配置';
+      }
+    } catch (e) {}
+  }
+  document.getElementById('cfg-save').addEventListener('click', async function () {
+    var a = api(); if (!a) return;
+    var patch = {
+      baseUrl: document.getElementById('cfg-baseurl').value,
+      model: document.getElementById('cfg-model').value,
+      temperature: parseFloat(document.getElementById('cfg-temperature').value),
+    };
+    var key = document.getElementById('cfg-apikey').value;
+    if (key.trim() !== '') patch.apiKey = key.trim();
+    var res = await a.gatewaySaveConfig(patch);
+    if (res && res.success) {
+      cfgPanel.classList.remove('open');
+      document.getElementById('cfg-apikey').value = '';
+      await loadConfigIntoPanel();
+    } else {
+      alert('保存失败: ' + ((res && res.error) || '未知错误'));
+    }
+  });
+
+  // ---------- 新会话 ----------
+  document.getElementById('gateway-new-chat').addEventListener('click', function () {
+    var sid = genSid();
+    if (sid === sessionId) sid = genSid();
+    messagesEl.innerHTML = '';
+    // 更新 hash 会触发本会话绑定（下方 hashchange 统一处理）
+    if (location.hash === '#session=' + sid) bindSession(sid);
+    else { sessionId = sid; location.hash = 'session=' + sid; }
+  });
+
+  // 会话切换：URL ?session= 或 hash 变化（含新会话/旧会话跳转）
+  function bindSession(sid) {
+    if (!sid) return;
+    sessionId = sid;
+    messagesEl.innerHTML = '';
+    restoreHistory();
+  }
+  window.addEventListener('hashchange', function () {
+    var sid = currentSessionId();
+    if (sid && sid !== sessionId) bindSession(sid);
+    else ensureUrlSession();
+  });
+
+  async function restoreHistory() {
+    var a = api(); if (!a) return;
+    try {
+      var res = await a.gatewayGetHistory(sessionId);
+      if (res && res.success && Array.isArray(res.history)) renderHistory(res.history);
+    } catch (e) {}
+  }
+
+  // ---------- 启动 ----------
+  async function boot() {
+    var a = api();
+    if (!a) { setTimeout(boot, 300); return; }
+    await loadConfigIntoPanel();
+    ensureUrlSession();
+    await restoreHistory();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</body>
+</html>

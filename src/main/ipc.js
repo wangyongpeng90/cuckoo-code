@@ -182,6 +182,86 @@ function registerIpcHandlers() {
       return false;
     }
   });
+
+  // ========== 网关（OpenAI 兼容）IPC ==========
+  // 配置/密钥/会话历史全部只留在主进程；页面仅能拿到脱敏配置与文本结果。
+  const { createGatewayStore } = require('./gateway-store');
+  const gatewayClient = require('./gateway-client');
+  let gatewayStore = null;
+  function getGatewayStore() {
+    if (!gatewayStore) {
+      gatewayStore = createGatewayStore(app.getPath('userData'));
+    }
+    return gatewayStore;
+  }
+  // 每会话同一时刻仅允许一路进行中的补全，防止工具回传与用户输入互相踩历史
+  const gatewayInflight = new Set();
+  const GATEWAY_ROLES = new Set(['system', 'user', 'assistant']);
+  function sanitizeHistory(history) {
+    return (history || [])
+      .filter(m => m && GATEWAY_ROLES.has(m.role) && typeof m.content === 'string')
+      .map(m => ({ role: m.role, content: m.content }));
+  }
+
+  ipcMain.handle('gateway-get-config', async () => {
+    return { success: true, config: getGatewayStore().getConfigSafe() };
+  });
+
+  ipcMain.handle('gateway-save-config', async (_event, { patch }) => {
+    return getGatewayStore().saveConfig(patch);
+  });
+
+  ipcMain.handle('gateway-get-history', async (_event, { sessionId }) => {
+    if (!sessionId || typeof sessionId !== 'string') return { success: false, error: '缺少会话ID', history: [] };
+    return { success: true, history: sanitizeHistory(getGatewayStore().getHistory(sessionId)) };
+  });
+
+  ipcMain.handle('gateway-send', async (event, payload) => {
+    const { sessionId, text } = payload || {};
+    if (!sessionId || typeof sessionId !== 'string') return { ok: false, text: '', error: '缺少会话ID' };
+    if (!text || typeof text !== 'string' || !text.trim()) return { ok: false, text: '', error: '消息为空' };
+
+    const store = getGatewayStore();
+    const cfg = store.getConfig();
+    if (!cfg.apiKey) return { ok: false, text: '', error: '尚未配置 API Key，请点击右上角「网关设置」' };
+    if (!cfg.model) return { ok: false, text: '', error: '尚未配置模型名' };
+    if (gatewayInflight.has(sessionId)) return { ok: false, text: '', error: '该会话正在生成中，请稍候' };
+
+    gatewayInflight.add(sessionId);
+    const sender = event.sender;
+    try {
+      // 历史 + 本条用户消息 → 请求体
+      const history = sanitizeHistory(store.getHistory(sessionId));
+      const messages = history.concat([{ role: 'user', content: text }]);
+      store.appendMessages(sessionId, [{ role: 'user', content: text }]);
+
+      const result = await gatewayClient.streamCompletion({
+        baseUrl: cfg.baseUrl,
+        apiKey: cfg.apiKey,
+        model: cfg.model,
+        temperature: cfg.temperature,
+        messages,
+        onDelta: (delta) => {
+          if (sender && !sender.isDestroyed()) {
+            sender.send('gateway-delta', { sessionId, delta });
+          }
+        },
+      });
+
+      if (sender && !sender.isDestroyed()) {
+        sender.send('gateway-delta', { sessionId, delta: '', done: true });
+      }
+      if (result.ok && result.text) {
+        store.appendMessages(sessionId, [{ role: 'assistant', content: result.text }]);
+      } else if (result.ok) {
+        // 空回复也记录，避免后续请求出现连续 user 消息
+        store.appendMessages(sessionId, [{ role: 'assistant', content: '' }]);
+      }
+      return result;
+    } finally {
+      gatewayInflight.delete(sessionId);
+    }
+  });
 }
 
 module.exports = { registerIpcHandlers };

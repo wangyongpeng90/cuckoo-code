@@ -26,7 +26,8 @@ console.log('[Cuckoo Code] 平台=' + (currentProvider ? currentProvider.id : 'u
 // ========== 主世界注入（拦截模式）==========
 // 必须在页面脚本执行前把 hook 注入到主世界，才能覆盖到 window.fetch / XHR。
 // preload 早于页面脚本执行，此处的 executeJavaScript 落在主世界。
-if (useIntercept) {
+// selfDispatches：页面自身派发 cuckoo-ai-response（如本地网关页），无需注入网络 hook
+if (useIntercept && !currentProvider.selfDispatches) {
   try {
     const hookByProvider = {
       deepseek: () => require('../interceptor/deepseek-hook').deepseekHookSource(),

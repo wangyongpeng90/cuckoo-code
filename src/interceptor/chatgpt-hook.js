@@ -4,6 +4,10 @@
  * 提取 AI 回复文本，通过 'cuckoo-ai-response' CustomEvent 交给隔离世界。
  * 仅旁路读取，不修改请求与响应。
  *
+ * 帧解码与回复提取逻辑位于 src/shared/sse-extract.js（纯函数、可单测），
+ * 此处通过 .toString() 把它们与安装器一起拼装成注入源码，
+ * 保证 Node 侧测试覆盖的就是页面里实际运行的代码。
+ *
  * 实测流格式（/backend-api/f/conversation）：
  *   data: {"v":"文本"}                                      → 裸 v，追加正文
  *   data: {"p":"","o":"add","v":{"message":{...}}}          → 消息快照
@@ -11,6 +15,12 @@
  *   data: {"p":"/message/content/parts/0","o":"append","v":"..."} → 正文追加
  *   data: {"p":"/message/status","o":"replace","v":"finished_successfully"} → 结束
  */
+const {
+  cuckooSSECreateFrameDecoder,
+  cuckooSSEParseBlock,
+  cuckooCreateChatgptExtractor,
+} = require('../shared/sse-extract');
+
 function chatgptHookInstaller() {
   var MARKER = '__cuckooChatgptHookInstalled__';
   if (window[MARKER]) return;
@@ -37,124 +47,16 @@ function chatgptHookInstaller() {
     } catch (e) { /* ignore */ }
   }
 
-  // ---------- SSE 帧解码 ----------
-  function createFrameDecoder() {
-    var buffer = '', scanFrom = 0;
-    return {
-      push: function (text) {
-        buffer += text;
-        var frames = [], re = /\r?\n\r?\n/g, offset = 0, m;
-        re.lastIndex = scanFrom;
-        while ((m = re.exec(buffer)) !== null) {
-          frames.push(buffer.slice(offset, m.index));
-          offset = m.index + m[0].length;
-        }
-        buffer = buffer.slice(offset);
-        scanFrom = Math.max(0, buffer.length - 3);
-        return frames;
-      },
-      finish: function () {
-        var frames = [];
-        if (buffer) frames.push(buffer);
-        buffer = ''; scanFrom = 0;
-        return frames;
-      }
-    };
-  }
-
-  // 返回 { data: string|null, done: boolean }
-  function parseBlock(block) {
-    if (!block || !block.trim()) return { data: null, done: false };
-    var data = null;
-    var lines = block.split(/\r\n|\r|\n/);
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i];
-      if (line.indexOf('data:') === 0) {
-        var d = line.slice(5).trim();
-        data = data == null ? d : data + '\n' + d;
-      }
-    }
-    if (data == null) return { data: null, done: false };
-    if (data === '[DONE]') return { data: null, done: true };
-    return { data: data, done: false };
-  }
-
-  // ---------- 回复文本提取 ----------
-  function createExtractor() {
-    var text = '';
-    var finished = false;
-
-    function extractParts(content) {
-      if (!content || !Array.isArray(content.parts)) return null;
-      var out = '';
-      for (var i = 0; i < content.parts.length; i++) {
-        var p = content.parts[i];
-        if (typeof p === 'string') out += p;
-        else if (p && typeof p === 'object' && typeof p.text === 'string') out += p.text;
-      }
-      return out;
-    }
-
-    function applyOp(node) {
-      if (!node || typeof node !== 'object') return;
-
-      // 1) 批量操作：o='patch' / 'BATCH'，v 为操作数组
-      if (Array.isArray(node.v) && (node.o === 'patch' || node.o === 'BATCH')) {
-        for (var i = 0; i < node.v.length; i++) applyOp(node.v[i]);
-        return;
-      }
-
-      // 2) 消息快照：v.message（仅采纳 assistant）
-      if (node.v && typeof node.v === 'object' && node.v.message) {
-        var m = node.v.message;
-        var role = m.author && m.author.role;
-        if (role === 'assistant') {
-          var snap = extractParts(m.content);
-          if (snap !== null) text = snap;
-        }
-        return;
-      }
-
-      // 3) 路径操作
-      if (typeof node.p === 'string' && node.p !== '') {
-        if (node.p === '/message/status' && node.v === 'finished_successfully') { finished = true; return; }
-        if (node.p === '/message/end_turn' && node.v === true) { finished = true; return; }
-        if (/\/message\/content\/parts\/\d+$/.test(node.p)) {
-          if (typeof node.v === 'string') {
-            if (node.o === 'append' || node.o === 'add') text += node.v;
-            else text = node.v;
-          }
-        }
-        return;
-      }
-
-      // 4) 裸 v 字符串（无有效 p）：追加正文
-      if (typeof node.v === 'string') { text += node.v; return; }
-
-      // 5) 类型化结束事件
-      if (node.type === 'message_stream_complete' || node.type === 'message_stream_completed') {
-        finished = true;
-      }
-    }
-
-    return {
-      consume: function (parsed) { applyOp(parsed); },
-      markDone: function () { finished = true; },
-      get text() { return text; },
-      get finished() { return finished; }
-    };
-  }
-
   function observeBody(body) {
     if (!body) return;
     var reader = body.getReader();
     var decoder = new TextDecoder();
-    var frameDecoder = createFrameDecoder();
-    var extractor = createExtractor();
+    var frameDecoder = cuckooSSECreateFrameDecoder();
+    var extractor = cuckooCreateChatgptExtractor();
     var dispatched = false;
 
     function flushFrame(frame) {
-      var r = parseBlock(frame);
+      var r = cuckooSSEParseBlock(frame);
       if (r.done) { extractor.markDone(); return; }
       if (r.data == null) return;
       var parsed;
@@ -227,12 +129,12 @@ function chatgptHookInstaller() {
 
   function observeXhr(xhr) {
     var lastLen = 0;
-    var frameDecoder = createFrameDecoder();
-    var extractor = createExtractor();
+    var frameDecoder = cuckooSSECreateFrameDecoder();
+    var extractor = cuckooCreateChatgptExtractor();
     var dispatched = false;
 
     function flushFrame(frame) {
-      var r = parseBlock(frame);
+      var r = cuckooSSEParseBlock(frame);
       if (r.done) { extractor.markDone(); return; }
       if (r.data == null) return;
       var parsed;
@@ -267,7 +169,13 @@ function chatgptHookInstaller() {
 }
 
 function chatgptHookSource() {
-  return '(' + chatgptHookInstaller.toString() + ')();';
+  // 顺序：共享解析函数先声明，安装器随即可见（页面世界顶层作用域）
+  return [
+    'var cuckooSSECreateFrameDecoder = ' + cuckooSSECreateFrameDecoder.toString() + ';',
+    'var cuckooSSEParseBlock = ' + cuckooSSEParseBlock.toString() + ';',
+    'var cuckooCreateChatgptExtractor = ' + cuckooCreateChatgptExtractor.toString() + ';',
+    '(' + chatgptHookInstaller.toString() + ')();'
+  ].join('\n');
 }
 
 module.exports = { chatgptHookSource };
