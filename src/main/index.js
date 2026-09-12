@@ -38,6 +38,11 @@ const { registerIpcHandlers } = require('./ipc');
 // 退出前需要 flush 的 sessions
 const sessionsToFlush = new Set();
 
+// 窗口重建保护：切换平台时旧窗口会被销毁、新窗口随后创建，
+// 中间存在"零窗口"瞬间会误触发 window-all-closed → app.quit()（上游既有缺陷，
+// 表现为在平台选择页点任意平台后应用立即退出）。重建期间挂起退出判断。
+let pendingWindowRebuild = 0;
+
 async function flushAllSessions() {
   const promises = [];
   for (const ses of sessionsToFlush) {
@@ -419,14 +424,17 @@ ipcMainForProfile.handle('select-platform', async (event, { providerId }) => {
   const updatedProfile = profileManager.updateProfileProvider(ctx.profileId, providerId);
   if (!updatedProfile) return { success: false, error: '更新 profile 失败' };
 
-  // 关闭旧窗口（其 session 仍是旧 partition）
+  // 先建新窗口、再销毁旧窗口，避免"零窗口"瞬间触发 window-all-closed → app.quit()
+  pendingWindowRebuild++;
   const oldWin = ctx.win;
-  if (oldWin && !oldWin.isDestroyed()) {
-    oldWin.destroy();
+  try {
+    createWindow(updatedProfile);
+  } finally {
+    if (oldWin && !oldWin.isDestroyed()) {
+      oldWin.destroy();
+    }
+    setImmediate(() => { pendingWindowRebuild = Math.max(0, pendingWindowRebuild - 1); });
   }
-
-  // 用新 profile（含新 partition）重建窗口
-  createWindow(updatedProfile);
   return { success: true };
 });
 
@@ -536,7 +544,13 @@ if (!gotSingleInstanceLock) {
 }
 
 app.on('window-all-closed', () => {
-  app.quit();
+  // 平台切换（select-platform）期间会短暂零窗口，此时不能退出：
+  // 用 setImmediate 延后判断，给重建中的新窗口一个建立的机会。
+  setImmediate(() => {
+    if (pendingWindowRebuild > 0) return;
+    if (windowState.getAllWindows().length > 0) return;
+    app.quit();
+  });
 });
 
 // 退出前刷新所有 session 数据
