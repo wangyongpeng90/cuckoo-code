@@ -206,3 +206,28 @@ test('streamCompletion 网络异常被捕获为 ok:false', async () => {
   assert.strictEqual(r.ok, false);
   assert.ok(r.error.includes('ECONNREFUSED'));
 });
+
+// ---------- 本地聊天页契约（防止页面改动造成白屏/链路断裂） ----------
+
+const HTML_PATH = require('path').join(__dirname, '..', '..', 'src', 'ui', 'gateway.html');
+
+test('gateway.html 页面脚本语法合法且 DOM/事件契约完整', () => {
+  const html = fs.readFileSync(HTML_PATH, 'utf-8');
+  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+  assert.strictEqual(scripts.length, 1, '应恰好一个内联脚本块');
+  // 语法检查：页面脚本若编译失败，网关页直接白屏
+  new Function(scripts[0]);
+
+  // Provider/主进程依赖的 DOM 锚点必须存在
+  for (const id of ['gateway-input', 'gateway-send', 'gateway-model-label', 'gateway-config-toggle']) {
+    assert.ok(html.includes('id="' + id + '"'), '缺少 DOM 锚点 #' + id);
+  }
+  // 跨世界收发契约
+  assert.ok(html.includes("addEventListener('cuckoo-gateway-send'"), '缺少 triggerSend 跨世界接收端');
+  assert.ok(html.includes("dispatchEvent(new CustomEvent('cuckoo-ai-response'"), '缺少回复事件派发');
+  // 会话与流式契约
+  assert.ok(/[#?&]session=|session=' \+/.test(html) || html.includes("location.hash = 'session='"), '缺少会话 hash 携带');
+  assert.ok(html.includes('onGatewayDelta'), '缺少流式增量订阅');
+  // 安全：页面不得包含明文 key 处理痕迹（key 只经主进程）
+  assert.ok(!/apiKey\s*[:=]\s*['"][^'"]{8,}/.test(html), '页面内不应硬编码 API Key');
+});
