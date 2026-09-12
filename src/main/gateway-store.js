@@ -42,6 +42,22 @@ function maskApiKey(key) {
  * 创建网关存储实例
  * @param {string} storeDir userData 目录
  */
+/**
+ * 超长裁剪：保留首条（初始提示/系统提示）+ 其余按 user→assistant 配对裁剪到上限内。
+ * 直接 slice(-N) 会切断配对并丢失首轮提示，导致 agent 行为退化。
+ * @param {Array} messages
+ * @param {number} max
+ */
+function trimMessages(messages, max) {
+  const arr = Array.isArray(messages) ? messages : [];
+  if (arr.length <= max) return arr.slice();
+  const head = arr[0] ? [arr[0]] : [];
+  // 从尾部往前取成对消息（user+assistant），凑满 max - head.length 条
+  const tailBudget = Math.max(0, max - head.length);
+  const tail = arr.slice(arr.length - (tailBudget % 2 === 0 ? tailBudget : tailBudget - 1));
+  return head.concat(tail);
+}
+
 function createGatewayStore(storeDir) {
   const CONFIG_FILE = path.join(storeDir, 'gateway.json');
   const CONV_FILE = path.join(storeDir, 'gateway-conversations.json');
@@ -125,7 +141,7 @@ function createGatewayStore(storeDir) {
   function setHistory(sessionId, messages) {
     if (!sessionId) return false;
     const all = readConversations();
-    const trimmed = Array.isArray(messages) ? messages.slice(-MAX_MESSAGES) : [];
+    const trimmed = Array.isArray(messages) ? trimMessages(messages, MAX_MESSAGES) : [];
     if (trimmed.length === 0) delete all[sessionId];
     else all[sessionId] = trimmed;
     return writeJson(CONV_FILE, all);
@@ -155,6 +171,7 @@ function createGatewayStore(storeDir) {
 
 module.exports = {
   createGatewayStore,
+  trimMessages,
   normalizeBaseUrl,
   looksLikeHttpUrl,
   maskApiKey,

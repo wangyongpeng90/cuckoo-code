@@ -117,8 +117,9 @@ test('store 会话历史追加/裁剪/清空', () => {
   const big = [];
   for (let i = 0; i < 100; i++) big.push({ role: 'user', content: 'm' + i });
   s.setHistory('c2', big);
-  assert.strictEqual(s.getHistory('c2').length, 60);
-  assert.strictEqual(s.getHistory('c2')[59].content, 'm99');
+  const kept = s.getHistory('c2');
+  assert.ok(kept.length <= 60, '裁剪后不得超上限');
+  assert.strictEqual(kept[kept.length - 1].content, 'm99', '最新消息必须保留');
   s.clearHistory('c2');
   assert.deepStrictEqual(s.getHistory('c2'), []);
   assert.deepStrictEqual(s.getHistory('missing'), []);
@@ -230,4 +231,42 @@ test('gateway.html 页面脚本语法合法且 DOM/事件契约完整', () => {
   assert.ok(html.includes('onGatewayDelta'), '缺少流式增量订阅');
   // 安全：页面不得包含明文 key 处理痕迹（key 只经主进程）
   assert.ok(!/apiKey\s*[:=]\s*['"][^'"]{8,}/.test(html), '页面内不应硬编码 API Key');
+});
+
+// ---------- 历史裁剪（保首条 + 成对裁剪） ----------
+
+const { trimMessages } = require('../../src/main/gateway-store');
+
+test('trimMessages 不超上限时原样返回', () => {
+  const m = [{ role: 'user', content: 'a' }, { role: 'assistant', content: 'b' }];
+  assert.deepStrictEqual(trimMessages(m, 60), m);
+});
+
+test('trimMessages 保留首条并按 user/assistant 成对裁剪', () => {
+  const msgs = [{ role: 'user', content: 'system-prompt' }];
+  for (let i = 0; i < 40; i++) {
+    msgs.push({ role: 'user', content: 'u' + i });
+    msgs.push({ role: 'assistant', content: 'a' + i });
+  }
+  const out = trimMessages(msgs, 60);
+  assert.ok(out.length <= 60, '不得超过上限');
+  assert.deepStrictEqual(out[0], msgs[0], '首条（初始提示）必须保留');
+  // 尾部必须是完整配对：user 后紧跟 assistant
+  for (let i = 1; i < out.length - 1; i += 2) {
+    assert.strictEqual(out[i].role, 'user');
+    assert.strictEqual(out[i + 1].role, 'assistant');
+  }
+  assert.strictEqual(out[out.length - 1].content, 'a39', '最新消息必须保留');
+});
+
+test('trimMessages 奇数上限时尾部条数取偶（不产生孤儿消息）', () => {
+  const msgs = [{ role: 'user', content: 'head' }];
+  for (let i = 0; i < 40; i++) {
+    msgs.push({ role: 'user', content: 'u' + i });
+    msgs.push({ role: 'assistant', content: 'a' + i });
+  }
+  const out = trimMessages(msgs, 61);
+  assert.ok(out.length <= 61, '不得超过上限');
+  assert.deepStrictEqual(out[0], msgs[0], '首条必须保留');
+  assert.strictEqual((out.length - 1) % 2, 0, '尾部消息数应为偶数（不产生孤儿）');
 });

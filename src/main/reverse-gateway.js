@@ -6,7 +6,9 @@
  * 拿到回复文本后按 OpenAI 响应格式返回。
  *
  * 说明：
- * - 仅监听 127.0.0.1（本地回环），默认要求 Bearer key（可配置），避免局域网滥用
+ * - 仅监听 127.0.0.1（本地回环），强制 Bearer 鉴权（空 key 直接拒绝创建）
+ * - 不设 CORS 头：消费方是本机程序而非网页，通配 CORS 会允许任意网页
+ *   跨源调用该接口（DNS rebinding/CSRF 面），属不必要攻击面
  * - 走的是"驱动真实已登录页面"而非导出 cookie 重放，对账号风控更温和
  * - 不实现任何反检测/绕过逻辑
  *
@@ -14,10 +16,45 @@
  * 使本模块可在 Node 单测中完全离线验证。
  */
 const http = require('http');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 const DEFAULT_PORT = 8788;
 const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_TIMEOUT_MS = 180000;
+const TOKEN_FILE = 'api-server-token.json';
+
+/**
+ * 确保 API token 存在：首次生成 48 位随机 hex 并持久化到 storeDir，之后复用。
+ * @param {string} storeDir userData 目录
+ * @returns {{token:string, created:boolean, file:string}}
+ */
+function ensureApiToken(storeDir) {
+  if (!storeDir || typeof storeDir !== 'string') throw new Error('ensureApiToken 需要 storeDir');
+  const file = path.join(storeDir, TOKEN_FILE);
+  try {
+    if (fs.existsSync(file)) {
+      const j = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      if (j && typeof j.token === 'string' && /^[0-9a-f]{32,}$/.test(j.token)) {
+        return { token: j.token, created: false, file };
+      }
+    }
+  } catch (_) { /* 损坏则重建 */ }
+  const token = crypto.randomBytes(24).toString('hex');
+  fs.mkdirSync(storeDir, { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ token, createdAt: new Date().toISOString() }, null, 2), 'utf-8');
+  return { token, created: true, file };
+}
+
+/** 读取已持久化的 token（不存在返回 null）。 */
+function readApiToken(storeDir) {
+  try {
+    const file = path.join(storeDir, TOKEN_FILE);
+    const j = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    return (j && j.token) || null;
+  } catch (_) { return null; }
+}
 
 /** 把 OpenAI messages 数组压平成单条提示文本（ChatGPT 网页只接受单条输入） */
 function flattenMessages(messages) {
@@ -109,7 +146,7 @@ function sendJSON(res, status, obj) {
  * @param {function(Array, object):Promise<string>} opts.sendPrompt 驱动 ChatGPT 窗口并返回回复文本
  * @param {number} [opts.port] 监听端口
  * @param {string} [opts.host] 监听地址（默认 127.0.0.1）
- * @param {string} [opts.apiKey] 要求的 Bearer key；为空则不校验
+ * @param {string} opts.apiKey 必填，Bearer 鉴权 key（空值拒绝创建）
  * @param {number} [opts.timeoutMs] 单次请求超时
  * @param {string} [opts.defaultModel] 响应里回填的模型名
  */
@@ -119,21 +156,23 @@ function createReverseGateway(opts) {
   // 注意：port 0 是合法值（由系统分配随机端口），不能用 `|| DEFAULT_PORT` 覆盖
   const port = opts.port != null ? opts.port : DEFAULT_PORT;
   const host = opts.host || DEFAULT_HOST;
-  const apiKey = opts.apiKey || '';
+  // 强制鉴权：空 key 会导致本机任意网页/进程白嫖已登录会话，直接拒绝创建
+  const apiKey = typeof opts.apiKey === 'string' ? opts.apiKey.trim() : '';
+  if (!apiKey) {
+    throw new Error('createReverseGateway 需要非空 apiKey（显式配置或 ensureApiToken 自动生成）');
+  }
   const timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS;
   const defaultModel = opts.defaultModel || 'gpt-4o';
 
   let seq = 0;
   const nextId = () => (++seq).toString(36) + Math.random().toString(36).slice(2, 8);
 
+  // 并发防护：底层只有一个 ChatGPT 页面，必须串行。
+  // 用 promise 链排队；先到先得，后到的等前面的完成后再发。
+  let queueTail = Promise.resolve();
+
   const server = http.createServer(async (req, res) => {
     try {
-      // CORS（本地工具/网页调用）
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-      res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
-      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
-
       const url = req.url || '';
       if (req.method === 'GET' && (url === '/health' || url === '/')) {
         sendJSON(res, 200, { status: 'ok', service: 'cuckoo-reverse-gateway' });
@@ -152,7 +191,7 @@ function createReverseGateway(opts) {
       }
 
       // 鉴权
-      if (apiKey) {
+      {
         const auth = req.headers['authorization'] || '';
         const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
         if (token !== apiKey) {
@@ -184,13 +223,17 @@ function createReverseGateway(opts) {
 
       const id = nextId();
       let text;
-      // 带清理的超时：避免落败的 setTimeout 悬挂事件循环（最长 timeoutMs）
+      // 串行队列：把「完整执行（含 sendPrompt 到返回）」链入队列。
+      // 注意不能只链排队占位——否则前一个请求的 sendPrompt 尚在执行，
+      // 后一个就会并发启动，在同一个 ChatGPT 页面上交错收发。
       let timer = null;
+      const exec = queueTail.then(() => Promise.race([
+        Promise.resolve().then(() => sendPrompt(messages, { prompt, model })),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('上游 ChatGPT 响应超时')), timeoutMs); }),
+      ]));
+      queueTail = exec.then(() => undefined, () => undefined);
       try {
-        text = await Promise.race([
-          Promise.resolve().then(() => sendPrompt(messages, { prompt, model })),
-          new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('上游 ChatGPT 响应超时')), timeoutMs); }),
-        ]);
+        text = await exec;
       } catch (e) {
         sendJSON(res, 502, { error: { message: '上游错误: ' + (e && e.message ? e.message : e), type: 'upstream_error' } });
         return;
@@ -246,9 +289,12 @@ function createReverseGateway(opts) {
 
 module.exports = {
   createReverseGateway,
+  ensureApiToken,
+  readApiToken,
   flattenMessages,
   makeCompletionResponse,
   makeChunk,
   approxTokens,
   DEFAULT_PORT,
+  TOKEN_FILE,
 };

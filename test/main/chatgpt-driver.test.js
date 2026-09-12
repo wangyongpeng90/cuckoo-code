@@ -17,6 +17,7 @@ test('buildSendScript 生成自包含且语法合法的注入脚本', () => {
   // 关键选择器/契约存在
   assert.ok(src.includes('data-message-author-role="assistant"'), '应基于 assistant 消息容器');
   assert.ok(src.includes('data-testid="send-button"'), '应含发送按钮选择器');
+  assert.ok(src.includes('data-testid="stop-button"'), '完成判定应依赖停止按钮边沿（防长回复截断）');
   assert.ok(src.includes('ProseMirror'), '应含 ChatGPT 输入框选择器');
   // 提示词被安全转义为 JSON 字符串（防注入）
   const src2 = buildSendScript('a"b\\c\nnewline', {});

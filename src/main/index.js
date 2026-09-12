@@ -555,8 +555,17 @@ function startReverseGatewayIfEnabled() {
   const cfg = buildConfig.reverseGateway;
   if (!cfg || !cfg.enabled) return;
   try {
-    const { createReverseGateway } = require('./reverse-gateway');
+    const { createReverseGateway, ensureApiToken } = require('./reverse-gateway');
     const { createChatgptDriver } = require('./chatgpt-driver');
+
+    // 鉴权 token：配置非空则用配置；否则首启自动生成随机 token 持久化到 userData
+    const tokenInfo = (cfg.apiKey && String(cfg.apiKey).trim())
+      ? { token: String(cfg.apiKey).trim(), created: false }
+      : ensureApiToken(app.getPath('userData'));
+    if (tokenInfo.created) {
+      console.log('[反向网关] 已生成本地 API Token（持久化于 userData/api-server-token.json）：');
+      console.log('[反向网关] TOKEN=' + tokenInfo.token);
+    }
 
     // 找到承载 chatgpt.com 的窗口（多窗口时优先第一个匹配的）
     function findChatgptWebContents() {
@@ -570,7 +579,7 @@ function startReverseGatewayIfEnabled() {
     const gateway = createReverseGateway({
       host: cfg.host,
       port: cfg.port,
-      apiKey: cfg.apiKey,
+      apiKey: tokenInfo.token,
       defaultModel: cfg.defaultModel,
       sendPrompt: async (messages, opts) => {
         const wc = findChatgptWebContents();
@@ -583,6 +592,7 @@ function startReverseGatewayIfEnabled() {
     gateway.listen().then((addr) => {
       reverseGatewayHandle = gateway;
       console.log('[反向网关] 已启动 http://' + addr.host + ':' + addr.port + '/v1/chat/completions');
+      console.log('[反向网关] 调用方式: Authorization: Bearer ' + (cfg.apiKey && cfg.apiKey.trim() ? '<你配置的 apiKey>' : tokenInfo.token));
     }).catch((err) => {
       console.error('[反向网关] 启动失败:', err.message);
     });

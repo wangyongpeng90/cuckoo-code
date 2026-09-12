@@ -1,5 +1,28 @@
 # Changelog
 
+## [Unreleased] - GPT 定制版（feature/chatgpt-compat）
+
+### Added
+- **GPT 定制版**：仅启用 ChatGPT + 网关两个平台（`src/build-config.js` 白名单），
+  禁用官方自动更新；userData 目录改为 `cuckoo-code-gpt-session`，
+  与原版 `cuckoo-ai-pro-session` 完全隔离，两版可同时运行
+- **反向网关**：把已登录的 ChatGPT 网页会话暴露成本地 OpenAI 兼容 API
+  （`src/main/reverse-gateway.js` + `src/main/chatgpt-driver.js`）
+  - `POST /v1/chat/completions`（非流式 + SSE）、`GET /v1/models`、`GET /health`
+  - 强制 Bearer 鉴权；`apiKey` 留空时首启自动生成 48 位随机 token
+    持久化到 userData 并打印在启动日志
+  - 串行队列：同刻仅一个请求驱动 ChatGPT 页面，防止交错收发
+  - 完成判定采用"停止按钮出现→消失"边沿（与 provider 同机制），防长回复截断
+  - 仅监听 127.0.0.1，不设 CORS 头，不实现任何反检测绕过
+
+### Fixed
+- 切换平台后应用立即退出（零窗口瞬间触发 window-all-closed → app.quit()，
+  上游 0.3.8 既有缺陷，原版 asar 对照实验确认）
+- 反向网关 `port:0` 被 `|| DEFAULT_PORT` 覆盖
+- 反向网关 `Promise.race` 超时定时器泄漏（每次请求残留 180s 定时器）
+- 网关会话历史裁剪改为"保留首条 + user/assistant 成对裁剪"，
+  避免切断工具调用配对与丢失初始提示
+
 ## [Unreleased] - feature/chatgpt-compat
 
 ### Added

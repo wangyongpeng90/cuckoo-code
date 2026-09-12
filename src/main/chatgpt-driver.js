@@ -11,7 +11,7 @@
 
 const SEND_TIMEOUT_MS = 180000;
 const POLL_INTERVAL_MS = 800;
-const STABLE_ROUNDS = 2; // 连续 N 次文本不再增长视为完成
+const STABLE_ROUNDS = 3; // 停止按钮不可用时的兜底：连续 N 次文本不再增长视为完成
 
 /**
  * 生成"发送一条消息"的注入脚本（自包含，运行在页面主世界）。
@@ -90,7 +90,26 @@ function buildSendScript(prompt, opts) {
   }
   if (assistantCount() <= before) return { ok: false, error: '等待回复超时（未出现新消息）' };
 
-  // 轮询直到文本稳定（连续 STABLE 次不变）
+  // 完成判定（与平台 provider 同机制）：优先用"停止按钮出现→消失"的边沿，
+  // 该信号由站点自身维护，比文本稳定性可靠得多（深度思考/长代码停顿不会误判）。
+  function stopBtnVisible() {
+    const b = document.querySelector('button[data-testid="stop-button"]');
+    return visible(b);
+  }
+  let sawStopBtn = false;
+  while (Date.now() - t0 < TIMEOUT) {
+    if (stopBtnVisible()) { sawStopBtn = true; break; }
+    await sleep(POLL);
+  }
+  if (sawStopBtn) {
+    while (Date.now() - t0 < TIMEOUT) {
+      if (!stopBtnVisible()) break;
+      await sleep(POLL);
+    }
+    await sleep(300); // 等最后一次 DOM 渲染落定
+  }
+
+  // 兜底稳定性确认（停止按钮不可用的站点/已结束但渲染未完）：连续 STABLE 次不变
   let last = '', stable = 0;
   while (Date.now() - t0 < TIMEOUT) {
     const cur = lastAssistantText();

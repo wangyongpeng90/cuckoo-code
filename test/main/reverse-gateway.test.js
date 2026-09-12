@@ -162,15 +162,65 @@ test('reverse gateway: sendPrompt 抛错时返回 502 且不崩溃', async () =>
   } finally { await gw.close(); }
 });
 
-test('reverse gateway: apiKey 为空时不校验鉴权', async () => {
-  const { gw } = await startGateway({ apiKey: '' });
+test('reverse gateway: apiKey 为空/缺失时拒绝创建（防无鉴权暴露会话）', () => {
+  assert.throws(() => createReverseGateway({ sendPrompt: async () => 'x', apiKey: '' }), /apiKey/);
+  assert.throws(() => createReverseGateway({ sendPrompt: async () => 'x' }), /apiKey/);
+  assert.throws(() => createReverseGateway({ sendPrompt: async () => 'x', apiKey: '   ' }), /apiKey/);
+});
+
+test('reverse gateway: 响应不含 CORS 头（消费方是本机程序，非网页）', async () => {
+  const { gw } = await startGateway();
   try {
     const p = gw.address.port;
-    const r = await request(p, '/v1/chat/completions', 'POST', { messages: [{ role: 'user', content: 'hi' }] });
-    assert.strictEqual(r.status, 200);
+    const h = await request(p, '/health', 'GET');
+    assert.strictEqual(h.headers['access-control-allow-origin'], undefined);
   } finally { await gw.close(); }
 });
 
+test('reverse gateway: 并发请求被串行化（sendPrompt 不重叠）', async () => {
+  let running = 0, overlap = false, order = [];
+  const { gw } = await startGateway({
+    sendPrompt: async (messages) => {
+      if (running > 0) overlap = true;
+      running++;
+      await new Promise(r => setTimeout(r, 120));
+      running--;
+      order.push(messages[messages.length - 1].content);
+      return 'done';
+    },
+  });
+  try {
+    const p = gw.address.port;
+    const reqs = ['a', 'b', 'c'].map((c) =>
+      request(p, '/v1/chat/completions', 'POST', { messages: [{ role: 'user', content: c }] }, { Authorization: 'Bearer sk-test' })
+    );
+    const results = await Promise.all(reqs);
+    for (const r of results) assert.strictEqual(r.status, 200);
+    assert.strictEqual(overlap, false, 'sendPrompt 不得并发执行');
+    assert.deepStrictEqual(order, ['a', 'b', 'c'], '应按到达顺序串行处理');
+  } finally { await gw.close(); }
+});
+
+test('ensureApiToken 首次生成并持久化，之后复用', () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-tok-'));
+  const { ensureApiToken, readApiToken } = require('../../src/main/reverse-gateway');
+  const first = ensureApiToken(dir);
+  assert.ok(first.created);
+  assert.match(first.token, /^[0-9a-f]{48}$/);
+  const second = ensureApiToken(dir);
+  assert.strictEqual(second.created, false);
+  assert.strictEqual(second.token, first.token);
+  assert.strictEqual(readApiToken(dir), first.token);
+  // 损坏文件自动重建
+  fs.writeFileSync(first.file, 'not json');
+  const third = ensureApiToken(dir);
+  assert.match(third.token, /^[0-9a-f]{48}$/);
+  assert.strictEqual(readApiToken(dir), third.token);
+});
+
 test('reverse gateway: createReverseGateway 缺 sendPrompt 抛错', () => {
-  assert.throws(() => createReverseGateway({}), /sendPrompt/);
+  assert.throws(() => createReverseGateway({ apiKey: 'k' }), /sendPrompt/);
 });
