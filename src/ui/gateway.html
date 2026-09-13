@@ -5,139 +5,184 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:">
 <title>网关聊天 - Cuckoo Code</title>
 <style>
+  /* ===== ChatGPT 风格设计 ===== */
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
-    --bg: #0d0f1a; --bg2: #10131f; --panel: #171b30; --line: #262b4d;
-    --text: #dde1ff; --dim: #8a90b8; --accent: #6d76ff; --accent2: #8b93ff;
-    --err: #ff8b98; --ok: #7cffb2;
+    --bg: #212121;            /* 主背景 */
+    --bg-sidebar: #171717;    /* 侧栏/页头 */
+    --bubble-user: #2f2f2f;   /* 用户气泡 */
+    --line: #42424233;
+    --text: #ececf1;
+    --text-dim: #acacbc;
+    --accent: #10a37f;        /* ChatGPT 绿 */
+    --err: #ef8e8b;
   }
+  html, body { height: 100%; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-    background: radial-gradient(ellipse at 30% 0%, #1a1c2e 0%, var(--bg) 60%);
-    color: var(--text); height: 100vh; display: flex; flex-direction: column;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column; overflow: hidden;
   }
+
+  /* ===== 顶栏 ===== */
   header {
-    padding: 10px 18px; background: rgba(20,23,42,.9); border-bottom: 1px solid var(--line);
-    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; backdrop-filter: blur(6px);
+    padding: 12px 20px; display: flex; align-items: center; gap: 10px;
+    background: var(--bg); border-bottom: 1px solid var(--line); flex-shrink: 0;
   }
-  header .brand { font-weight: 700; color: var(--accent2); letter-spacing: .5px; }
-  #gateway-model-label { color: var(--dim); font-size: 12px; }
+  .brand-dot { width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 13px; color: #fff; font-weight: 700; }
+  header .title { font-size: 14px; font-weight: 600; }
+  #gateway-model-label { color: var(--text-dim); font-size: 12px; }
   header .spacer { flex: 1; }
   header button {
-    background: rgba(139,147,255,.12); color: #c8ccff; border: 1px solid rgba(139,147,255,.35);
-    border-radius: 8px; padding: 5px 12px; cursor: pointer; font-size: 12px; transition: all .15s;
+    background: none; border: 1px solid var(--line); color: var(--text-dim);
+    border-radius: 20px; padding: 6px 14px; cursor: pointer; font-size: 13px; transition: all .15s;
   }
-  header button:hover { background: rgba(139,147,255,.25); }
+  header button:hover { background: var(--bubble-user); color: var(--text); }
 
-  #messages { flex: 1; overflow-y: auto; padding: 24px 12%; scroll-behavior: smooth; }
+  /* ===== 消息区（ChatGPT：居中列 + 无气泡 assistant）===== */
+  #messages { flex: 1; overflow-y: auto; padding: 24px 16px 40px; }
   #messages::-webkit-scrollbar { width: 8px; }
-  #messages::-webkit-scrollbar-thumb { background: #2c3157; border-radius: 4px; }
+  #messages::-webkit-scrollbar-thumb { background: #42424266; border-radius: 4px; }
+  .thread { max-width: 768px; margin: 0 auto; }
 
-  .msg { margin-bottom: 20px; line-height: 1.6; font-size: 14px; animation: fadein .18s ease; }
-  @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
-  .msg .meta { font-size: 11px; color: var(--dim); margin-bottom: 5px; display: flex; gap: 8px; align-items: center; }
-  .msg.user .content { color: #b9c2ff; background: rgba(109,118,255,.08); border: 1px solid rgba(109,118,255,.2);
-    border-radius: 12px 12px 12px 3px; padding: 10px 14px; display: inline-block; max-width: 92%; white-space: pre-wrap; word-break: break-word; }
-  .msg.assistant .content { color: #e6e9ff; background: rgba(255,255,255,.03); border: 1px solid #232949;
-    border-radius: 12px 12px 12px 3px; padding: 12px 16px; }
-  .msg.error .content { color: var(--err); background: rgba(255,107,122,.08); border: 1px solid rgba(255,107,122,.3);
-    border-radius: 10px; padding: 10px 14px; white-space: pre-wrap; word-break: break-word; }
+  .msg { margin-bottom: 28px; font-size: 15px; line-height: 1.75; animation: fadein .2s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .msg .meta { font-size: 12px; font-weight: 600; margin-bottom: 8px; display: flex; gap: 10px; align-items: center; }
+  .msg.user { display: flex; justify-content: flex-end; }
+  .msg.user .msg-inner { max-width: 85%; }
+  .msg.user .meta { justify-content: flex-end; color: var(--text-dim); }
+  .msg.user .content {
+    background: var(--bubble-user); border-radius: 22px; padding: 12px 18px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .msg.assistant .meta { color: var(--text); }
+  .msg.assistant .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--accent);
+    display: inline-flex; align-items: center; justify-content: center; margin-right: 8px;
+    font-size: 12px; color: #fff; vertical-align: middle; }
+  .msg.assistant .content { color: var(--text); }
+  .msg.error .content { color: var(--err); background: rgba(239,142,139,.08);
+    border: 1px solid rgba(239,142,139,.25); border-radius: 12px; padding: 12px 16px;
+    white-space: pre-wrap; word-break: break-word; }
 
-  /* Markdown */
-  .md p { margin: .45em 0; }
-  .md h1, .md h2, .md h3 { margin: .8em 0 .4em; color: #c8ccff; }
-  .md h1 { font-size: 1.25em; } .md h2 { font-size: 1.15em; } .md h3 { font-size: 1.05em; }
-  .md ul, .md ol { margin: .4em 0 .4em 1.4em; }
-  .md li { margin: .15em 0; }
-  .md code.inline { background: #1f2440; color: #9fd6ff; border-radius: 4px; padding: 1px 6px;
-    font-family: Consolas, 'Courier New', monospace; font-size: .92em; }
-  .md a { color: #8ab4ff; }
-  .md blockquote { border-left: 3px solid #3a4270; margin: .5em 0; padding: .1em 0 .1em 12px; color: var(--dim); }
-  .md hr { border: none; border-top: 1px solid #262b4d; margin: .8em 0; }
-  .md strong { color: #fff; }
-  .code-block { margin: .6em 0; border: 1px solid #2c3157; border-radius: 10px; overflow: hidden; background: #12152a; }
+  /* ===== Markdown（ChatGPT 排版）===== */
+  .md p { margin: .6em 0; }
+  .md h1, .md h2, .md h3 { margin: 1em 0 .45em; font-weight: 650; }
+  .md h1 { font-size: 1.3em; } .md h2 { font-size: 1.18em; } .md h3 { font-size: 1.06em; }
+  .md ul, .md ol { margin: .5em 0 .5em 1.5em; }
+  .md li { margin: .2em 0; }
+  .md code.inline { background: #2f2f2f; color: #e3e3e3; border-radius: 5px; padding: 2px 7px;
+    font-family: 'Cascadia Code', Consolas, monospace; font-size: .9em; }
+  .md a { color: #7ab7ff; text-decoration: underline; text-underline-offset: 3px; }
+  .md blockquote { border-left: 3px solid #4d4d4d; margin: .6em 0; padding: .15em 0 .15em 14px; color: var(--text-dim); }
+  .md hr { border: none; border-top: 1px solid var(--line); margin: 1em 0; }
+  .md strong { font-weight: 650; }
+
+  .code-block { margin: .7em 0; border: 1px solid #42424266; border-radius: 12px; overflow: hidden; background: #1e1e1e; }
   .code-head { display: flex; justify-content: space-between; align-items: center;
-    background: #1a1e38; padding: 5px 12px; font-size: 11px; color: var(--dim); }
-  .code-head .copy-btn { background: none; border: 1px solid #2c3157; color: #9aa0c8; border-radius: 5px;
-    padding: 2px 9px; cursor: pointer; font-size: 11px; }
-  .code-head .copy-btn:hover { color: #fff; border-color: var(--accent); }
-  .code-block pre { margin: 0; padding: 12px 14px; overflow-x: auto; }
-  .code-block code { font-family: Consolas, 'Courier New', monospace; font-size: 13px; color: #d6dbff; white-space: pre; }
+    background: #2f2f2f; padding: 7px 16px; font-size: 12px; color: #acacbc; }
+  .code-head .copy-btn { background: none; border: none; color: #acacbc; cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; gap: 5px; }
+  .code-head .copy-btn:hover { color: #fff; }
+  .code-block pre { margin: 0; padding: 14px 18px; overflow-x: auto; }
+  .code-block code { font-family: 'Cascadia Code', Consolas, 'Courier New', monospace; font-size: 13.5px;
+    color: #e3e3e3; white-space: pre; line-height: 1.55; }
 
-  .cursor { display: inline-block; width: 8px; height: 15px; background: var(--accent2);
-    vertical-align: text-bottom; animation: blink 1s steps(1) infinite; border-radius: 2px; }
+  .cursor { display: inline-block; width: 9px; height: 17px; background: var(--accent);
+    vertical-align: text-bottom; animation: blink 1s steps(1) infinite; border-radius: 2px; margin-left: 2px; }
   @keyframes blink { 50% { opacity: 0; } }
 
-  #gateway-empty { text-align: center; color: var(--dim); margin-top: 12vh; }
-  #gateway-empty .big { font-size: 34px; margin-bottom: 12px; }
-  #gateway-empty .tip { font-size: 13px; line-height: 2; }
-  #gateway-empty kbd { background: #1f2440; border: 1px solid #2c3157; border-radius: 5px; padding: 1px 7px; font-size: 12px; }
+  /* ===== 空状态 ===== */
+  #gateway-empty { text-align: center; color: var(--text-dim); padding-top: 10vh; }
+  #gateway-empty .big { font-size: 40px; margin-bottom: 14px; }
+  #gateway-empty h2 { color: var(--text); font-size: 22px; font-weight: 600; margin-bottom: 10px; }
+  #gateway-empty .tip { font-size: 14px; line-height: 2.1; }
+  #gateway-empty kbd { background: #2f2f2f; border: 1px solid #42424266; border-radius: 6px;
+    padding: 2px 8px; font-size: 12.5px; color: var(--text); }
 
-  footer { padding: 12px 12% 18px; background: var(--bg2); border-top: 1px solid var(--line); }
+  /* ===== 底部输入（ChatGPT 药丸形）===== */
+  .composer-wrap { flex-shrink: 0; padding: 0 16px 14px; }
+  .composer { max-width: 768px; margin: 0 auto; background: var(--bubble-user);
+    border: 1px solid var(--line); border-radius: 26px; padding: 12px 14px 10px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.25); transition: border-color .15s; }
+  .composer:focus-within { border-color: #565656; }
   #gateway-input {
-    width: 100%; min-height: 64px; max-height: 240px; resize: vertical;
-    background: #1a1d33; color: var(--text); border: 1px solid #2c3157; border-radius: 12px;
-    padding: 11px 13px; font-size: 14px; font-family: inherit; transition: border-color .15s;
+    width: 100%; min-height: 28px; max-height: 200px; resize: none; border: none; background: none;
+    color: var(--text); font-size: 15px; font-family: inherit; line-height: 1.55;
+    display: block; overflow-y: auto;
   }
-  #gateway-input:focus { outline: none; border-color: var(--accent); }
-  .send-row { display: flex; justify-content: flex-end; margin-top: 8px; gap: 8px; align-items: center; }
-  #gateway-status { color: var(--dim); font-size: 12px; margin-right: auto; }
+  #gateway-input:focus { outline: none; }
+  #gateway-input::placeholder { color: #8e8ea0; }
+  .send-row { display: flex; align-items: center; margin-top: 8px; }
+  #gateway-status { color: var(--text-dim); font-size: 12px; margin-right: auto; }
   #gateway-send {
-    background: var(--accent); color: #fff; border: none; border-radius: 10px;
-    padding: 8px 24px; cursor: pointer; font-size: 14px; transition: opacity .15s;
+    width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--accent);
+    color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: opacity .15s, transform .1s; flex-shrink: 0;
   }
-  #gateway-send:disabled { opacity: .45; cursor: not-allowed; }
+  #gateway-send:hover { opacity: .85; }
+  #gateway-send:disabled { opacity: .3; cursor: not-allowed; }
+  #gateway-send svg { width: 18px; height: 18px; }
+  .footnote { text-align: center; font-size: 11px; color: #8e8ea0; margin-top: 8px; }
 
+  /* ===== 设置面板 ===== */
   #gateway-config {
-    position: fixed; right: 16px; bottom: 110px; width: 400px; z-index: 9999;
-    background: var(--panel); border: 1px solid #2c3157; border-radius: 14px; padding: 16px;
-    box-shadow: 0 12px 40px rgba(0,0,0,.55); display: none;
+    position: fixed; right: 16px; bottom: 120px; width: 410px; z-index: 9999;
+    background: var(--bg-sidebar); border: 1px solid var(--line); border-radius: 16px; padding: 18px;
+    box-shadow: 0 16px 48px rgba(0,0,0,.6); display: none;
   }
   #gateway-config.open { display: block; }
-  #gateway-config .cfg-title { font-weight: 600; color: #c8ccff; }
-  #gateway-config label { display: block; font-size: 12px; color: var(--dim); margin: 10px 0 4px; }
+  #gateway-config .cfg-title { font-weight: 600; font-size: 15px; }
+  #gateway-config label { display: block; font-size: 12.5px; color: var(--text-dim); margin: 12px 0 5px; }
   #gateway-config input {
-    width: 100%; background: #1a1d33; border: 1px solid #2c3157; border-radius: 8px;
-    color: var(--text); padding: 7px 10px; font-size: 13px;
+    width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+    color: var(--text); padding: 9px 12px; font-size: 13.5px;
   }
-  #gateway-config input:focus { outline: none; border-color: var(--accent); }
+  #gateway-config input:focus { outline: none; border-color: #565656; }
   #gateway-config .key-row { position: relative; }
-  #gateway-config .key-eye { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-    background: none; border: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 2px; }
-  #gateway-config .row { display: flex; gap: 8px; margin-top: 14px; }
-  #gateway-config button { flex: 1; border-radius: 8px; padding: 7px 0; cursor: pointer; border: 1px solid #2c3157; background: #232949; color: #c8ccff; }
+  #gateway-config .key-eye { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 12px; padding: 2px; }
+  #gateway-config .row { display: flex; gap: 9px; margin-top: 16px; }
+  #gateway-config button { flex: 1; border-radius: 10px; padding: 8px 0; cursor: pointer;
+    border: 1px solid var(--line); background: var(--bubble-user); color: var(--text); font-size: 13.5px; }
   #gateway-config button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  #gateway-config .hint { font-size: 11px; color: #6b7196; margin-top: 8px; line-height: 1.6; }
-  #gateway-config .err-line { font-size: 12px; color: var(--err); margin-top: 8px; min-height: 14px; }
+  #gateway-config button.primary:hover { opacity: .9; }
+  #gateway-config .hint { font-size: 11.5px; color: #8e8ea0; margin-top: 10px; line-height: 1.65; }
+  #gateway-config .err-line { font-size: 12.5px; color: var(--err); margin-top: 8px; min-height: 15px; }
 </style>
 </head>
 <body>
   <header>
-    <span class="brand">网关 · OpenAI 兼容</span>
+    <span class="brand-dot">鸟</span>
+    <span class="title">网关聊天</span>
     <span id="gateway-model-label">未配置</span>
     <span class="spacer"></span>
-    <button id="gateway-config-toggle">⚙ 网关设置</button>
+    <button id="gateway-config-toggle">⚙ 设置</button>
     <button id="gateway-new-chat">＋ 新会话</button>
   </header>
 
   <div id="messages">
     <div id="gateway-empty">
       <div class="big">🪺</div>
+      <h2>有什么可以帮忙的？</h2>
       <div class="tip">
         连接任意 OpenAI 兼容网关，把 GPT 变成本地 Agent<br>
-        先点右上角 <kbd>⚙ 网关设置</kbd> 填入 Base URL / API Key / 模型名<br>
+        先点右上角 <kbd>⚙ 设置</kbd> 填入 Base URL / API Key / 模型名<br>
         <kbd>Enter</kbd> 发送 · <kbd>Shift+Enter</kbd> 换行 · 工具结果会自动回传
       </div>
     </div>
   </div>
 
-  <footer>
-    <textarea id="gateway-input" placeholder="输入消息…（工具结果会自动回传，无需手动操作）"></textarea>
-    <div class="send-row">
-      <span id="gateway-status"></span>
-      <button id="gateway-send">发送</button>
+  <div class="composer-wrap">
+    <div class="composer">
+      <textarea id="gateway-input" rows="1" placeholder="给 Cuckoo 发消息…"></textarea>
+      <div class="send-row">
+        <span id="gateway-status"></span>
+        <button id="gateway-send" title="发送"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg></button>
+      </div>
     </div>
-  </footer>
+    <div class="footnote">Cuckoo 可能会犯错。请核查重要信息。</div>
+  </div>
 
   <div id="gateway-config">
     <div class="cfg-title">网关设置</div>
@@ -233,6 +278,13 @@
   var busy = false;
   var stickBottom = true;   // 用户上翻时暂停自动滚动
 
+  // 输入框自适应高度（ChatGPT 行为）
+  function autoGrow() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + 'px';
+  }
+  inputEl.addEventListener('input', autoGrow);
+
   // ---------- 会话 ID：?session= 或 #session= 携带；hash 变化触发会话绑定 ----------
   function genSid() {
     return 'gw-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
@@ -270,14 +322,21 @@
     hideEmpty();
     var box = el('div', 'msg ' + role);
     box.setAttribute('data-message-author-role', role === 'assistant' ? 'assistant' : 'user');
+    var inner = el('div', 'msg-inner');
     var meta = el('div', 'meta');
-    meta.appendChild(el('span', null, role === 'user' ? '你' : (role === 'error' ? '错误' : 'AI')));
-    if (when) meta.appendChild(el('span', null, when));
-    box.appendChild(meta);
+    if (role === 'assistant') {
+      meta.appendChild(el('span', 'avatar', '鸟'));
+      meta.appendChild(el('span', null, 'Cuckoo'));
+    } else {
+      meta.appendChild(el('span', null, '你'));
+      if (when) meta.appendChild(el('span', null, when));
+    }
+    inner.appendChild(meta);
     var content = el('div', 'content');
     if (role === 'assistant') { content.classList.add('md'); content.innerHTML = MD.renderMD(text || ''); }
     else { content.textContent = text || ''; }
-    box.appendChild(content);
+    inner.appendChild(content);
+    box.appendChild(inner);
     messagesEl.appendChild(box);
     scrollBottom(role !== 'user');
     return content;
@@ -294,7 +353,8 @@
   }
   function renderHistory(history) {
     messagesEl.innerHTML = '';
-    messagesEl.appendChild(emptyEl || buildEmpty());
+    emptyEl = buildEmpty();
+    messagesEl.appendChild(emptyEl);
     (history || []).forEach(function (m) {
       if (m && (m.role === 'user' || m.role === 'assistant')) bindCopy(addMessage(m.role, m.content));
     });
@@ -302,9 +362,14 @@
     scrollBottom(true);
   }
   function buildEmpty() {
-    var d = el('div');
-    d.id = 'gateway-empty';
-    return d;
+    var wrap = el('div');
+    wrap.id = 'gateway-empty';
+    wrap.appendChild(el('div', 'big', '🪺'));
+    wrap.appendChild(el('h2', null, '有什么可以帮忙的？'));
+    var tip = el('div', 'tip');
+    tip.innerHTML = '连接任意 OpenAI 兼容网关，把 GPT 变成本地 Agent<br>先点右上角 <kbd>⚙ 设置</kbd> 填入 Base URL / API Key / 模型名<br><kbd>Enter</kbd> 发送 · <kbd>Shift+Enter</kbd> 换行 · 工具结果会自动回传';
+    wrap.appendChild(tip);
+    return wrap;
   }
 
   // ---------- 发送 ----------
@@ -367,12 +432,13 @@
   sendBtn.addEventListener('click', function () {
     var v = inputEl.value;
     inputEl.value = '';
+    autoGrow();
     send(v);
   });
   inputEl.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      var v = inputEl.value; inputEl.value = ''; send(v);
+      var v = inputEl.value; inputEl.value = ''; autoGrow(); send(v);
     }
   });
   // 用户上翻时暂停自动滚动，回到底部恢复
@@ -399,6 +465,7 @@
     var text = ev && ev.detail && ev.detail.text;
     if (!text) return;
     inputEl.value = '';
+    autoGrow();
     send(text);
   });
 
@@ -431,7 +498,7 @@
           ? '已保存 (' + res.config.apiKeyMasked + ')，留空则不修改'
           : '尚未配置，输入 API Key';
         modelLabel.textContent = res.config.configured
-          ? res.config.model + ' · ' + res.config.baseUrl.replace(/^https?:\/\//, '').split('/')[0]
+          ? res.config.model
           : '未配置';
       }
     } catch (e) {}
@@ -470,9 +537,7 @@
   function bindSession(sid) {
     if (!sid) return;
     sessionId = sid;
-    messagesEl.innerHTML = '';
-    emptyEl = buildEmpty();
-    messagesEl.appendChild(emptyEl);
+    renderHistory([]);
     restoreHistory();
   }
   window.addEventListener('hashchange', function () {

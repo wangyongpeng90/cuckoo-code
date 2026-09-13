@@ -8,6 +8,7 @@ const { tryParseToolCall } = require('./tool-parser');
 const { handleToolCall, handleJsToolScript } = require('./observer');
 const { sendToolResultToChat, sendCombinedJsResultsToChat, sendMessageToChat } = require('./chat-input');
 const { hasTool, toolNamesList } = require('../tool-names');
+const { detectWrongToolFormat } = require('./format-hint');
 
 const MAX_JS_RETRY = 3;
 // 连续 XML 提示次数（防止无限循环）
@@ -85,21 +86,20 @@ async function processInterceptedResponse(text) {
     return;
   }
 
-  // 3. XML 格式工具调用提示
-  const hasAntmlXml = /^<\s*｜｜DSML｜｜/i.test(raw);
-  const hasXmlInvoke = /<\s*(?:[\w-]+:)?invoke\s+name=/i.test(raw);
-  const hasXmlClose = /<\s*\/\s*(?:[\w-]+:)?invoke\s*>/i.test(raw);
-  const hasXmlParam = /<\s*(?:[\w-]+:)?parameter\s+name=/i.test(raw);
-  if (hasAntmlXml || (hasXmlInvoke && (hasXmlClose || hasXmlParam))) {
+  // 3. 工具调用格式提示（未按 ```cuckoo 格式输出的常见错误形态：
+  //    XML invoke 族 / AntML 特殊 token / JSON 工具调用对象）
+  const wrong = detectWrongToolFormat(raw);
+  if (wrong.detected) {
     if (xmlHintCount >= XML_HINT_MAX) {
-      console.log('[Cuckoo Code][拦截] 已连续提示 ' + xmlHintCount + ' 次 XML 格式，停止发送');
+      console.log('[Cuckoo Code][拦截] 已连续提示 ' + xmlHintCount + ' 次格式错误，停止发送');
       return;
     }
     xmlHintCount++;
-    console.log('[Cuckoo Code][拦截] 检测到 XML 格式工具调用（第 ' + xmlHintCount + ' 次提示）');
+    console.log('[Cuckoo Code][拦截] 检测到非约定格式工具调用（' + wrong.kind + '，第 ' + xmlHintCount + ' 次提示）');
     sendMessageToChat(
-      '请使用' + BT + BT + BT + 'cuckoo' + BT + BT + BT + ' 代码块进行工具调用，不要使用 XML invoke 格式。',
-      'XML工具调用提示'
+      '请使用' + BT + BT + BT + 'cuckoo' + BT + BT + BT + ' 代码块进行工具调用，不要使用 ' +
+      (wrong.kind === 'json' ? 'JSON 工具调用对象' : 'XML/特殊标记') + ' 格式。',
+      '工具格式提示'
     );
     return;
   }

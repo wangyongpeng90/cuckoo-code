@@ -45,7 +45,7 @@ function registerIpcHandlers() {
       if (provider && typeof provider.sessionUrlBase === 'string' && provider.sessionUrlBase) {
         url = provider.sessionUrlBase + sessionId;
       }
-    } catch (_) { /* 回退 ChatGPT（GPT 定制版默认平台）*/ }
+    } catch (_) { /* 回退 DeepSeek */ }
     if (!url) url = 'https://chatgpt.com/';
     try {
       await win.webContents.loadURL(url);
