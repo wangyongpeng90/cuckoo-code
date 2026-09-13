@@ -60,3 +60,10 @@ test('driver.ask 页面报错时抛出该错误', async () => {
 test('createChatgptDriver 缺 exec 抛错', () => {
   assert.throws(() => createChatgptDriver(null), /exec/);
 });
+
+test('buildSendScript 填入文本后等待发送按钮出现再点击（非直接合成 Enter）', () => {
+  const src = buildSendScript('hi', {});
+  // 应包含"轮询等待发送按钮"逻辑
+  assert.ok(/while\s*\(Date\.now\(\)\s*-\s*tSend\s*<\s*8000\)/.test(src), '应轮询等待发送按钮');
+  assert.ok(src.indexOf('btn.click()') < src.indexOf('dispatchEvent(new KeyboardEvent'), '优先点击按钮，Enter 仅兜底');
+});

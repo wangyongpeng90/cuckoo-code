@@ -72,10 +72,19 @@ function buildSendScript(prompt, opts) {
     input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, cancelable: true, clipboardData: dt }));
   }
 
-  await sleep(150);
-  const btn = findSend();
-  if (btn) btn.click();
-  else {
+  // 填入文本后发送按钮才会渲染（空输入框时 ChatGPT 不显示发送按钮）：
+  // 轮询等待按钮出现再点击；合成 Enter 键在 ProseMirror 上不可靠，仅作最后兜底。
+  let btn = null;
+  const tSend = Date.now();
+  while (Date.now() - tSend < 8000) {
+    btn = findSend();
+    if (btn) break;
+    await sleep(120);
+  }
+  if (btn) {
+    btn.click();
+  } else {
+    // 兜底：合成 Enter（部分站点/版本可用）
     const opts = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
     input.dispatchEvent(new KeyboardEvent('keydown', opts));
     input.dispatchEvent(new KeyboardEvent('keypress', opts));
