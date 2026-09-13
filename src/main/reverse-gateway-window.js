@@ -87,21 +87,40 @@ function createReverseGatewayWindow(deps, opts = {}) {
      * @throws {Error} 页面加载失败或未登录时
      */
     async getWebContents() {
-      if (hidden && isUsable(hidden.win)) return hidden.win.webContents;
-      if (hidden && !hidden.win.isDestroyed()) { try { hidden.win.destroy(); } catch (_) {} }
-      hidden = null;
+      // 每次请求都刷新到全新会话页：
+      // 1) 旧页面的客户端登录态可能已过期/陈旧（用户后登录的场景）
+      // 2) 每请求一个新会话 = 无状态 API 语义，上下文不累积
+      if (!hidden || hidden.win.isDestroyed()) {
+        const session = resolveSession();
+        if (!session) return null;
+        const win = await createHidden(session);
+        hidden = { win };
+      }
 
-      const session = resolveSession();
-      if (!session) return null;
-
-      const win = await createHidden(session);
-      hidden = { win };
-
+      const win = hidden.win;
+      // 刷新页面（loadURL 对同地址也是一次完整导航），并等待可用
+      try { await win.webContents.loadURL(CHATGPT_URL); } catch (_) { /* 导航中断继续检查 */ }
       const ok = await waitUsable(win);
       if (!ok) {
+        let url = '';
+        try { url = win.webContents.getURL() || ''; } catch (_) {}
+        if (/auth\.openai\.com/.test(url)) {
+          throw new Error('未检测到 ChatGPT 登录态（被重定向到登录页），请先在窗口内完成登录');
+        }
         try { win.destroy(); } catch (_) {}
         hidden = null;
-        throw new Error('ChatGPT 页面加载失败或未登录（反向网关窗口），请先在 ChatGPT 平台完成登录');
+        throw new Error('ChatGPT 页面加载失败（反向网关窗口）。请检查代理/网络后在 ChatGPT 平台窗口确认可打开 chatgpt.com');
+      }
+
+      // 登录态检查：未登录时快速报错，而非等满驱动超时
+      const sess = await win.webContents.executeJavaScript(
+        "(async()=>{try{const r=await fetch('/api/auth/session',{credentials:'include'});" +
+        "const j=await r.json();return JSON.stringify({u:!!(j.user),e:String(j.error||'')})}" +
+        "catch(e){return JSON.stringify({u:null,e:String(e&&e.message||e)})}})()", true);
+      let st = null;
+      try { st = JSON.parse(sess); } catch (_) {}
+      if (st && st.u === false) {
+        throw new Error('未检测到 ChatGPT 登录态，请先在窗口内完成登录');
       }
       return win.webContents;
     },

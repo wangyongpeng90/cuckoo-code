@@ -78,8 +78,11 @@ test('隐藏窗不带 preload，且 show:false / skipTaskbar', async () => {
 
 test('重定向到 auth.openai.com（未登录）时抛明确错误并销毁窗口', async () => {
   const mgr = createReverseGatewayWindow(makeDeps(makeFakeWindowClass(['https://auth.openai.com/log-in']), [fakeCtx({})]));
-  await assert.rejects(() => mgr.getWebContents(), /未登录/);
-  assert.strictEqual(mgr.hasWindow, false, '失败后不得保留半成品窗口');
+  await assert.rejects(() => mgr.getWebContents(), /未检测到 ChatGPT 登录态|未登录/);
+  // 未登录是可恢复状态：保留窗口，用户登录后下次请求刷新页面即可用
+  assert.strictEqual(mgr.hasWindow, true, '未登录属可恢复状态，窗口应保留');
+  mgr.closeAll();
+  assert.strictEqual(mgr.hasWindow, false);
 });
 
 test('窗口被销毁后自动重建', async () => {
@@ -121,4 +124,49 @@ test('隐藏窗必须设置与主窗口一致的 UA（cf_clearance 与 UA 绑定
   assert.strictEqual(seen.length, 1, '应在 loadURL 前设置 UA');
   assert.strictEqual(seen[0], UA);
   assert.ok(!/electron/i.test(seen[0]), 'UA 不得含 Electron 标识');
+});
+
+test('每次请求刷新页面且校验登录态：未登录快速报错', async () => {
+  let loadCount = 0;
+  const deps = {
+    createBrowserWindow: (o) => {
+      const w = new (makeFakeWindowClass(['https://chatgpt.com/']))(o);
+      const orig = w.loadURL.bind(w);
+      w.loadURL = async (u) => { loadCount++; return orig(u); };
+      w.webContents.executeJavaScript = async (code) => '{"u":false}'; // 未登录
+      return w;
+    },
+    listChatgptContexts: () => [fakeCtx({})],
+  };
+  const mgr = createReverseGatewayWindow(deps);
+  await assert.rejects(() => mgr.getWebContents(), /未检测到 ChatGPT 登录态/);
+  assert.strictEqual(loadCount, 1, '每次请求都应刷新页面');
+});
+
+test('已登录（session 返回 user）时正常返回 webContents', async () => {
+  const deps = {
+    createBrowserWindow: (o) => {
+      const w = new (makeFakeWindowClass(['https://chatgpt.com/']))(o);
+      w.webContents.executeJavaScript = async () => '{"u":true}';
+      return w;
+    },
+    listChatgptContexts: () => [fakeCtx({})],
+  };
+  const mgr = createReverseGatewayWindow(deps);
+  const wc = await mgr.getWebContents();
+  assert.ok(wc, '已登录应返回 webContents');
+});
+
+test('session 检查失败（非 JSON）不阻塞，按已登录处理', async () => {
+  const deps = {
+    createBrowserWindow: (o) => {
+      const w = new (makeFakeWindowClass(['https://chatgpt.com/']))(o);
+      w.webContents.executeJavaScript = async () => 'garbage';
+      return w;
+    },
+    listChatgptContexts: () => [fakeCtx({})],
+  };
+  const mgr = createReverseGatewayWindow(deps);
+  const wc = await mgr.getWebContents();
+  assert.ok(wc);
 });
