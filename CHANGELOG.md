@@ -1,11 +1,8 @@
 # Changelog
 
-## [Unreleased] - GPT 定制版（feature/chatgpt-compat）
+## [Unreleased]
 
 ### Added
-- **GPT 定制版**：仅启用 ChatGPT + 网关两个平台（`src/build-config.js` 白名单），
-  禁用官方自动更新；userData 目录改为 `cuckoo-code-gpt-session`，
-  与原版 `cuckoo-ai-pro-session` 完全隔离，两版可同时运行
 - **反向网关**：把已登录的 ChatGPT 网页会话暴露成本地 OpenAI 兼容 API
   （`src/main/reverse-gateway.js` + `src/main/chatgpt-driver.js`）
   - `POST /v1/chat/completions`（非流式 + SSE）、`GET /v1/models`、`GET /health`
@@ -23,9 +20,6 @@
 - 网关会话历史裁剪改为"保留首条 + user/assistant 成对裁剪"，
   避免切断工具调用配对与丢失初始提示
 
-## [Unreleased] - feature/chatgpt-compat
-
-### Added
 - **「网关 (OpenAI 兼容)」内置 Provider**：无需网页账号，直接对接任意
   OpenAI 兼容网关（OpenAI / Azure / one-api / 自建推理服务等）
   - 内置本地聊天页 `src/ui/gateway.html`（file:// 加载，asar 内可用），
