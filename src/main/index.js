@@ -6,24 +6,36 @@ const { app, BrowserWindow, Menu, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
-const windowState = require('./window');
-const profileManager = require('./profile-manager');
-const { createSessionStore } = require('./session-store');
-const { getProvider } = require('../providers');
-const updater = require('./updater');
-
-// ========== 持久化会话配置 ==========
+// ========== 数据目录解析（必须先于所有业务模块加载）==========
+// 便携版（exe 同级存在 portable.flag）：数据写入解压目录 data/，不在用户目录留痕。
+// 环境变量 CUCKOO_DATA_DIR 可显式覆盖（测试/高级用法）。
+// 安装版/开发版：维持原行为 %APPDATA%/cuckoo-ai-pro-session。
+const { resolveDataDir } = require('./data-dir');
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
-const USER_DATA_DIR = path.join(app.getPath('appData'), SESSION_DIR);
+const dataDirInfo = resolveDataDir({
+  exeDir: path.dirname(app.getPath('exe')),
+  env: process.env,
+  defaultDir: path.join(app.getPath('appData'), SESSION_DIR),
+});
+const USER_DATA_DIR = dataDirInfo.dir;
+const IS_PORTABLE = dataDirInfo.portable;
+// 供 updater.js 等模块判断便携模式（读取环境变量，避免各模块重复实现标记检测）
+process.env.CUCKOO_PORTABLE = IS_PORTABLE ? '1' : '';
 // app.setPath('userData', ...) 要求目标目录必须已存在，否则会抛错导致启动闪退。
 // 用户首次运行或手动删除该目录时，此处负责兜底创建。
 try {
   fs.mkdirSync(USER_DATA_DIR, { recursive: true });
 } catch (err) {
-  console.error('[Cuckoo Code] 创建 userData 目录失败:', err.message);
+  console.error('[Cuckoo Code] 创建数据目录失败:', err.message);
 }
 app.setPath('userData', USER_DATA_DIR);
-console.log('[Cuckoo Code] Session 数据目录:', app.getPath('userData'));
+console.log('[Cuckoo Code] 数据目录:', USER_DATA_DIR + (IS_PORTABLE ? '（便携模式）' : ''));
+
+const windowState = require('./window');
+const profileManager = require('./profile-manager');
+const { createSessionStore } = require('./session-store');
+const { getProvider } = require('../providers');
+const updater = require('./updater');
 
 // 渲染进程日志输出目录（仅开发环境持久化；打包版不写日志文件）
 const RENDERER_LOG_DIR = app.isPackaged
