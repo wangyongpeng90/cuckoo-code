@@ -26,6 +26,7 @@ const { InjectJSTool } = require('./InjectJSTool');
 const { AttachFileTool } = require('./AttachFileTool');
 const { McpCallTool } = require('./McpCallTool');
 const { McpListServersTool, McpGetToolsTool } = require('./McpQueryTools');
+const { SkillListTool, SkillLoadTool, SkillExecuteTool } = require('./SkillTools');
 
 // 创建全局工具注册表
 const registry = new ToolRegistry();
@@ -54,6 +55,9 @@ registry.register(new AttachFileTool());
 registry.register(new McpCallTool());
 registry.register(new McpListServersTool());
 registry.register(new McpGetToolsTool());
+registry.register(new SkillListTool());
+registry.register(new SkillLoadTool());
+registry.register(new SkillExecuteTool());
 
 // 导出
 module.exports = {
@@ -75,6 +79,12 @@ module.exports = {
   PwshTool,
   FileDeleteTool,
   WebFetchTool,
+  McpCallTool,
+  McpListServersTool,
+  McpGetToolsTool,
+  SkillListTool,
+  SkillLoadTool,
+  SkillExecuteTool,
   // 便捷方法
   getAllTools: () => registry,
   getToolDescriptions: () => registry.getDescriptions(),

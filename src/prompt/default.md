@@ -178,6 +178,8 @@ log(r);
 
 {{PROJECT_INTRO_SECTION}}
 
+{{SKILL_SECTION}}
+
 ---
 
 ## 当前项目目录
