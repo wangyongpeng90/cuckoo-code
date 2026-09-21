@@ -1,18 +1,22 @@
 /**
- * 手动压缩上下文：全自动流程（纯 API，不依赖 DOM 点击）
+ * 压缩上下文：清 IDB + 刷新，让 DeepSeek 自己写回完整历史
+ *
+ * 背景（实测）：同会话内 AI 回复后 IDB 不更新；刷新页面才会补齐；
+ * 清 IDB 后刷新，DeepSeek 会自动重新拉取完整历史写回（cache_control: REPLACE）。
  *
  * 流程：
- *  1. 发送指令让 AI 输出摘要，等待回复完成
- *  2. 从 URL 获取 chat_session_id
- *  3. 从 IndexedDB 读取全量 message_ids
- *  4. 取尾部 20%
- *  5. 用缓存的真实请求头直接 fetch /api/v0/share/create
- *  6. 得到 share_id → 拼分享链接
- *  7. 跳转 → 新页面自动初始化项目
+ *  段1（当前页 runCompaction）：
+ *    发摘要指令 → 等回复 → 清当前会话 IDB 记录 → 存项目目录 → URL 加标记 → 刷新
+ *  段2（刷新后同页 checkPendingCompact）：
+ *    检测 URL 标记 → 清标记 → 等 hook 的 IDB 写入事件 → 读 IDB
+ *    → 取最近 20% 成对 → share/create → 存 pending-init → 跳分享链接
+ *  段3（分享页 checkPendingInit）：
+ *    现有逻辑：3 秒后自动初始化项目
  *
  * 依赖：
- *  - hook 已把真实请求头缓存到 localStorage['cuckoo-ds-headers']
- *  - DeepSeek 把会话消息缓存在 IndexedDB 'deepseek-chat' 的 'history-message' store
+ *  - hook 已缓存真实请求头到 localStorage['cuckoo-ds-headers']
+ *  - hook 在 URL 带 cuckoo-compact 时包装 IDBObjectStore.put，写入成功派发
+ *    'cuckoo-idb-history-written' 事件
  */
 import { sendToChat } from '../overlay/chat-input.js';
 import { onInterceptedResponse } from '../bridge/intercept/observer.js';
@@ -25,12 +29,14 @@ const SUMMARY_INSTRUCTION =
   '已完成的结论和未完成的事项，用中文，一次性输出全部内容，' +
   '直接输出摘要，不要输出其他解释。';
 
-/** 日志前缀 */
+const COMPACT_URL_FLAG = 'cuckoo-compact';
+const COMPACT_DIR_KEY = 'cuckoo-compact-project-dir';
+const PENDING_INIT_KEY = 'cuckoo-compact-pending-init';
+const IDB_WAIT_TIMEOUT = 20000;
+
 function logStep(step: string, msg: string): void {
   console.log('[Cuckoo Compact] [' + step + '] ' + msg);
 }
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface MessageItem {
   message_id: number;
@@ -38,7 +44,7 @@ interface MessageItem {
   parent_id?: any;
 }
 
-/** 等待 AI 回复完成（拦截到完整回复），返回文本 + 服务端 meta（msgIds 等） */
+/** 等待 AI 回复完成（拦截到完整回复） */
 function waitForResponse(timeoutMs: number): Promise<{ text: string; meta: any }> {
   return new Promise((resolve, reject) => {
     let done = false;
@@ -75,9 +81,47 @@ function getCachedHeaders(): any {
   }
 }
 
-/**
- * 从 IndexedDB 读取指定会话的全量消息（含 role），按 message_id 升序
- */
+/** 清掉当前会话在 IDB 的记录 */
+function clearSessionFromIdb(sessionId: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let req: any;
+    try { req = indexedDB.open('deepseek-chat'); } catch (e) { reject(e); return; }
+    req.onerror = () => reject(new Error('打开 IndexedDB 失败'));
+    req.onsuccess = () => {
+      const db = req.result;
+      try {
+        const tx = db.transaction('history-message', 'readwrite');
+        const st = tx.objectStore('history-message');
+        const d = st.delete(sessionId);
+        d.onsuccess = () => { db.close(); resolve(); };
+        d.onerror = () => { db.close(); reject(new Error('删除 IDB 记录失败')); };
+      } catch (e) { db.close(); reject(e); }
+    };
+  });
+}
+
+/** 等待 hook 派发的 IDB 写入完成事件 */
+function waitForIdbWrite(timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let done = false;
+    const handler = () => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('cuckoo-idb-history-written', handler);
+      clearTimeout(timer);
+      resolve();
+    };
+    window.addEventListener('cuckoo-idb-history-written', handler);
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      window.removeEventListener('cuckoo-idb-history-written', handler);
+      reject(new Error('等待 IDB 写入超时（' + timeoutMs + 'ms）'));
+    }, timeoutMs);
+  });
+}
+
+/** 从 IndexedDB 读取指定会话的全量消息，按 message_id 升序 */
 function getMessagesFromIndexedDB(sessionId: string): Promise<MessageItem[]> {
   return new Promise((resolve, reject) => {
     let req: any;
@@ -106,44 +150,20 @@ function getMessagesFromIndexedDB(sessionId: string): Promise<MessageItem[]> {
   });
 }
 
-/**
- * 读取某会话在 IndexedDB 中的最大 message_id（无则返回 0）
- */
-async function getMaxMessageId(sessionId: string): Promise<number> {
-  try {
-    const msgs = await getMessagesFromIndexedDB(sessionId);
-    if (!msgs.length) return 0;
-    return msgs[msgs.length - 1].message_id;
-  } catch (_) {
-    return 0;
-  }
-}
-
-/**
- * 从消息列表中取最近 ratio 比例的消息，保证成对（USER + ASSISTANT）
- * DeepSeek 要求 share/create 的 message_ids 必须成对出现，否则报
- * MESSAGES_MUST_APPEAR_IN_PAIRS。
- */
+/** 取最近 ratio 比例的消息，保证成对（USER + ASSISTANT），返回降序 id */
 function pickRecentPairedIds(msgs: MessageItem[], ratio: number): number[] {
   const total = msgs.length;
   if (total === 0) return [];
-  // 目标条数（至少 2 条 = 1 组）
   let keep = Math.max(2, Math.round(total * ratio));
   let start = Math.max(0, total - keep);
-  // 起点调整到 USER 消息（保证从一组开头开始）
   while (start > 0 && msgs[start].role !== 'USER') start--;
-  // 终点调整：末尾必须是 ASSISTANT（保证组完整）
   let end = total;
   while (end > start + 1 && msgs[end - 1].role !== 'ASSISTANT') end--;
   const picked = msgs.slice(start, end);
-  // DeepSeek 要求 message_ids 降序（最新在前），否则报 MESSAGES_MUST_APPEAR_IN_PAIRS
   return picked.map((m) => m.message_id).sort((a, b) => b - a);
 }
 
-/**
- * 调用 share/create 创建分享
- * @returns share_id
- */
+/** 调 share/create 创建分享，返回 share_id */
 async function createShare(sessionId: string, messageIds: number[], headers: any): Promise<string> {
   const h = Object.assign({}, headers);
   h['content-type'] = 'application/json';
@@ -164,109 +184,115 @@ async function createShare(sessionId: string, messageIds: number[], headers: any
   return shareId;
 }
 
-/**
- * 主流程
- */
+/** 段1：当前页 —— 发摘要 → 清 IDB → 刷新 */
 async function runCompaction(projectDir?: string): Promise<void> {
   const btn = document.getElementById('cuckoo-btn-compact') as any;
   if (btn) { btn.disabled = true; btn.textContent = '压缩中...'; }
-  // 压缩进行中：暂停自动重试与看门狗，避免它们的回复被 waitForResponse 误当成摘要
   retryEngine.setCompacting(true);
   watchdog.setSuspended(true);
 
   try {
-    // 步骤 0：先取 session_id 和发送前的 maxId
     const sessionId = getSessionIdFromUrl();
     if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
     logStep('api', 'chat_session_id = ' + sessionId);
-    const maxIdBefore = await getMaxMessageId(sessionId);
-    logStep('summary', '发送前 maxMessageId=' + maxIdBefore);
 
-    // 步骤 1：让 AI 写摘要
-    // 注意：waitForResponse 在 sendToChat 之前注册，确保拿到的就是本次摘要回复
     logStep('summary', '发送摘要指令');
     const waitReply = waitForResponse(120000);
     sendToChat(SUMMARY_INSTRUCTION, '压缩-摘要', 300);
-    const { text: summaryText, meta: summaryMeta } = await waitReply;
+    const { text: summaryText } = await waitReply;
     logStep('summary', '收到摘要回复，长度=' + (summaryText || '').length);
 
-    // 摘要回复的 id（来自 SSE 流，最准确）
-    const summaryIds = summaryMeta.msgIds;
-    const summaryRespId = summaryIds && summaryIds.responseMessageId;
-    const summaryReqId = summaryIds && summaryIds.requestMessageId;
-    logStep('summary', '摘要消息 id: response=' + (summaryRespId || '?') + ' request=' + ((summaryIds && summaryIds.requestMessageId) || '?'));
+    // 清当前会话 IDB 记录，触发刷新后 DeepSeek 重新拉取完整历史
+    logStep('idb', '清除当前会话 IDB 记录');
+    await clearSessionFromIdb(sessionId);
 
-    // 步骤 1.5：不再等 IndexedDB（写入时机不确定，常白等超时）
-    // 摘要 id 来自 SSE，稍后直接补入分享列表
-    await sleep(500);
-
-    // 步骤 3：取请求头
-    const headers = getCachedHeaders();
-    if (!headers || !headers['authorization']) {
-      throw new Error('未获取到认证请求头（请刷新页面后重试）');
-    }
-    logStep('api', '已获取缓存的请求头');
-
-    // 步骤 4：读 IndexedDB 拿全量消息（含 role），取最近 20% 且保证成对
-    const allMsgs = await getMessagesFromIndexedDB(sessionId);
-    if (allMsgs.length === 0) throw new Error('未读取到消息列表');
-    let tailIds = pickRecentPairedIds(allMsgs, 0.2);
-    if (tailIds.length === 0) throw new Error('裁剪后无有效消息');
-
-    // 补入摘要消息：IndexedDB 可能未及时写入摘要，但 SSE 已给出其精确 id
-    if (typeof summaryRespId === 'number') {
-      const idSet = new Set(tailIds);
-      const extra: number[] = [];
-      if (!idSet.has(summaryRespId)) extra.push(summaryRespId);
-      if (typeof summaryReqId === 'number' && !idSet.has(summaryReqId)) extra.push(summaryReqId);
-      if (extra.length) {
-        tailIds = tailIds.concat(extra).sort((a, b) => b - a);
-        logStep('api', '补入摘要消息 id: ' + JSON.stringify(extra));
-      }
-    }
-
-    logStep('api', '全量消息 ' + allMsgs.length + ' 条，保留最近 ' + tailIds.length + ' 条（成对）');
-
-    // 步骤 5：直接调 share/create
-    const shareId = await createShare(sessionId, tailIds, headers);
-    const link = 'https://chat.deepseek.com/share/' + shareId;
-    logStep('api', '分享链接: ' + link);
-
-    // 步骤 6：跳转（存标记 + 项目目录）
-    showToast('压缩完成，正在打开新会话...', 3000);
+    // 存项目目录（跨页需要）
     try {
-      localStorage.setItem('cuckoo-compact-pending-init', String(Date.now()));
-      if (projectDir) {
-        localStorage.setItem('cuckoo-compact-project-dir', projectDir);
-      }
+      if (projectDir) localStorage.setItem(COMPACT_DIR_KEY, projectDir);
+      else localStorage.removeItem(COMPACT_DIR_KEY);
     } catch (_) {}
-    window.location.href = link;
 
+    // URL 加标记 → 刷新
+    const url = new URL(location.href);
+    url.searchParams.set(COMPACT_URL_FLAG, '1');
+    logStep('reload', '刷新页面以让 DeepSeek 重建 IDB: ' + url.toString());
+    showToast('压缩中，正在刷新页面...', 3000);
+    location.href = url.toString();
   } catch (err: any) {
     console.error('[Cuckoo Compact] 压缩失败:', err);
     showToast('压缩失败: ' + err.message, 5000);
-  } finally {
     retryEngine.setCompacting(false);
     watchdog.setSuspended(false);
     if (btn) { btn.disabled = false; btn.textContent = '压缩'; }
   }
 }
 
-/**
- * 页面加载后检查是否有待执行的"压缩后初始化"
- * 若有，读取被压缩项目的目录，自动初始化项目（不弹目录选择框）
- */
+/** 段2：刷新后同页 —— 检测 URL 标记，等 IDB 写入，创建分享并跳转 */
+async function checkPendingCompact(): Promise<boolean> {
+  let flag = '';
+  try { flag = new URL(location.href).searchParams.get(COMPACT_URL_FLAG) || ''; } catch (_) {}
+  if (!flag) return false;
+
+  // 立即清掉 URL 参数，避免重复触发（URL 天然不持久，关页再开不会误触发）
+  try {
+    const url = new URL(location.href);
+    url.searchParams.delete(COMPACT_URL_FLAG);
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
+    logStep('reload', '已清除 URL 标记');
+  } catch (_) {}
+
+  let projectDir: string | null = null;
+  try { projectDir = localStorage.getItem(COMPACT_DIR_KEY); } catch (_) {}
+
+  try {
+    const sessionId = getSessionIdFromUrl();
+    if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
+
+    logStep('idb', '等待 DeepSeek 重建 IDB（监听写入事件）');
+    await waitForIdbWrite(IDB_WAIT_TIMEOUT);
+    logStep('idb', '收到 IDB 写入事件');
+
+    const headers = getCachedHeaders();
+    if (!headers || !headers['authorization']) {
+      throw new Error('未获取到认证请求头（请刷新页面后重试）');
+    }
+
+    const allMsgs = await getMessagesFromIndexedDB(sessionId);
+    if (allMsgs.length === 0) throw new Error('未读取到消息列表');
+    const tailIds = pickRecentPairedIds(allMsgs, 0.2);
+    if (tailIds.length === 0) throw new Error('裁剪后无有效消息');
+    logStep('api', '全量消息 ' + allMsgs.length + ' 条，保留最近 ' + tailIds.length + ' 条（成对）');
+
+    const shareId = await createShare(sessionId, tailIds, headers);
+    const link = 'https://chat.deepseek.com/share/' + shareId;
+    logStep('api', '分享链接: ' + link);
+
+    showToast('压缩完成，正在打开新会话...', 3000);
+    try {
+      localStorage.setItem(PENDING_INIT_KEY, String(Date.now()));
+      if (projectDir) localStorage.setItem(COMPACT_DIR_KEY, projectDir);
+    } catch (_) {}
+    location.href = link;
+    return true;
+  } catch (err: any) {
+    console.error('[Cuckoo Compact] 段2失败:', err);
+    showToast('压缩失败: ' + err.message, 5000);
+    return false;
+  }
+}
+
+/** 段3：分享页 —— 检测待初始化标记，自动初始化项目 */
 function checkPendingInit(): void {
   let pending = null;
   let projectDir = null;
   try {
-    pending = localStorage.getItem('cuckoo-compact-pending-init');
-    projectDir = localStorage.getItem('cuckoo-compact-project-dir');
+    pending = localStorage.getItem(PENDING_INIT_KEY);
+    projectDir = localStorage.getItem(COMPACT_DIR_KEY);
   } catch (_) {}
   if (!pending) return;
   try {
-    localStorage.removeItem('cuckoo-compact-pending-init');
-    localStorage.removeItem('cuckoo-compact-project-dir');
+    localStorage.removeItem(PENDING_INIT_KEY);
+    localStorage.removeItem(COMPACT_DIR_KEY);
   } catch (_) {}
   console.log('[Cuckoo Compact] 检测到压缩后待初始化，3 秒后执行；项目目录=' + (projectDir || '(无)'));
   setTimeout(() => {
@@ -278,4 +304,4 @@ function checkPendingInit(): void {
   }, 3000);
 }
 
-export { runCompaction, checkPendingInit };
+export { runCompaction, checkPendingCompact, checkPendingInit };
