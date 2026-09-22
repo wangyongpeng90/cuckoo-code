@@ -206,7 +206,7 @@ function install(): void {
         for (var j = 0; j < parsed.v.length; j++) {
           types.push(String((parsed.v[j] && parsed.v[j].type) || 'RESPONSE'));
         }
-        fragmentTypes = fragmentTypes.concat(types);
+        for (var ti = 0; ti < types.length; ti++) fragmentTypes.push(types[ti]);
         currentIndex = fragmentTypes.length - 1;
         observed = true;
         consumeFragmentContent(parsed.v, types);
@@ -355,6 +355,8 @@ function install(): void {
   // ---------- 缓存真实请求头（供压缩时直接 fetch 使用）----------
   // DeepSeek 的 share/create 需要 authorization + x-client-* 头，
   // 拦截任意请求时缓存最新一组，供后续直接调用 API。
+  // 上次写入的内容，用于去重（避免高频 localStorage 写入）
+  var lastCachedHeaders = '';
   function cacheHeaders(hdrs) {
     try {
       if (!hdrs) return;
@@ -365,7 +367,10 @@ function install(): void {
         }
       }
       if (!lower['authorization']) return;
-      localStorage.setItem('cuckoo-ds-headers', JSON.stringify(lower));
+      var s = JSON.stringify(lower);
+      if (s === lastCachedHeaders) return; // 内容未变，跳过同步写入
+      lastCachedHeaders = s;
+      localStorage.setItem('cuckoo-ds-headers', s);
     } catch (e) { /* ignore */ }
   }
 
@@ -404,6 +409,8 @@ function install(): void {
             var isRL = response.status === 429;
             dispatch('', 'error', null, null, { reason: isRL ? 'rate_limit' : 'http', httpStatus: response.status, sessionId: fetchSessionId }, { path: 'http-error', httpStatus: response.status });
           } else if (response && response.body) {
+            // 注：这里必须 clone —— 页面自己要消费原 body，我们只能看一份副本。
+            // 这是 fetch API 下"只观察不改写"的必要手段，浏览器对 clone 有优化。
             var ct = '';
             try { ct = (response.headers && response.headers.get && response.headers.get('content-type')) || ''; } catch (e2) { /* ignore */ }
             if (ct.indexOf('json') !== -1) {

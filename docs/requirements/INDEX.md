@@ -10,5 +10,6 @@
 | 003 | feature | [工具调用执行遮罩](./003-tool-execution-mask.md) | done | feat/003-tool-execution-mask | 2026-09-21 |
 | 004 | fix | [看门狗改为 SSE 流静默检测](./004-watchdog-stream-idle.md) | review | fix/004-watchdog-criteria | 2026-09-21 |
 | 005 | refactor | [压缩改用「清 IDB + 刷新」获取完整历史](./005-compact-idb-refresh.md) | doing | refactor/005-compact-idb-refresh | 2026-09-21 |
+| 006 | refactor | [hook 性能优化（消除高频写入与 O(n²)）](./006-hook-perf.md) | doing | refactor/006-hook-perf | 2026-09-22 |
 
-共 5 个需求。
+共 6 个需求。
