@@ -61,7 +61,6 @@ function install(): void {
       if (extractor.thinkLen > 0 && extractor.textLen === 0) st = 'error';
       else st = 'finished';
     } else if (userStopped) st = 'stopped';
-    console.log('[Cuckoo Code][hook] resolveStatus => ' + st + ' (finished=' + extractor.finished + ', incomplete=' + extractor.incomplete + ', userStopped=' + userStopped + ', thinkLen=' + extractor.thinkLen + ', textLen=' + extractor.textLen + ')');
     return st;
   }
 
@@ -455,7 +454,8 @@ function install(): void {
       if (!inf.headers) inf.headers = {};
       inf.headers[name] = value;
       xhrInfo.set(this, inf);
-      cacheHeaders(inf.headers);
+      // 注：不在此处 cacheHeaders（每设一个头都调 → 高频）。
+      // 改到 send 时统一缓存一次。
     } catch (e) { /* ignore */ }
     return origSetRequestHeader.apply(this, arguments);
   };
@@ -472,6 +472,8 @@ function install(): void {
   };
   XMLHttpRequest.prototype.send = function (body) {
     var info = xhrInfo.get(this);
+    // 统一在此缓存请求头（此时所有 setRequestHeader 已调用完，一次搞定）
+    if (info && info.headers) cacheHeaders(info.headers);
     if (info && isCompletion(info.url, info.method)) {
       // 新的 completion 开始：复位用户停止标志
       userStopped = false;

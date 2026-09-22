@@ -28,9 +28,11 @@ updated: 2026-09-22
 
 ## 目标
 
-- `cacheHeaders`：内容未变则跳过写入（去重）
+- `cacheHeaders`：内容未变则跳过写入（去重）；XHR 路径从"每头缓存"改为"send 时一次"
 - `fragmentTypes`：改为原地 `push`（O(n)）
 - `response.clone`：保留并加注释说明理由
+- 清理高频诊断日志（`JSON.stringify`）
+- 轮询优化：URL/用户名未变则不做 DOM 查询
 
 ## 方案
 
@@ -62,12 +64,30 @@ for (var ti = 0; ti < types.length; ti++) fragmentTypes.push(types[ti]);
 
 加注释：必须让页面消费原 body，我们只能用 clone 看一份副本。
 
+### 4. XHR 的 cacheHeaders 移到 send
+
+`setRequestHeader` 每设一个头调用一次（一次请求 5~10 次），每次都重建对象 + 序列化。
+改为在 `send` 时统一缓存一次（此时所有头已设完）。
+
+### 5. 清理高频诊断日志
+
+`observer.ts` 与 `deepseek.ts` 里每次回复都输出 `JSON.stringify(dbg)` 等诊断日志。
+DevTools 打开时会持续累积，拖慢页面。移除（保留关键日志）。
+
+### 6. 轮询优化（entry.ts）
+
+- `updateHomeMode` 每 1.5s 一次 → 仅当 URL 变化时才执行
+- 用户名轮询每 3s 一次 → 先做零成本 sessionId 检测，未变则跳过 DOM 查询
+
 ## 验收标准
 
-- [ ] cacheHeaders 内容未变时不写 localStorage
-- [ ] fragmentTypes 逻辑等价（类型序列正确）
-- [ ] 现有测试全绿
-- [ ] typecheck / lint / compile 通过
+- [x] cacheHeaders 内容未变时不写 localStorage
+- [x] XHR 缓存改为 send 时一次
+- [x] fragmentTypes 逻辑等价（改为 push）
+- [x] 诊断日志清理
+- [x] 轮询仅在变化时执行
+- [x] 现有测试全绿（360）
+- [x] typecheck / lint / compile 通过
 - [ ] 真机验证：对话多时卡顿缓解
 
 ## 遗留 / 后续
