@@ -180,10 +180,23 @@ function setTaskStatus(running: boolean): void {
 
 /**
  * 显示工具调用遮罩（执行工具期间阻止用户操作）
+ * @param onCancel 传入时显示「停止」按钮（等待发送阶段用），点击触发该回调
  */
-function showToolMask(): void {
+function showToolMask(onCancel?: () => void): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.remove('cuckoo-hidden');
+  const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
+  if (btn) {
+    if (onCancel) {
+      btn.classList.remove('cuckoo-hidden');
+      btn.onclick = () => {
+        try { onCancel(); } catch (_) { /* ignore */ }
+      };
+    } else {
+      btn.classList.add('cuckoo-hidden');
+      btn.onclick = null;
+    }
+  }
 }
 
 /**
@@ -192,6 +205,8 @@ function showToolMask(): void {
 function hideToolMask(): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.add('cuckoo-hidden');
+  const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
+  if (btn) { btn.classList.add('cuckoo-hidden'); btn.onclick = null; }
 }
 
 /**
