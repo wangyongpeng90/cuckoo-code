@@ -54,6 +54,7 @@ updated: 2026-09-23
 - [x] 点击停止 → 不发送、遮罩消失、输入框清空
 - [x] 不点 → 正常自动发送（行为不变）
 - [x] 执行中不显示停止按钮（无法中断运行中的工具）
+- [x] 遮罩不再使用 loading 光标（`cursor: wait` → `default`）
 - [x] typecheck / test / lint / compile
 - [ ] 真机验证
 
