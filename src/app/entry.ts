@@ -133,6 +133,13 @@ function createWindow(profile: any) {
   // 更新主窗口引用
   windowState.setMainWindow(mainWindow);
 
+  // 记录最后活跃的 profile，供下次启动恢复。
+  // 创建时先记一次（覆盖首次启动无记录的情况），之后窗口获得焦点时更新。
+  try { profileManager.setLastActiveProfileId(profileData.id); } catch (_) { /* ignore */ }
+  mainWindow.on('focus', () => {
+    try { profileManager.setLastActiveProfileId(profileData.id); } catch (_) { /* ignore */ }
+  });
+
   // 初始化自动更新（仅第一个窗口时初始化）
   if (windowState.getAllWindows().length === 1) {
     updater.initAutoUpdater(mainWindow);

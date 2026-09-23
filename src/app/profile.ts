@@ -11,12 +11,50 @@ const require = createRequire(import.meta.url);
 const { app } = require('electron');
 
 let PROFILE_FILE: string | null = null;
+let LAST_ACTIVE_FILE: string | null = null;
 
 function getProfileFile(): string {
   if (!PROFILE_FILE) {
     PROFILE_FILE = path.join(app.getPath('userData'), 'profile-list.json');
   }
   return PROFILE_FILE;
+}
+
+function getLastActiveFile(): string {
+  if (!LAST_ACTIVE_FILE) {
+    LAST_ACTIVE_FILE = path.join(app.getPath('userData'), 'last-active-profile.json');
+  }
+  return LAST_ACTIVE_FILE;
+}
+
+/** 记录最后活跃的 profileId（窗口获得焦点时调用） */
+function setLastActiveProfileId(id: string): void {
+  if (!id) return;
+  try {
+    const file = getLastActiveFile();
+    // 去重：内容没变就不写盘
+    if (fs.existsSync(file)) {
+      try {
+        const cur = JSON.parse(fs.readFileSync(file, 'utf-8'));
+        if (cur && cur.profileId === id) return;
+      } catch (_) { /* ignore */ }
+    }
+    fs.writeFileSync(file, JSON.stringify({ profileId: id }, null, 2), 'utf-8');
+  } catch (err: any) {
+    console.error('[Profile] 写入 last-active 失败:', err.message);
+  }
+}
+
+/** 读取最后活跃的 profileId（无则 null） */
+function getLastActiveProfileId(): string | null {
+  try {
+    const file = getLastActiveFile();
+    if (!fs.existsSync(file)) return null;
+    const data = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    return (data && data.profileId) || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function readProfiles(): any[] {
@@ -68,8 +106,14 @@ function createProfile(name: string, providerId: string): any {
  */
 function getDefaultProfile(): any {
   const profiles = readProfiles();
-  if (profiles.length > 0) return profiles[0];
-  return createProfile('默认窗口', '');
+  if (profiles.length === 0) return createProfile('默认窗口', '');
+  // 优先返回上次最后活跃的 profile（若仍存在），否则回退第一个
+  const lastId = getLastActiveProfileId();
+  if (lastId) {
+    const p = profiles.find(x => x.id === lastId);
+    if (p) return p;
+  }
+  return profiles[0];
 }
 
 /**
@@ -125,4 +169,6 @@ export {
   updateProfileName,
   updateProfileProvider,
   deleteProfile,
+  setLastActiveProfileId,
+  getLastActiveProfileId,
 };
