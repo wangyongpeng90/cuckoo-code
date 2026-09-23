@@ -6,7 +6,7 @@
 import { extractJsToolBlocks, BT } from '../parser/js-detector.js';
 import { looksLikeJsonToolCall } from '../parser/json-detector.js';
 import { handleJsToolScript } from '../loop/executor.js';
-import { sendCombinedJsResultsToChat, sendMessageToChat } from '../../overlay/chat-input.js';
+import { sendCombinedJsResultsToChat, sendMessageToChat, cancelPendingSend } from '../../overlay/chat-input.js';
 import { showToolMask, hideToolMask } from '../../overlay/panel.js';
 import * as watchdog from '../loop/watchdog.js';
 
@@ -80,8 +80,16 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
       hideToolMask();
       return;
     }
+    // 等待发送阶段：遮罩上显示「停止」按钮，点击可取消回传
+    let cancelled = false;
+    showToolMask(() => {
+      cancelled = true;
+      cancelPendingSend();
+      hideToolMask();
+    });
     // afterSent 在"结果已发出"时触发隐藏；发送失败（找不到输入框等）则立即隐藏兜底
     const sent = await sendCombinedJsResultsToChat(results, hideToolMask);
+    if (cancelled) return; // 用户已取消，不再处理
     if (!sent) hideToolMask();
     return;
   }

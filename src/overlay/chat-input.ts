@@ -83,23 +83,53 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
  * @param afterSent - 发送后回调
  * @returns 是否成功
  */
+// 当前待发送的消息（可被 cancelPendingSend 取消）
+interface PendingSend { timer: any; input: any; cancelled: boolean; }
+let pendingSend: PendingSend | null = null;
+
 async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
   const input = findInputArea();
   if (!input) {
     console.log('[Cuckoo Code] 找不到输入框，无法发送消息');
     return false;
   }
+  const token: PendingSend = { timer: null, input: input, cancelled: false };
+  pendingSend = token;
   if (!(await setInputContent(input, msg))) {
+    if (pendingSend === token) pendingSend = null;
+    return false;
+  }
+  // 填充期间被取消：清空输入框，不发送
+  if (token.cancelled) {
+    try { setInputContent(input, ''); } catch (_) { /* ignore */ }
     return false;
   }
   const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay();
   console.log('[Cuckoo Code] 消息已填入输入框，等待 ' + sendDelay + 'ms 后发送...');
-  setTimeout(function() {
+  const timer = setTimeout(function() {
+    if (pendingSend === token) pendingSend = null;
+    if (token.cancelled) return;
     console.log('[Cuckoo Code] 等待结束，开始触发发送');
     triggerSend(input);
     console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
     if (typeof afterSent === 'function') afterSent();
   }, sendDelay);
+  token.timer = timer;
+  return true;
+}
+
+/**
+ * 取消当前待发送的消息（清计时器 + 清空输入框）
+ * @returns 是否确实取消了待发送
+ */
+function cancelPendingSend(): boolean {
+  if (!pendingSend) return false;
+  const t = pendingSend;
+  t.cancelled = true;
+  if (t.timer) clearTimeout(t.timer);
+  pendingSend = null;
+  try { setInputContent(t.input, ''); } catch (_) { /* ignore */ }
+  console.log('[Cuckoo Code] 已取消待发送的消息');
   return true;
 }
 /**
@@ -310,6 +340,7 @@ export {
   sendToChat,
   sendMessageToChat,
   sendCombinedJsResultsToChat,
+  cancelPendingSend,
   findInputArea,
   isInputVisible,
   sendInitialPromptToInput,

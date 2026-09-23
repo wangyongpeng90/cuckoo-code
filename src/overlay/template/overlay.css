@@ -205,6 +205,16 @@
   animation: cuckoo-spin 0.8s linear infinite;
 }
 .cuckoo-tool-mask-text { font-size: 13px; font-weight: 600; color: #dde1ff; letter-spacing: 0.3px; }
+.cuckoo-tool-mask-cancel {
+  margin-top: 4px; padding: 7px 24px; border-radius: 10px;
+  border: 1px solid rgba(255, 107, 122, 0.5);
+  background: rgba(255, 107, 122, 0.12);
+  color: #ff6b7a; font-size: 12.5px; font-weight: 600;
+  cursor: pointer; letter-spacing: 0.3px;
+  transition: all 0.2s ease;
+}
+.cuckoo-tool-mask-cancel:hover { background: rgba(255, 107, 122, 0.22); }
+.cuckoo-tool-mask-cancel:active { transform: scale(0.97); }
 @keyframes cuckoo-spin { to { transform: rotate(360deg); } }
 @keyframes cuckoo-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 @keyframes cuckoo-attention {

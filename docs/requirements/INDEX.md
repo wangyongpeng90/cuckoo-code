@@ -10,5 +10,6 @@
 | 003 | feature | [工具调用执行遮罩](./003-tool-execution-mask.md) | done | feat/003-tool-execution-mask | 2026-09-21 |
 | 004 | fix | [看门狗改为 SSE 流静默检测](./004-watchdog-stream-idle.md) | review | fix/004-watchdog-criteria | 2026-09-21 |
 | 005 | refactor | [压缩改用「清 IDB + 刷新」获取完整历史](./005-compact-idb-refresh.md) | doing | refactor/005-compact-idb-refresh | 2026-09-21 |
+| 007 | feature | [工具执行遮罩加「停止」按钮（取消回传）](./007-tool-mask-cancel.md) | doing | feat/007-tool-mask-cancel | 2026-09-23 |
 
-共 5 个需求。
+共 6 个需求。
