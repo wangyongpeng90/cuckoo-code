@@ -61,7 +61,6 @@ function install(): void {
       if (extractor.thinkLen > 0 && extractor.textLen === 0) st = 'error';
       else st = 'finished';
     } else if (userStopped) st = 'stopped';
-    console.log('[Cuckoo Code][hook] resolveStatus => ' + st + ' (finished=' + extractor.finished + ', incomplete=' + extractor.incomplete + ', userStopped=' + userStopped + ', thinkLen=' + extractor.thinkLen + ', textLen=' + extractor.textLen + ')');
     return st;
   }
 
@@ -206,7 +205,7 @@ function install(): void {
         for (var j = 0; j < parsed.v.length; j++) {
           types.push(String((parsed.v[j] && parsed.v[j].type) || 'RESPONSE'));
         }
-        fragmentTypes = fragmentTypes.concat(types);
+        for (var ti = 0; ti < types.length; ti++) fragmentTypes.push(types[ti]);
         currentIndex = fragmentTypes.length - 1;
         observed = true;
         consumeFragmentContent(parsed.v, types);
@@ -355,6 +354,8 @@ function install(): void {
   // ---------- 缓存真实请求头（供压缩时直接 fetch 使用）----------
   // DeepSeek 的 share/create 需要 authorization + x-client-* 头，
   // 拦截任意请求时缓存最新一组，供后续直接调用 API。
+  // 上次写入的内容，用于去重（避免高频 localStorage 写入）
+  var lastCachedHeaders = '';
   function cacheHeaders(hdrs) {
     try {
       if (!hdrs) return;
@@ -365,7 +366,10 @@ function install(): void {
         }
       }
       if (!lower['authorization']) return;
-      localStorage.setItem('cuckoo-ds-headers', JSON.stringify(lower));
+      var s = JSON.stringify(lower);
+      if (s === lastCachedHeaders) return; // 内容未变，跳过同步写入
+      lastCachedHeaders = s;
+      localStorage.setItem('cuckoo-ds-headers', s);
     } catch (e) { /* ignore */ }
   }
 
@@ -404,6 +408,8 @@ function install(): void {
             var isRL = response.status === 429;
             dispatch('', 'error', null, null, { reason: isRL ? 'rate_limit' : 'http', httpStatus: response.status, sessionId: fetchSessionId }, { path: 'http-error', httpStatus: response.status });
           } else if (response && response.body) {
+            // 注：这里必须 clone —— 页面自己要消费原 body，我们只能看一份副本。
+            // 这是 fetch API 下"只观察不改写"的必要手段，浏览器对 clone 有优化。
             var ct = '';
             try { ct = (response.headers && response.headers.get && response.headers.get('content-type')) || ''; } catch (e2) { /* ignore */ }
             if (ct.indexOf('json') !== -1) {
@@ -448,7 +454,8 @@ function install(): void {
       if (!inf.headers) inf.headers = {};
       inf.headers[name] = value;
       xhrInfo.set(this, inf);
-      cacheHeaders(inf.headers);
+      // 注：不在此处 cacheHeaders（每设一个头都调 → 高频）。
+      // 改到 send 时统一缓存一次。
     } catch (e) { /* ignore */ }
     return origSetRequestHeader.apply(this, arguments);
   };
@@ -465,6 +472,8 @@ function install(): void {
   };
   XMLHttpRequest.prototype.send = function (body) {
     var info = xhrInfo.get(this);
+    // 统一在此缓存请求头（此时所有 setRequestHeader 已调用完，一次搞定）
+    if (info && info.headers) cacheHeaders(info.headers);
     if (info && isCompletion(info.url, info.method)) {
       // 新的 completion 开始：复位用户停止标志
       userStopped = false;

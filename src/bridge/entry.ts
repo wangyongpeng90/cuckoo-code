@@ -70,7 +70,15 @@ function init(): void {
     // 监听 URL 变化（SPA 路由）
     window.addEventListener('popstate', ui.updateHomeMode);
     window.addEventListener('hashchange', ui.updateHomeMode);
-    setInterval(ui.updateHomeMode, 1500);
+    // SPA 路由（pushState）不触发 popstate/hashchange，用低频轮询兜底：
+    // 仅当 URL 变化时才执行，避免每 1.5s 都做正则+DOM 查询
+    let lastHomeUrl = window.location.href;
+    setInterval(() => {
+      if (window.location.href !== lastHomeUrl) {
+        lastHomeUrl = window.location.href;
+        ui.updateHomeMode();
+      }
+    }, 1500);
     // 首次延迟执行，确保 overlay 已注入
     setTimeout(ui.updateHomeMode, 500);
 
@@ -96,10 +104,18 @@ function init(): void {
   ui.startOverlayWatcher();
 
   // 定期提取当前平台用户信息并更新窗口名
+  // 优化：先做零成本的 sessionId 变化检测，未变则跳过 DOM 查询；
+  // 且只在用户名变化时才发 IPC。
   let lastSentUserName = '';
+  let lastUserNameKey = '';
   setInterval(() => {
     try {
-      const provider = getProviderByUrl(window.location.href);
+      const url = window.location.href;
+      const m = url.match(/\/chat\/s\/([a-f0-9-]+)/i);
+      const key = m ? m[1] : '(home)';
+      if (key === lastUserNameKey && lastSentUserName) return; // 会话未变且已发送过，跳过
+      lastUserNameKey = key;
+      const provider = getProviderByUrl(url);
       if (!provider || typeof provider.extractUserInfo !== 'function') return;
       const text = provider.extractUserInfo();
       if (text && text !== lastSentUserName) {

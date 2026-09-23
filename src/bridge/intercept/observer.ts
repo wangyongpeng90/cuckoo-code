@@ -162,7 +162,7 @@ function startInterceptObserver(): void {
     try {
       const detail = ev && ev.detail;
       if (!detail) return;
-      console.log('[Cuckoo Code][拦截][诊断] response事件 status=' + detail.status + ' finished=' + detail.finished + ' textLen=' + ((detail.text||'').length) + ' dbg=' + JSON.stringify(detail.dbg));
+      // 诊断日志已移除（高频 JSON.stringify + 每回复输出，会拖慢页面/累积日志）
       // 用户主动停止：不处理，也不通知监听器（等待方按超时处理）
       if (detail.status === 'stopped') {
         console.log('[Cuckoo Code][拦截] 检测到用户停止生成，忽略该回复');
@@ -186,7 +186,6 @@ function startInterceptObserver(): void {
   window.addEventListener('cuckoo-ai-error', (ev: any) => {
     try {
       const detail = ev && ev.detail;
-      console.log('[Cuckoo Code][拦截][诊断] error事件 detail=' + JSON.stringify(detail));
       try { watchdog.onResponseReceived('error'); } catch (_) { /* ignore */ }
       for (const cb of errorListeners) {
         try { cb(detail || {}); } catch (_) { /* ignore */ }
