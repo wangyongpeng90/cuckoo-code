@@ -99,9 +99,8 @@ async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterS
     if (pendingSend === token) pendingSend = null;
     return false;
   }
-  // 填充期间被取消：清空输入框，不发送
+  // 填充期间被取消：不发送（输入框内容保留）
   if (token.cancelled) {
-    try { setInputContent(input, ''); } catch (_) { /* ignore */ }
     return false;
   }
   const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay();
@@ -119,7 +118,7 @@ async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterS
 }
 
 /**
- * 取消当前待发送的消息（清计时器 + 清空输入框）
+ * 取消当前待发送的消息（清计时器；输入框内容保留，用户可自行处理）
  * @returns 是否确实取消了待发送
  */
 function cancelPendingSend(): boolean {
@@ -128,8 +127,8 @@ function cancelPendingSend(): boolean {
   t.cancelled = true;
   if (t.timer) clearTimeout(t.timer);
   pendingSend = null;
-  try { setInputContent(t.input, ''); } catch (_) { /* ignore */ }
-  console.log('[Cuckoo Code] 已取消待发送的消息');
+  // 不清空输入框：保留待发内容，用户可自行决定发送或删除
+  console.log('[Cuckoo Code] 已取消待发送的消息（输入框内容保留）');
   return true;
 }
 /**
