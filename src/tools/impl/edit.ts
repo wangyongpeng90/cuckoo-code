@@ -1,6 +1,7 @@
 import { Tool } from '../core/Tool.js';
 import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
+import { normalizeLineEndings, detectLineEndings, restoreLineEndings } from '../../infra/eol.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -151,18 +152,22 @@ class EditTool extends Tool {
         return ToolResult.error('不是文件: ' + resolvedPath);
       }
 
-      // 读取文件内容
-      const content = fs.readFileSync(resolvedPath, 'utf-8');
+      // 读取原始内容，记录换行符风格，内容归一成 LF（dsh 方案）
+      const raw = fs.readFileSync(resolvedPath, 'utf-8');
+      const lineEndings = detectLineEndings(raw);
+      const content = normalizeLineEndings(raw);
 
-      // 保留原 FileEditTool 的 CRLF 适配能力：
-      // 先原样匹配，失败后把 oldString 转 CRLF 再试；newString 统一转 CRLF
-      let matchOld = input.oldString;
-      const matchNew = input.newString.replace(/\r?\n/g, '\r\n');
+      // 在 LF 世界匹配（oldString / newString 也归一）
+      const oldNorm = normalizeLineEndings(input.oldString);
+      const newNorm = normalizeLineEndings(input.newString);
 
-      let occurrences = content.split(matchOld).length - 1;
-      if (occurrences === 0) {
-        matchOld = matchOld.replace(/\r?\n/g, '\r\n');
-        occurrences = content.split(matchOld).length - 1;
+      let occurrences = 0;
+      let idx = 0;
+      while (true) {
+        const found = content.indexOf(oldNorm, idx);
+        if (found === -1) break;
+        occurrences++;
+        idx = found + oldNorm.length;
       }
       if (occurrences === 0) {
         return ToolResult.error('未找到要替换的文本，请检查 oldString 是否与文件内容精确匹配。文件路径: ' + resolvedPath);
@@ -171,10 +176,8 @@ class EditTool extends Tool {
         return ToolResult.error('oldString 在文件中出现 ' + occurrences + ' 次。若要全部替换，请设置 replaceAll: true；若只替换其中一处，请提供更长的唯一片段（更多上下文）。');
       }
 
-      // 执行替换
-      const newContent = input.replaceAll
-        ? content.split(matchOld).join(matchNew)
-        : content.replace(matchOld, matchNew);
+      // 执行替换（LF 世界）
+      const editedLf = content.split(oldNorm).join(newNorm);
 
       // dry-run：只预览，不写文件
       if (input.dryRun) {
@@ -182,6 +185,8 @@ class EditTool extends Tool {
         return ToolResult.success(formatDryRunOutput(input.filePath, input.oldString, input.newString, occurrences, input.replaceAll));
       }
 
+      // 写回：恢复文件原本的换行符风格
+      const newContent = restoreLineEndings(editedLf, lineEndings);
       fs.writeFileSync(resolvedPath, newContent, 'utf-8');
 
       console.log('[EditTool] 已编辑:', resolvedPath, '替换', occurrences, '处');

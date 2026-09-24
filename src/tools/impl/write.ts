@@ -1,6 +1,7 @@
 import { Tool } from '../core/Tool.js';
 import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
+import { normalizeLineEndings, detectLineEndings, restoreLineEndings } from '../../infra/eol.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -107,7 +108,18 @@ class WriteTool extends Tool {
       }
 
       // 判断是 create 还是 update（最小移植不读 before/after）
-      const operation = fs.existsSync(resolvedPath) ? 'update' : 'create';
+      const exists = fs.existsSync(resolvedPath);
+      const operation = exists ? 'update' : 'create';
+
+      // 换行符策略（dsh 方案）：
+      //  - 已有文件：跟随其主导换行符（不改变文件风格）
+      //  - 新文件：LF
+      const contentLf = normalizeLineEndings(input.content);
+      let finalContent = contentLf;
+      if (exists) {
+        const lineEndings = detectLineEndings(fs.readFileSync(resolvedPath, 'utf-8'));
+        finalContent = restoreLineEndings(contentLf, lineEndings);
+      }
 
       // 确保目录存在
       const dir = path.dirname(resolvedPath);
@@ -116,7 +128,7 @@ class WriteTool extends Tool {
       }
 
       // 写文件
-      fs.writeFileSync(resolvedPath, input.content, 'utf-8');
+      fs.writeFileSync(resolvedPath, finalContent, 'utf-8');
 
       console.log('[WriteTool] ' + (operation === 'create' ? 'Created' : 'Updated') + ':', resolvedPath);
       return ToolResult.success(formatWriteOutput(input.filePath, operation));
