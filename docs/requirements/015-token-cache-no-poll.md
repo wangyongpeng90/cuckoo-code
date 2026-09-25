@@ -2,7 +2,7 @@
 id: 015
 type: feat
 title: token 按会话缓存 + 去掉高频轮询（改主进程推送）
-status: doing
+status: done
 branch: feat/015-token-cache-no-poll
 created: 2026-09-26
 updated: 2026-09-26
@@ -50,12 +50,12 @@ updated: 2026-09-26
 
 ## 验收标准
 
-- [ ] token 按 sessionId 缓存（localStorage），切会话显示对应值
-- [ ] 主进程推送 `cuckoo-url-changed`
-- [ ] 渲染进程监听并分发（首页模式/看门狗重置/窗口名/token）
-- [ ] 去掉 3 个高频轮询，保留 15 秒兜底
-- [ ] typecheck / test / lint / compile
-- [ ] 真机验证
+- [x] token 按 sessionId 缓存（localStorage），切会话显示对应值
+- [x] 主进程推送 `cuckoo-url-changed`
+- [x] 渲染进程监听并分发（首页模式/看门狗重置/窗口名/token）
+- [x] 去掉 3 个高频轮询，保留 15 秒兜底
+- [x] typecheck / test / lint / compile
+- [x] 真机验证（token 缓存 ✓、事件驱动即时响应 ✓）
 
 ## 遗留
 
