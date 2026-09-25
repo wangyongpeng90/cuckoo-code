@@ -12,11 +12,52 @@ import { renderWindowList, openWindowManager, closeWindowManager, handleGenerate
 import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
 import { openSettings, closeSettings, resetSettings, saveSettings } from './panels/settings.js';
 import { makeFabDraggable } from './fab.js';
+import { getProviderByUrl } from '../providers/registry.js';
 
 // 回调注入（P4.2-A：overlay 不依赖 bridge）
 let hooks: { onInterceptedResponse?: (cb: (text: string, meta: any) => void) => void } = {};
 // 服务端权威 token 统计（由 bridge 经回调推送，不共享状态）
 let serverTokenUsage: any = null;
+
+// ========== 对话 token 按会话缓存 ==========
+const TOKEN_CACHE_KEY = 'cuckoo-token-cache';
+
+/** 取当前页面对应的会话 ID（无则 null） */
+function getCurrentSessionId(): string | null {
+  try {
+    const provider = getProviderByUrl(window.location.href);
+    if (provider && typeof provider.extractSessionId === 'function') {
+      return provider.extractSessionId(window.location.href) || null;
+    }
+  } catch (_) {}
+  return null;
+}
+
+/** 读整个 token 缓存（sessionId → accumulatedTokens） */
+function readTokenCache(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(TOKEN_CACHE_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    return (obj && typeof obj === 'object') ? obj : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+/** 写入某会话的 token 值 */
+function saveTokenForSession(sessionId: string, tokens: number): void {
+  if (!sessionId || typeof tokens !== 'number') return;
+  try {
+    const cache = readTokenCache();
+    cache[sessionId] = tokens;
+    // 限制缓存条数，避免无限增长（保留最近 200 个）
+    const keys = Object.keys(cache);
+    if (keys.length > 200) {
+      for (const k of keys.slice(0, keys.length - 200)) delete cache[k];
+    }
+    localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify(cache));
+  } catch (_) {}
+}
 /** 由 bridge/entry 在初始化时注入 bridge 能力 */
 function wireEvents(h: typeof hooks): void {
   hooks = h;
@@ -86,12 +127,23 @@ function updateConversationTokenDisplay() {
   const countEl = document.getElementById('cuckoo-conv-token-count');
   if (!countEl) return;
 
-  const server = serverTokenUsage;
-  if (server && typeof server.accumulatedTokens === 'number') {
-    countEl.textContent = formatTokenCount(server.accumulatedTokens);
-  } else {
-    countEl.textContent = '0';
-  }
+  // 优先用"当前会话"的缓存值（切会话/刷新后仍能显示该会话的 token）
+  const sid = getCurrentSessionId();
+  const cached = sid ? readTokenCache()[sid] : undefined;
+  const tokens = (typeof cached === 'number')
+    ? cached
+    : (serverTokenUsage && typeof serverTokenUsage.accumulatedTokens === 'number' ? serverTokenUsage.accumulatedTokens : 0);
+  countEl.textContent = formatTokenCount(tokens);
+
+  // 同步到壳页面状态条（地址栏下方）
+  try {
+    (window as any).electronAPI.updateTokenUsage(tokens).catch(() => {});
+  } catch (_) {}
+}
+
+/** 供 bridge 在 URL 变化时调用：刷新当前会话的 token 显示 */
+function refreshTokenForCurrentSession(): void {
+  updateConversationTokenDisplay();
 }
 
 // ========== 自动压缩上下文 ==========
@@ -162,13 +214,14 @@ function checkAutoCompact() {
 function startTokenCounter() {
   hooks.onInterceptedResponse?.((_text: string, meta: any) => {
     serverTokenUsage = (meta && meta.tokenUsage) || null;
+    // 按当前会话写入缓存（切回来时能显示该会话的值）
+    const tokens = serverTokenUsage && serverTokenUsage.accumulatedTokens;
+    if (typeof tokens === 'number') {
+      const sid = getCurrentSessionId();
+      if (sid) saveTokenForSession(sid, tokens);
+    }
     updateConversationTokenDisplay();
     checkAutoCompact();
-    // 上报给壳页面状态条（地址栏下方显示累计 token）
-    try {
-      const tokens = serverTokenUsage && serverTokenUsage.accumulatedTokens;
-      if (typeof tokens === 'number') (window as any).electronAPI.updateTokenUsage(tokens).catch(() => {});
-    } catch (_) {}
   });
   updateConversationTokenDisplay();
 }
@@ -354,4 +407,4 @@ function bindEvents() {
   });
 }
 
-export { bindEvents, wireEvents };
+export { bindEvents, wireEvents, refreshTokenForCurrentSession };

@@ -208,11 +208,15 @@ function createWindow(profile: any) {
   view.webContents.on('did-navigate', (_event: any, url: string) => {
     sessionStore.handleUrlChange(url, view);
     pushUrlState(view);
+    // 通知 AI 页面（overlay/看门狗）URL 已变，替代原先的渲染进程轮询
+    try { view.webContents.send('cuckoo-url-changed', { url }); } catch (_) {}
   });
 
   view.webContents.on('did-navigate-in-page', (_event: any, url: string) => {
     sessionStore.handleUrlChange(url, view);
     pushUrlState(view);
+    // SPA 路由（pushState）变化也在此触发，替代轮询
+    try { view.webContents.send('cuckoo-url-changed', { url }); } catch (_) {}
   });
 
   view.webContents.on('before-input-event', (_event: any, input: any) => {

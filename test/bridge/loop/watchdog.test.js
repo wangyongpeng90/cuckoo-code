@@ -164,18 +164,23 @@ test('setSuspended(true) 会清空进行中计数', () => {
   assert.strictEqual(wd._getIdleCount(), 1);
 });
 
-test('startSessionWatcher 检测会话切换后重置', () => {
+test('startSessionWatcher 记录初始会话；checkSessionChange 检测切换后重置', () => {
   wd.startWatchdog();
   emitIdle('abc123');
   assert.strictEqual(wd._getIdleCount(), 1);
+  // 记录初始会话（abc123）
   wd.startSessionWatcher();
+  // 切到新会话，主动调用 checkSessionChange（现在由 URL 变化事件驱动）
   win.location.href = 'https://chat.deepseek.com/a/chat/s/def456';
-  vi.advanceTimersByTime(1501); // 轮询间隔 1500ms
+  wd.checkSessionChange();
   assert.strictEqual(wd._getIdleCount(), 0);
 });
 
-test('startSessionWatcher 幂等（重复调用不报错）', () => {
+test('checkSessionChange 会话未变时不重置', () => {
+  wd.startWatchdog();
   wd.startSessionWatcher();
-  wd.startSessionWatcher();
-  vi.advanceTimersByTime(100);
+  emitIdle('abc123');
+  assert.strictEqual(wd._getIdleCount(), 1);
+  wd.checkSessionChange(); // 会话未变
+  assert.strictEqual(wd._getIdleCount(), 1);
 });
