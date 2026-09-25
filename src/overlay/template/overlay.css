@@ -130,6 +130,8 @@
   gap: 8px;
 }
 .cuckoo-window-item:hover { background: rgba(139, 147, 255, 0.18); }
+.cuckoo-window-auto { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #8a90b8; flex-shrink: 0; cursor: pointer; user-select: none; }
+.cuckoo-window-auto input { cursor: pointer; }
 .cuckoo-window-left { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .cuckoo-window-item .cuckoo-window-name { color: #c8ccff; font-weight: 600; flex-shrink: 0; }
 .cuckoo-window-item .cuckoo-window-sep { color: #5d6280; flex-shrink: 0; }

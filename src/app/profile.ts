@@ -94,6 +94,7 @@ function createProfile(name: string, providerId: string): any {
     name: name || ('窗口' + (profiles.length + 1)),
     partition: 'persist:' + (pid ? pid + ':' : '') + id,
     createdAt: new Date().toISOString(),
+    autoOpen: false,
   };
   profiles.push(profile);
   writeProfiles(profiles);
@@ -148,6 +149,59 @@ function updateProfileProvider(id: string, providerId: string): any {
   return p;
 }
 
+/** 设置某 profile 是否"启动时默认打开" */
+function setAutoOpen(id: string, on: boolean): any {
+  const profiles = readProfiles();
+  const p = profiles.find(x => x.id === id);
+  if (!p) return null;
+  p.autoOpen = !!on;
+  writeProfiles(profiles);
+  return p;
+}
+
+/** 记录某 profile 最后访问的 URL（关闭窗口时调用；仅记 http/https） */
+function setLastUrl(id: string, url: string): any {
+  if (!id || !url || !/^https?:\/\//i.test(url)) return null;
+  const profiles = readProfiles();
+  const p = profiles.find(x => x.id === id);
+  if (!p) return null;
+  p.lastUrl = url;
+  writeProfiles(profiles);
+  console.log('[Profile] 已记录 lastUrl:', id, url);
+  return p;
+}
+
+/** 清除某 profile 的最后 URL（如切换平台时） */
+function clearLastUrl(id: string): void {
+  const profiles = readProfiles();
+  const p = profiles.find(x => x.id === id);
+  if (!p || !p.lastUrl) return;
+  delete p.lastUrl;
+  writeProfiles(profiles);
+}
+
+/** 记录某 profile 的窗口大小/位置（关闭窗口时调用） */
+function setWindowBounds(id: string, bounds: any): any {
+  if (!id || !bounds) return null;
+  const profiles = readProfiles();
+  const p = profiles.find(x => x.id === id);
+  if (!p) return null;
+  p.bounds = {
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
+    maximized: !!bounds.maximized,
+  };
+  writeProfiles(profiles);
+  return p;
+}
+
+/** 返回所有"启动时默认打开"的 profile */
+function getAutoOpenProfiles(): any[] {
+  return readProfiles().filter(p => p.autoOpen === true);
+}
+
 /**
  * 更新 profile 显示名称
  */
@@ -171,4 +225,9 @@ export {
   deleteProfile,
   setLastActiveProfileId,
   getLastActiveProfileId,
+  setAutoOpen,
+  setWindowBounds,
+  getAutoOpenProfiles,
+  setLastUrl,
+  clearLastUrl,
 };
