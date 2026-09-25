@@ -28,9 +28,13 @@ function firstParagraph(body: string): string {
   return '';
 }
 
-/** 扫描单个技能根目录下的所有技能 */
-function scanDir(root: string, source: SkillSource): SkillMeta[] {
-  const skillsDir = path.join(root, 'skills');
+/**
+ * 扫描某个 .cuckoo/skills 目录下的所有技能。
+ * @param baseDir 该作用域的基目录（项目根 或 用户主目录）
+ * @param source 作用域来源
+ */
+function scanDir(baseDir: string, source: SkillSource): SkillMeta[] {
+  const skillsDir = path.join(baseDir, '.cuckoo', 'skills');
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(skillsDir, { withFileTypes: true });
@@ -84,6 +88,9 @@ export function mergeSkills(project: SkillMeta[], user: SkillMeta[]): SkillMeta[
 
 /**
  * 扫描并合并技能。
+ * 目录约定：
+ *  - 项目级：`<projectDir>/.cuckoo/skills/<name>/SKILL.md`
+ *  - 用户级：`~/.cuckoo/skills/<name>/SKILL.md`
  * @param projectDir 项目根目录（可为 null，表示未初始化项目）
  * @returns 合并后的技能列表（项目级优先）
  */
