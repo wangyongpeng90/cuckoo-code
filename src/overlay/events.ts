@@ -25,6 +25,36 @@ function wireEvents(h: typeof hooks): void {
 let eventsBound = false;
 
 /**
+ * 「发送skill信息」按钮：让主进程重新扫描技能目录，把技能清单发给 AI
+ */
+async function handleSendSkills() {
+  const api = (window as any).electronAPI;
+  if (!api || !api.refreshSkills) {
+    showToast('接口不可用', 3000);
+    return;
+  }
+  try {
+    const result = await api.refreshSkills();
+    if (!result || !result.success) {
+      showToast('获取技能失败: ' + ((result && result.error) || '未知错误'), 3000);
+      return;
+    }
+    const section = result.section || '';
+    if (!section.trim()) {
+      showToast('没有找到任何技能', 3000);
+      return;
+    }
+    if (!sendToChat(section, '技能清单', 300)) {
+      showToast('发送失败：未找到输入框', 3000);
+      return;
+    }
+    showToast('已发送技能清单（共 ' + (result.count || 0) + ' 个技能）', 2500);
+  } catch (e: any) {
+    showToast('发送技能失败: ' + e.message, 3000);
+  }
+}
+
+/**
  * 「卡住了?点我」按钮：向 AI 发一句继续，催促其接着之前的工作
  */
 function handleManualParseDispatch() {
@@ -261,6 +291,10 @@ function bindEvents() {
   // 设置弹窗：恢复默认
   const settingsResetBtn = document.getElementById('cuckoo-settings-reset');
   settingsResetBtn?.addEventListener('click', resetSettings);
+
+  // 设置弹窗：发送技能清单
+  const skillsSendBtn = document.getElementById('cuckoo-skills-send');
+  skillsSendBtn?.addEventListener('click', handleSendSkills);
 
   // 悬浮球：可拖动 + 点击切换面板显隐
   const statusBadge = document.getElementById('cuckoo-status-badge');
