@@ -16,6 +16,9 @@ const shellAPI = {
   onUrlUpdated: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-url-updated', (_e: any, data: any) => cb(data));
   },
+  onTokenUpdated: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-token-updated', (_e: any, data: any) => cb(data));
+  },
 };
 
 try {

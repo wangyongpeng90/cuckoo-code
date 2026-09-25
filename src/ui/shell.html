@@ -57,6 +57,18 @@
   .url-input::placeholder { color: var(--ck-text-dim); }
   .url-input::selection { background: var(--ck-primary); color: #fff; }
   .divider { width: 1px; height: 20px; background: var(--ck-border); margin: 0 4px; }
+  .statusbar {
+    display: flex; align-items: center; gap: 10px;
+    height: 26px; padding: 0 12px;
+    background: var(--ck-toolbar);
+    border-bottom: 1px solid var(--ck-border);
+    flex-shrink: 0;
+    font-size: 12px; color: var(--ck-text-dim);
+    user-select: none;
+  }
+  .statusbar .sb-item { display: flex; align-items: center; gap: 4px; }
+  .statusbar .sb-label { color: var(--ck-text-dim); }
+  .statusbar .sb-value { color: var(--ck-text); font-variant-numeric: tabular-nums; }
   .viewport { flex: 1; }
 </style>
 </head>
@@ -80,6 +92,12 @@
       <button class="nav-btn" id="btn-home" title="主页">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
       </button>
+    </div>
+    <div class="statusbar">
+      <div class="sb-item">
+        <span class="sb-label">对话 Token：</span>
+        <span class="sb-value" id="sb-token">0</span>
+      </div>
     </div>
     <div class="viewport"></div>
   </div>
@@ -120,6 +138,20 @@
       input.blur();
     }
   });
+
+  // 对话 token 显示
+  function formatTokenCount(n) {
+    if (!isFinite(n) || n < 0) return '0';
+    if (n >= 10000) return (n / 10000).toFixed(2) + '万';
+    return String(Math.round(n));
+  }
+  var tokenEl = document.getElementById('sb-token');
+  if (api.onTokenUpdated) {
+    api.onTokenUpdated(function (data) {
+      if (!data || !tokenEl) return;
+      tokenEl.textContent = formatTokenCount(data.tokens);
+    });
+  }
 
   btnBack.addEventListener('click', function () { if (api.back) api.back(); });
   btnForward.addEventListener('click', function () { if (api.forward) api.forward(); });

@@ -28,7 +28,21 @@ function pushUrlState(view: any): void {
   });
 }
 
+/** 把累计 token 推送给壳页面的状态条 */
+function pushTokenUsage(view: any, tokens: number): void {
+  const ctx = view ? windowState.getContextByWebContents(view.webContents) : null;
+  if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+  ctx.win.webContents.send('shell-token-updated', { tokens });
+}
+
 function registerShellIpc(): void {
+  // AI 页面报告当前对话的累计 token → 转发给壳页面状态条
+  ipcMain.handle('update-token-usage', async (event: any, { tokens }: any) => {
+    const view = viewOf(event);
+    if (view && typeof tokens === 'number') pushTokenUsage(view, tokens);
+    return { success: true };
+  });
+
   ipcMain.handle('shell-navigate', async (event: any, { url }: any) => {
     const view = viewOf(event);
     if (!view || !url) return { success: false };
@@ -78,4 +92,4 @@ function registerShellIpc(): void {
   });
 }
 
-export { registerShellIpc, pushUrlState };
+export { registerShellIpc, pushUrlState, pushTokenUsage };

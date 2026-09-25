@@ -162,6 +162,11 @@ function startTokenCounter() {
     serverTokenUsage = (meta && meta.tokenUsage) || null;
     updateConversationTokenDisplay();
     checkAutoCompact();
+    // 上报给壳页面状态条（地址栏下方显示累计 token）
+    try {
+      const tokens = serverTokenUsage && serverTokenUsage.accumulatedTokens;
+      if (typeof tokens === 'number') (window as any).electronAPI.updateTokenUsage(tokens).catch(() => {});
+    } catch (_) {}
   });
   updateConversationTokenDisplay();
 }
