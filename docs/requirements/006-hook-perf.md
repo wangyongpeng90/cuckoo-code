@@ -2,10 +2,10 @@
 id: 006
 type: refactor
 title: hook 性能优化（消除高频写入与 O(n²)）
-status: doing
+status: done
 branch: refactor/006-hook-perf
 created: 2026-09-22
-updated: 2026-09-22
+updated: 2026-09-25
 ---
 
 ## 背景
@@ -88,7 +88,7 @@ DevTools 打开时会持续累积，拖慢页面。移除（保留关键日志�
 - [x] 轮询仅在变化时执行
 - [x] 现有测试全绿（360）
 - [x] typecheck / lint / compile 通过
-- [ ] 真机验证：对话多时卡顿缓解
+- [x] 真机验证：对话多时卡顿缓解
 
 ## 遗留 / 后续
 

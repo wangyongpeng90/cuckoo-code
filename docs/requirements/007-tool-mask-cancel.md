@@ -2,10 +2,10 @@
 id: 007
 type: feature
 title: 工具执行遮罩加「停止」按钮（取消回传）
-status: doing
+status: done
 branch: feat/007-tool-mask-cancel
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 ---
 
 ## 背景
@@ -56,7 +56,7 @@ updated: 2026-09-23
 - [x] 执行中不显示停止按钮（无法中断运行中的工具）
 - [x] 遮罩不再使用 loading 光标（`cursor: wait` → `default`）
 - [x] typecheck / test / lint / compile
-- [ ] 真机验证
+- [x] 真机验证
 
 ## 遗留 / 后续
 

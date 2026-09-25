@@ -2,10 +2,10 @@
 id: 008
 type: feature
 title: 启动时恢复最后活跃的窗口
-status: doing
+status: done
 branch: feat/008-restore-last-window
 created: 2026-09-23
-updated: 2026-09-23
+updated: 2026-09-25
 ---
 
 ## 背景
@@ -50,7 +50,7 @@ mainWindow.on('focus', () => {
 - [x] last-active 被删 → 回退第一个（getDefaultProfile 校验存在性）
 - [x] 首次启动无记录 → 创建时即记录
 - [x] typecheck / test / lint / compile
-- [ ] 真机验证
+- [x] 真机验证
 
 ## 遗留
 
