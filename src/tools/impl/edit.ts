@@ -124,7 +124,14 @@ class EditTool extends Tool {
     return {
       name: 'tool:edit',
       order: 102,
-      text: '使用 edit 工具对现有 UTF-8 文本文件做定向修改。它用 newString 替换字面量 oldString；默认 oldString 必须唯一匹配。如果 oldString 出现多次，请提供更具体的 oldString 或设置 replaceAll 为 true。批量替换同一文本时优先用 replaceAll: true 一次完成，避免读全文后整体写回；返回结果会包含实际替换处数，可用于自我校验。批量修改前可用 dryRun: true 预览，确认无误后再真实写入。除非你刚在本会话中创建或编辑过该文件，否则先 read 文件。注意：read 输出的内容带行号，oldString/newString 必须是文件原始文本，不要包含行号或 footer 提示。'
+      text: '使用 edit 工具对现有 UTF-8 文本文件做定向修改：用 newString 替换字面量 oldString。'
+        + 'oldString 应是一行或多行【连续】的原文（可跨行，不必逐行改）；【务必注意空白与缩进】——'
+        + '缩进、空格不一致是替换失败的最常见原因，请直接复制 read 到的原文。'
+        + '默认 oldString 必须唯一匹配：若出现多次，请提供更长的上下文使其唯一，或设置 replaceAll: true 全部替换。'
+        + '批量替换同一文本时优先用 replaceAll: true 一次完成，避免读全文后整体写回。'
+        + '批量修改前可用 dryRun: true 预览，确认无误后再真实写入；返回结果会包含实际替换处数，可用于自我校验。'
+        + '除非你刚在本会话中创建或编辑过该文件，否则先 read 文件。'
+        + '注意：read 输出的内容带行号，oldString/newString 必须是文件原始文本，不要包含行号或 footer 提示。'
     };
   }
 
