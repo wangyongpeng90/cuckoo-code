@@ -1,6 +1,7 @@
 import { Tool } from '../core/Tool.js';
 import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
+import { normalizeLineEndings, detectLineEndings, restoreLineEndings } from '../../infra/eol.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -123,7 +124,14 @@ class EditTool extends Tool {
     return {
       name: 'tool:edit',
       order: 102,
-      text: '使用 edit 工具对现有 UTF-8 文本文件做定向修改。它用 newString 替换字面量 oldString；默认 oldString 必须唯一匹配。如果 oldString 出现多次，请提供更具体的 oldString 或设置 replaceAll 为 true。批量替换同一文本时优先用 replaceAll: true 一次完成，避免读全文后整体写回；返回结果会包含实际替换处数，可用于自我校验。批量修改前可用 dryRun: true 预览，确认无误后再真实写入。除非你刚在本会话中创建或编辑过该文件，否则先 read 文件。注意：read 输出的内容带行号，oldString/newString 必须是文件原始文本，不要包含行号或 footer 提示。'
+      text: '使用 edit 工具对现有 UTF-8 文本文件做定向修改：用 newString 替换字面量 oldString。'
+        + 'oldString 应是一行或多行【连续】的原文（可跨行，不必逐行改）；【务必注意空白与缩进】——'
+        + '缩进、空格不一致是替换失败的最常见原因，请直接复制 read 到的原文。'
+        + '默认 oldString 必须唯一匹配：若出现多次，请提供更长的上下文使其唯一，或设置 replaceAll: true 全部替换。'
+        + '批量替换同一文本时优先用 replaceAll: true 一次完成，避免读全文后整体写回。'
+        + '批量修改前可用 dryRun: true 预览，确认无误后再真实写入；返回结果会包含实际替换处数，可用于自我校验。'
+        + '除非你刚在本会话中创建或编辑过该文件，否则先 read 文件。'
+        + '注意：read 输出的内容带行号，oldString/newString 必须是文件原始文本，不要包含行号或 footer 提示。'
     };
   }
 
@@ -151,18 +159,22 @@ class EditTool extends Tool {
         return ToolResult.error('不是文件: ' + resolvedPath);
       }
 
-      // 读取文件内容
-      const content = fs.readFileSync(resolvedPath, 'utf-8');
+      // 读取原始内容，记录换行符风格，内容归一成 LF（dsh 方案）
+      const raw = fs.readFileSync(resolvedPath, 'utf-8');
+      const lineEndings = detectLineEndings(raw);
+      const content = normalizeLineEndings(raw);
 
-      // 保留原 FileEditTool 的 CRLF 适配能力：
-      // 先原样匹配，失败后把 oldString 转 CRLF 再试；newString 统一转 CRLF
-      let matchOld = input.oldString;
-      const matchNew = input.newString.replace(/\r?\n/g, '\r\n');
+      // 在 LF 世界匹配（oldString / newString 也归一）
+      const oldNorm = normalizeLineEndings(input.oldString);
+      const newNorm = normalizeLineEndings(input.newString);
 
-      let occurrences = content.split(matchOld).length - 1;
-      if (occurrences === 0) {
-        matchOld = matchOld.replace(/\r?\n/g, '\r\n');
-        occurrences = content.split(matchOld).length - 1;
+      let occurrences = 0;
+      let idx = 0;
+      while (true) {
+        const found = content.indexOf(oldNorm, idx);
+        if (found === -1) break;
+        occurrences++;
+        idx = found + oldNorm.length;
       }
       if (occurrences === 0) {
         return ToolResult.error('未找到要替换的文本，请检查 oldString 是否与文件内容精确匹配。文件路径: ' + resolvedPath);
@@ -171,10 +183,8 @@ class EditTool extends Tool {
         return ToolResult.error('oldString 在文件中出现 ' + occurrences + ' 次。若要全部替换，请设置 replaceAll: true；若只替换其中一处，请提供更长的唯一片段（更多上下文）。');
       }
 
-      // 执行替换
-      const newContent = input.replaceAll
-        ? content.split(matchOld).join(matchNew)
-        : content.replace(matchOld, matchNew);
+      // 执行替换（LF 世界）
+      const editedLf = content.split(oldNorm).join(newNorm);
 
       // dry-run：只预览，不写文件
       if (input.dryRun) {
@@ -182,6 +192,8 @@ class EditTool extends Tool {
         return ToolResult.success(formatDryRunOutput(input.filePath, input.oldString, input.newString, occurrences, input.replaceAll));
       }
 
+      // 写回：恢复文件原本的换行符风格
+      const newContent = restoreLineEndings(editedLf, lineEndings);
       fs.writeFileSync(resolvedPath, newContent, 'utf-8');
 
       console.log('[EditTool] 已编辑:', resolvedPath, '替换', occurrences, '处');
