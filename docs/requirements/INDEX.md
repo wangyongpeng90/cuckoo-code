@@ -13,7 +13,7 @@
 | 006 | refactor | [hook 性能优化（消除高频写入与 O(n²)）](./006-hook-perf.md) | done | refactor/006-hook-perf | 2026-09-25 |
 | 007 | feature | [工具执行遮罩加「停止」按钮（取消回传）](./007-tool-mask-cancel.md) | done | feat/007-tool-mask-cancel | 2026-09-25 |
 | 008 | feature | [启动时恢复最后活跃的窗口](./008-restore-last-window.md) | done | feat/008-restore-last-window | 2026-09-25 |
-| 010 | refactor | [换行符处理对齐 dsh（LF 归一化）](./010-eol-normalize.md) | review | refactor/010-eol-normalize | 2026-09-24 |
-| 011 | feat | [工具失败日志（仅开发版，长期保留）](./011-tool-error-log.md) | review | feat/011-tool-error-log | 2026-09-25 |
+| 010 | refactor | [换行符处理对齐 dsh（LF 归一化）](./010-eol-normalize.md) | done | refactor/010-eol-normalize | 2026-09-25 |
+| 011 | feat | [工具失败日志（仅开发版，长期保留）](./011-tool-error-log.md) | done | feat/011-tool-error-log | 2026-09-25 |
 
 共 10 个需求。

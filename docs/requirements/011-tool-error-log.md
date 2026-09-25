@@ -2,7 +2,7 @@
 id: 011
 type: feat
 title: 工具失败日志（仅开发版，长期保留）
-status: review
+status: done
 branch: feat/011-tool-error-log
 created: 2026-09-25
 updated: 2026-09-25

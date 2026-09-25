@@ -2,10 +2,10 @@
 id: 010
 type: refactor
 title: 换行符处理对齐 dsh（LF 归一化）
-status: review
+status: done
 branch: refactor/010-eol-normalize
 created: 2026-09-24
-updated: 2026-09-24
+updated: 2026-09-25
 ---
 
 ## 背景
