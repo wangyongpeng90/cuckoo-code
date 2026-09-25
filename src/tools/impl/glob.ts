@@ -58,9 +58,13 @@ function parseGlobArgs(pattern: any, searchPath: any): { pattern: string; path?:
   if (typeof pattern !== 'string' || pattern.trim().length === 0) {
     throw new Error('pattern must be a non-empty string');
   }
+  // 空字符串 / 空白 / null 都视为"未提供"（用默认项目根），避免 AI 传空串时误报错
   if (searchPath !== undefined && searchPath !== null) {
-    if (typeof searchPath !== 'string' || searchPath.trim().length === 0) {
-      throw new Error('path must be a non-empty string when given');
+    if (typeof searchPath !== 'string') {
+      throw new Error('path must be a string when given');
+    }
+    if (searchPath.trim().length === 0) {
+      return { pattern };
     }
     return { pattern, path: searchPath };
   }

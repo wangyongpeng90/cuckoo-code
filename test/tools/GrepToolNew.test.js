@@ -35,8 +35,10 @@ test('parseGrepArgs 空 pattern 抛错', () => {
   assert.throws(() => parseGrepArgs('', undefined, undefined), /pattern must be a non-empty string/);
 });
 
-test('parseGrepArgs path 空抛错', () => {
-  assert.throws(() => parseGrepArgs('foo', '', undefined), /path must be a non-empty string when given/);
+test('parseGrepArgs path 空串视为未提供', () => {
+  assert.deepStrictEqual(parseGrepArgs('foo', '', undefined), { pattern: 'foo' });
+  assert.deepStrictEqual(parseGrepArgs('foo', '   ', undefined), { pattern: 'foo' });
+  assert.throws(() => parseGrepArgs('foo', 123, undefined), /path must be a string when given/);
 });
 
 test('parseGrepMatches 解析 NDJSON', () => {

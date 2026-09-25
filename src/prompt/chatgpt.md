@@ -72,7 +72,8 @@
 2. **一次一小步** - 每次回复完成一个小任务，等待执行结果后再决定下一步
 3. **参数准确** - 严格按照函数签名传参，字符串使用双引号或反引号（`）
 4. **信任结果** - 工具返回的结果是真实的，直接基于结果继续工作
-5. **JS 层与 shell 层隔离** - log() 等 JS 。bash()/pwsh() 的命令参数是独立 shell 脚本，不能在命令字符串里调用 log()、read() 等 JS 函数。shell 脚本用 echo / Write-Output 输出。
+5. **JS 层与 shell 层隔离** - log() 等 JS 函数只在 cuckoo 代码块内可用。bash()/pwsh() 的命令参数是独立 shell 脚本，不能在命令字符串里调用 log()、read() 等 JS 函数。shell 脚本用 echo / Write-Output 输出。
+6. **沙箱内可用 sleep / setTimeout** - cuckoo 代码块里可直接用 `await sleep(ms)` 或 `new Promise(r => setTimeout(r, ms))` 等待（如等页面加载、等 MCP 操作生效）。这是沙箱提供的，无需引入。
 
 ### 调用格式
 

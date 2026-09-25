@@ -82,16 +82,19 @@ function parseGrepArgs(pattern: any, searchPath: any, include: any): { pattern: 
   if (typeof pattern !== 'string' || pattern.length === 0) {
     throw new Error('pattern must be a non-empty string');
   }
+  // 空字符串 / 空白视为"未提供"（用默认项目根），避免 AI 传空串时误报错
+  let path: string | undefined;
   if (searchPath !== undefined && searchPath !== null) {
-    if (typeof searchPath !== 'string' || searchPath.trim().length === 0) {
-      throw new Error('path must be a non-empty string when given');
+    if (typeof searchPath !== 'string') {
+      throw new Error('path must be a string when given');
     }
+    if (searchPath.trim().length > 0) path = searchPath;
   }
   if (include !== undefined && include !== null) {
     validateInclude(include);
   }
   const out: { pattern: string; path?: string; include?: string } = { pattern };
-  if (searchPath !== undefined && searchPath !== null) out.path = searchPath;
+  if (path !== undefined) out.path = path;
   if (include !== undefined && include !== null) out.include = include;
   return out;
 }

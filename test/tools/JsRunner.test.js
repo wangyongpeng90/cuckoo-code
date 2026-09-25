@@ -46,3 +46,19 @@ test('JsRunner 未知工具报错', async () => {
   assert.ok(r.error);
 });
 
+test('JsRunner 沙箱支持 sleep', async () => {
+  const runner = new JsRunner(registry);
+  const t0 = Date.now();
+  const r = await runner.run('await sleep(50); log("done");', process.cwd());
+  assert.strictEqual(r.success, true);
+  assert.ok(r.output.includes('done'));
+  assert.ok(Date.now() - t0 >= 40);
+});
+
+test('JsRunner 沙箱支持 setTimeout', async () => {
+  const runner = new JsRunner(registry);
+  const r = await runner.run('await new Promise(res => setTimeout(() => { log("timed"); res(); }, 30));', process.cwd());
+  assert.strictEqual(r.success, true);
+  assert.ok(r.output.includes('timed'));
+});
+

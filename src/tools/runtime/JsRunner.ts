@@ -42,6 +42,16 @@ const BOOTSTRAP = [
 "",
 "  globalThis.projectDir = __projectDir;",
 "",
+"  // 计时器：沙箱原本没有 setTimeout/sleep，AI 常用它们做等待",
+"  globalThis.sleep = function (ms) {",
+"    return new Promise(function (resolve) { __hostSetTimeout(resolve, ms || 0); });",
+"  };",
+"  globalThis.setTimeout = function (fn, ms) {",
+"    var extra = Array.prototype.slice.call(arguments, 2);",
+"    return __hostSetTimeout(function () { fn.apply(null, extra); }, ms || 0);",
+"  };",
+"  globalThis.clearTimeout = function (id) { __hostClearTimeout(id); };",
+"",
 "  async function __call(name, args) {",
 "    var resText = await __hostBridge(name, JSON.stringify(args == null ? {} : args));",
 "    var res;",
@@ -137,6 +147,15 @@ class JsRunner {
       return JSON.stringify(result);
     };
 
+    // 沙箱内的计时器句柄（脚本结束时统一清理，避免残留定时器）
+    const sandboxTimers = new Set<any>();
+    const hostSetTimeout = (fn: any, ms: any) => {
+      const h = setTimeout(() => { try { fn(); } catch (_) { /* 回调异常忽略 */ } }, ms);
+      sandboxTimers.add(h);
+      return h;
+    };
+    const hostClearTimeout = (h: any) => { if (h) { clearTimeout(h); sandboxTimers.delete(h); } };
+
     // ========== 沙箱构建与加固 ==========
     const sandbox = {};
     Object.defineProperty(sandbox, '__hostBridge', {
@@ -144,6 +163,12 @@ class JsRunner {
     });
     Object.defineProperty(sandbox, '__projectDir', {
       value: projectDir || null, enumerable: true, writable: false, configurable: false,
+    });
+    Object.defineProperty(sandbox, '__hostSetTimeout', {
+      value: hostSetTimeout, enumerable: true, writable: false, configurable: false,
+    });
+    Object.defineProperty(sandbox, '__hostClearTimeout', {
+      value: hostClearTimeout, enumerable: true, writable: false, configurable: false,
     });
     // 截断沙箱对象与桥接函数的原型链，阻止经 constructor/__proto__ 逃逸到宿主 realm
     try { Object.setPrototypeOf(sandbox, null); } catch (e) { /* 尽力而为 */ }
@@ -160,6 +185,8 @@ class JsRunner {
       const fallback: any = {};
       fallback.__hostBridge = hostBridge;
       fallback.__projectDir = projectDir || null;
+      fallback.__hostSetTimeout = hostSetTimeout;
+      fallback.__hostClearTimeout = hostClearTimeout;
       context = vm.createContext(fallback, {
         codeGeneration: { strings: false, wasm: false },
         name: 'cuckoo-js-sandbox',
@@ -221,6 +248,9 @@ class JsRunner {
       return { success: false, error: errMsg };
     } finally {
       if (settleTimer) clearTimeout(settleTimer);
+      // 清理沙箱内遗留的计时器
+      for (const h of sandboxTimers) clearTimeout(h);
+      sandboxTimers.clear();
     }
   }
 }

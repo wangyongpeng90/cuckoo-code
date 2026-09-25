@@ -13,9 +13,10 @@ test('parseGlobArgs 空 pattern 抛错', () => {
   assert.throws(() => parseGlobArgs(null, undefined), /pattern must be a non-empty string/);
 });
 
-test('parseGlobArgs path 非法', () => {
-  assert.throws(() => parseGlobArgs('*', ''), /path must be a non-empty string when given/);
-  assert.throws(() => parseGlobArgs('*', 123), /path must be a non-empty string when given/);
+test('parseGlobArgs path 空串视为未提供', () => {
+  assert.deepStrictEqual(parseGlobArgs('*', ''), { pattern: '*' });
+  assert.deepStrictEqual(parseGlobArgs('*', '   '), { pattern: '*' });
+  assert.throws(() => parseGlobArgs('*', 123), /path must be a string when given/);
 });
 
 test('buildGlobArgs 无 path', () => {
