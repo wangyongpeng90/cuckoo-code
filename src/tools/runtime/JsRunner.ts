@@ -212,9 +212,13 @@ class JsRunner {
     } catch (err: any) {
       console.error('[JsRunner] 脚本执行失败:', err && err.stack ? err.stack : String(err));
       console.error('[JsRunner] [诊断] 失败代码(JSON转义): ' + JSON.stringify(code));
-      // 开发版：脚本级失败 + 已收集的工具级失败，一并写日志
-      logRun(code, toolFailures, err && err.message ? err.message : String(err), { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
-      return { success: false, error: err && err.message ? err.message : String(err) };
+      const errMsg = err && err.message ? err.message : String(err);
+      // 区分"脚本级失败"与"工具引起的失败"：
+      // 若该错误正是某次工具失败抛出的（工具失败已单独记到 <工具名>.log），
+      // 则不再重复写 _script.log；只有纯脚本级错误（语法/超时/沙箱）才写。
+      const fromTool = toolFailures.length > 0 && toolFailures.some((f) => errMsg.indexOf(f.error) !== -1);
+      logRun(code, toolFailures, fromTool ? null : errMsg, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
+      return { success: false, error: errMsg };
     } finally {
       if (settleTimer) clearTimeout(settleTimer);
     }
