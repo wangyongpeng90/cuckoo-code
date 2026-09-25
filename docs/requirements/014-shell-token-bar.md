@@ -2,7 +2,7 @@
 id: 014
 type: feat
 title: 地址栏下方显示当前对话 token 量
-status: doing
+status: review
 branch: feat/014-shell-token-bar
 created: 2026-09-25
 updated: 2026-09-25
