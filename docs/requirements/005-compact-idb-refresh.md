@@ -2,10 +2,10 @@
 id: 005
 type: refactor
 title: 压缩改用「清 IDB + 刷新」获取完整历史
-status: doing
+status: done
 branch: refactor/005-compact-idb-refresh
 created: 2026-09-21
-updated: 2026-09-21
+updated: 2026-09-25
 ---
 
 ## 背景
@@ -65,16 +65,33 @@ updated: 2026-09-21
 
 ## 验收标准
 
-- [ ] 摘要完成后自动清 IDB + 刷新
-- [ ] 刷新后检测到 URL 参数
-- [ ] 收到 IDB 写入事件后正确读数据
-- [ ] share/create 成功 + 跳转
-- [ ] 分享页自动初始化项目
-- [ ] 不带参数时（正常使用）不受影响
-- [ ] typecheck / test / lint / compile 全绿
+- [x] 摘要完成后自动清 IDB + 刷新
+- [x] 刷新后检测到 URL 参数
+- [x] 收到 IDB 写入事件后正确读数据
+- [x] share/create 成功 + 跳转（修复：沿 parent_id 回溯主链，见下）
+- [x] 分享页自动初始化项目
+- [x] 不带参数时（正常使用）不受影响
+- [x] typecheck / test / lint / compile 全绿
+
+## 实现记录（补充 2026-09-25：修复 share/create 不成对）
+
+真机测试发现：长会话（1418 条，点过重新生成）压缩时 `share/create` 报
+`{"biz_code":6,"biz_msg":"MESSAGES_MUST_APPEAR_IN_PAIRS"}`，拿不到 share_id。
+
+**根因**：原 `pickRecentPairedIds` 假设"message_id 顺序 = 对话顺序"，直接按 id 排序取尾部。
+但 DeepSeek 消息是**树**——重新生成/编辑会产生分支（一个 parent 多个 child），
+message_id 全局递增，按 id 排序会把"被丢弃的分支"混进来，角色序列不再是
+USER/ASSISTANT 交替 → 服务端判"不成对"。
+
+**修复**（对齐 DeepSeek 官方 `rs()` + `parent_id` 回溯）：
+- `getMessagesFromIndexedDB` 额外返回 `chat_session.current_message_id`（叶子）
+- `pickRecentPairedIds(msgs, leafId, ratio)`：从叶子沿 `parent_id` 回溯主链（`seen` Set 防环），
+  再取最近 20% 成对；回溯失败（`chain.length <= 1`）回退旧的 id 排序
+- 调用处传 `currentMessageId`
+
+**验证**：真机测试通过（压缩不再报错）。
 
 ## 遗留 / 后续
 
 - 失败兜底（待定）
 - 超时保护（待定）
-- 真机验证
