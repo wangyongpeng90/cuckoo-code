@@ -121,8 +121,12 @@ function waitForIdbWrite(timeoutMs: number): Promise<void> {
   });
 }
 
-/** 从 IndexedDB 读取指定会话的全量消息，按 message_id 升序 */
-function getMessagesFromIndexedDB(sessionId: string): Promise<MessageItem[]> {
+/**
+ * 从 IndexedDB 读取指定会话的全量消息，按 message_id 升序。
+ * 同时取出"当前叶子消息 id"（chat_session.current_message_id），
+ * 用于沿 parent_id 回溯主对话链。
+ */
+function getMessagesFromIndexedDB(sessionId: string): Promise<{ list: MessageItem[]; currentMessageId: number | null }> {
   return new Promise((resolve, reject) => {
     let req: any;
     try { req = indexedDB.open('deepseek-chat'); } catch (e) { reject(e); return; }
@@ -136,13 +140,16 @@ function getMessagesFromIndexedDB(sessionId: string): Promise<MessageItem[]> {
         g.onsuccess = () => {
           db.close();
           const val = g.result;
-          const msgs = val && val.data && val.data.chat_messages;
+          const data = val && val.data;
+          const msgs = data && data.chat_messages;
           if (!Array.isArray(msgs)) { reject(new Error('IndexedDB 无该会话消息')); return; }
           const list = msgs
             .filter((m: any) => typeof m.message_id === 'number')
             .map((m: any) => ({ message_id: m.message_id, role: m.role || '', parent_id: m.parent_id }))
             .sort((a: any, b: any) => a.message_id - b.message_id);
-          resolve(list);
+          const rawLeaf = data && data.chat_session && data.chat_session.current_message_id;
+          const currentMessageId = (typeof rawLeaf === 'number') ? rawLeaf : null;
+          resolve({ list, currentMessageId });
         };
         g.onerror = () => { db.close(); reject(new Error('读取消息失败')); };
       } catch (e) { db.close(); reject(e); }
@@ -150,16 +157,61 @@ function getMessagesFromIndexedDB(sessionId: string): Promise<MessageItem[]> {
   });
 }
 
-/** 取最近 ratio 比例的消息，保证成对（USER + ASSISTANT），返回降序 id */
-function pickRecentPairedIds(msgs: MessageItem[], ratio: number): number[] {
-  const total = msgs.length;
-  if (total === 0) return [];
+/**
+ * 沿 parent_id 回溯出「主对话链」，取最近 ratio 比例，保证成对（USER + ASSISTANT），返回降序 id。
+ *
+ * 为什么不能直接按 message_id 排序取尾部：
+ *   DeepSeek 的消息是**树**。重新生成/编辑会产生分支（一个 parent 有多个 child），
+ *   message_id 全局递增 → 按 id 排序会把"被丢弃的分支"也混进来，角色序列不再是
+ *   USER/ASSISTANT 交替 → share/create 报 MESSAGES_MUST_APPEAR_IN_PAIRS。
+ *   必须从「当前叶子」沿 parent_id 回溯，得到真正的主线。
+ *
+ * @param msgs 全量消息（任意顺序，内部建 map）
+ * @param leafId 当前叶子消息 id（chat_session.current_message_id），无则用最大 message_id
+ * @param ratio 取最近比例
+ */
+function pickRecentPairedIds(msgs: MessageItem[], leafId: number | null, ratio: number): number[] {
+  if (msgs.length === 0) return [];
+  const byId = new Map<number, MessageItem>();
+  for (const m of msgs) byId.set(m.message_id, m);
+
+  // 1) 确定叶子：优先 current_message_id，否则用最大 message_id
+  let leaf: number | null = (leafId != null && byId.has(leafId)) ? leafId : null;
+  if (leaf == null) {
+    let maxId: number | null = null;
+    for (const m of msgs) if (maxId == null || m.message_id > maxId) maxId = m.message_id;
+    leaf = maxId;
+  }
+  if (leaf == null) return [];
+
+  // 2) 沿 parent_id 回溯主链（叶子 → 根），防环
+  const chain: MessageItem[] = [];
+  const seen = new Set<number>();
+  let cur: number | null = leaf;
+  while (cur != null && byId.has(cur) && !seen.has(cur)) {
+    seen.add(cur);
+    const m: MessageItem = byId.get(cur) as MessageItem;
+    chain.push(m);
+    cur = (typeof m.parent_id === 'number') ? (m.parent_id as number) : null;
+  }
+  chain.reverse(); // 根 → 叶子
+
+  // 3) 回溯失败（无 parent_id 数据）→ 回退到旧的"按 id 排序取尾部"
+  let ordered: MessageItem[];
+  if (chain.length <= 1 && msgs.length > 1) {
+    ordered = msgs;
+  } else {
+    ordered = chain;
+  }
+
+  // 4) 取最近 ratio，保证成对
+  const total = ordered.length;
   let keep = Math.max(2, Math.round(total * ratio));
   let start = Math.max(0, total - keep);
-  while (start > 0 && msgs[start].role !== 'USER') start--;
+  while (start > 0 && ordered[start].role !== 'USER') start--;
   let end = total;
-  while (end > start + 1 && msgs[end - 1].role !== 'ASSISTANT') end--;
-  const picked = msgs.slice(start, end);
+  while (end > start + 1 && ordered[end - 1].role !== 'ASSISTANT') end--;
+  const picked = ordered.slice(start, end);
   return picked.map((m) => m.message_id).sort((a, b) => b - a);
 }
 
@@ -257,11 +309,11 @@ async function checkPendingCompact(): Promise<boolean> {
       throw new Error('未获取到认证请求头（请刷新页面后重试）');
     }
 
-    const allMsgs = await getMessagesFromIndexedDB(sessionId);
+    const { list: allMsgs, currentMessageId } = await getMessagesFromIndexedDB(sessionId);
     if (allMsgs.length === 0) throw new Error('未读取到消息列表');
-    const tailIds = pickRecentPairedIds(allMsgs, 0.2);
+    const tailIds = pickRecentPairedIds(allMsgs, currentMessageId, 0.2);
     if (tailIds.length === 0) throw new Error('裁剪后无有效消息');
-    logStep('api', '全量消息 ' + allMsgs.length + ' 条，保留最近 ' + tailIds.length + ' 条（成对）');
+    logStep('api', '全量消息 ' + allMsgs.length + ' 条（叶子=' + (currentMessageId || '?') + '），保留最近 ' + tailIds.length + ' 条（成对）');
 
     const shareId = await createShare(sessionId, tailIds, headers);
     const link = 'https://chat.deepseek.com/share/' + shareId;
