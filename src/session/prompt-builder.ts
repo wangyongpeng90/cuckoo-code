@@ -85,18 +85,6 @@ function buildMcpSection(): string {
     ? 'MCP 子进程的工作目录（cwd）：' + mcpCwd + '\n注意：MCP 工具（如截图、下载）返回的路径多为相对路径，实际文件位于该 cwd 下。若需读取/上传这些文件（如 attachFile），请把该 cwd 与相对路径用 / 拼接成绝对路径传入，例如：' + mcpCwd + '/page-xxx.png'
     : 'MCP 子进程的工作目录（cwd）：未确定（继承父进程）。MCP 工具返回的相对路径请以实际返回为准。';
 
-  // playwright 常见陷阱（当前唯一高频使用的 MCP；仅在其已连接时提示）
-  const hasPlaywright = enabledMcpServers.some((s: any) => s.name === 'playwright');
-  const playwrightTips = hasPlaywright ? [
-    '',
-    '### Playwright 使用要点（务必遵守，否则易失败）',
-    '- **先查参数**：调用前先 mcpGetTools("playwright") 确认工具的参数名（不同版本可能不同，如 browser_click 的定位参数可能是 target 或 ref）。',
-    '- **先快照再操作**：页面元素用 ref 定位，而 ref 会随页面变化失效。每次点击/输入前，先用 browser_snapshot 获取最新 ref，不要复用旧 ref。',
-    '- **选择器要唯一**：若用 CSS 选择器匹配到多个元素，会报 strict mode violation。需用更精确的选择器，或加 .first()。',
-    '- **等待加载**：页面跳转或加载后，用 browser_wait_for 或 sleep 等待，不要立即操作。',
-    '- **失败重试**：遇到 "Ref ... not found" 说明快照过期，重新 browser_snapshot 后再试。'
-  ] : [];
-
   return [
     '## MCP 能力',
     '',
@@ -107,15 +95,15 @@ function buildMcpSection(): string {
     '当前已配置且启用的 MCP server：',
     mcpServerList,
     '',
-    '使用 MCP 前，请先查询可用能力：',
-    '1. 调用 mcpListServers() 查看当前已配置的 MCP server 列表（含启用/连接状态）',
-    '2. 调用 mcpGetTools(serverName) 查看指定 server 提供的工具和参数',
-    '3. 确认后通过 mcpCall(server, tool, args) 调用具体工具',
+    '**使用 MCP 的强制流程（务必遵守）**：',
+    '1. 先调 mcpListServers() 看有哪些 server、是否已连接',
+    '2. **调用任何工具前，必须先调 mcpGetTools(server) 查看该 server 的工具列表与参数**（每个工具的名称、描述、参数名/类型都在这里）。不同 server/版本参数名可能不同，凭记忆猜参数极易失败。',
+    '3. 按 mcpGetTools 返回的准确参数，通过 mcpCall(server, tool, args) 调用',
+    '4. 工具返回的错误要仔细读（通常已说明失败原因，如参数缺失、引用过期），据此调整后重试',
     '',
     '注意：MCP server 可能未连接或未启用，以 mcpListServers() 的实时返回为准。',
     '',
-    '如果你需要使用某个 MCP（例如浏览器自动化、数据库访问等），可以提示用户安装并配置对应的 MCP server。',
-    ...playwrightTips
+    '如果你需要使用某个 MCP（例如浏览器自动化、数据库访问等），可以提示用户安装并配置对应的 MCP server。'
   ].join('\n');
 }
 
