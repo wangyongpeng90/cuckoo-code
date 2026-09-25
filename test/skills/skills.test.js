@@ -54,8 +54,10 @@ test('mergeSkills: 同名项目级优先', () => {
 
 // ===== buildSkillsSection =====
 
-test('buildSkillsSection: 空列表返回空串', () => {
-  assert.strictEqual(buildSkillsSection([]), '');
+test('buildSkillsSection: 空列表仍返回章节（含"提示用户安装"引导）', () => {
+  const s = buildSkillsSection([]);
+  assert.ok(s.includes('## 可用技能'));
+  assert.ok(s.includes('提示用户安装'));
 });
 
 test('buildSkillsSection: 包含 name 与路径', () => {

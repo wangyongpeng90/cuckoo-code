@@ -22,15 +22,21 @@ function formatSkillLine(s: SkillMeta): string {
  * @param skills 技能列表
  */
 export function buildSkillsSection(skills: SkillMeta[]): string {
-  if (!skills || skills.length === 0) return '';
+  const list = skills || [];
   const lines: string[] = [];
   lines.push('## 可用技能（Skills）');
   lines.push('');
-  lines.push('当任务与某个技能相关时，你必须先用 read 读取其 SKILL.md 全文，再按其中指令执行。');
-  lines.push('技能若有附带脚本，按 SKILL.md 里的说明、用 bash/pwsh 运行（路径以该技能目录为准）。');
-  lines.push('若 SKILL.md 内容被截断，用 read 的 offset 参数继续读取。');
+  if (list.length > 0) {
+    lines.push('当任务与某个技能相关时，你必须先用 read 读取其 SKILL.md 全文，再按其中指令执行。');
+    lines.push('技能若有附带脚本，按 SKILL.md 里的说明、用 bash/pwsh 运行（路径以该技能目录为准）。');
+    lines.push('若 SKILL.md 内容被截断，用 read 的 offset 参数继续读取。');
+    lines.push('');
+    for (const s of list) lines.push(formatSkillLine(s));
+  } else {
+    lines.push('（当前没有已安装的技能）');
+  }
   lines.push('');
-  for (const s of skills) lines.push(formatSkillLine(s));
+  lines.push('如果你需要某个技能（例如特定领域的流程/规范/脚本），可以提示用户安装——本应用支持技能（Skill）。');
   lines.push('');
   return lines.join('\n');
 }

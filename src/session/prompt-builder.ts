@@ -99,7 +99,9 @@ function buildMcpSection(): string {
     '2. 调用 mcpGetTools(serverName) 查看指定 server 提供的工具和参数',
     '3. 确认后通过 mcpCall(server, tool, args) 调用具体工具',
     '',
-    '注意：MCP server 可能未连接或未启用，以 mcpListServers() 的实时返回为准。'
+    '注意：MCP server 可能未连接或未启用，以 mcpListServers() 的实时返回为准。',
+    '',
+    '如果你需要使用某个 MCP（例如浏览器自动化、数据库访问等），可以提示用户安装并配置对应的 MCP server。'
   ].join('\n');
 }
 
@@ -174,10 +176,6 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     combined = combined.split(key).join(value);
   }
 
-  // 无技能时，清掉 {{SKILLS_SECTION}} 所在整段（含其前后的 "---" 分隔线），避免留下空分隔
-  if (!skillsSection) {
-    combined = combined.replace(/\n---\n\n(\n)*---\n/g, '\n---\n');
-  }
 
   // 压缩后初始化：末尾追加提示，让 AI 接着之前的工作继续
   if (isCompaction) {
