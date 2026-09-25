@@ -183,7 +183,11 @@ function createWindow(profile: any) {
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
   view.webContents.setUserAgent(userAgent);
 
-  if (providerChosen && provider) {
+  // 优先恢复上次关闭时的 URL（仅 http/https，且平台已确定）
+  const lastUrl = profileData.lastUrl;
+  if (providerChosen && provider && lastUrl && /^https?:\/\//i.test(lastUrl)) {
+    view.webContents.loadURL(lastUrl);
+  } else if (providerChosen && provider) {
     // 平台已确定且存在，直接进入平台首页
     view.webContents.loadURL(provider.homeUrl);
   } else {
@@ -225,6 +229,10 @@ function createWindow(profile: any) {
         x: b.x, y: b.y, width: b.width, height: b.height,
         maximized: mainWindow.isMaximized(),
       });
+      // 记录最后 URL（仅 http/https；view 可能已销毁）
+      if (view && view.webContents && !view.webContents.isDestroyed()) {
+        profileManager.setLastUrl(profileData.id, view.webContents.getURL());
+      }
     } catch (_) { /* ignore */ }
   });
 
@@ -513,6 +521,8 @@ ipcMainForProfile.handle('select-platform', async (event: any, { providerId }: a
   // 更新该窗口 profile 的 providerId 和 partition
   const updatedProfile = profileManager.updateProfileProvider(ctx.profileId, providerId);
   if (!updatedProfile) return { success: false, error: '更新 profile 失败' };
+  // 切换平台：清掉旧平台的 lastUrl，避免用旧 URL 打开新平台
+  profileManager.clearLastUrl(ctx.profileId);
 
   // 关闭旧窗口（其 session 仍是旧 partition）
   // 注意：这里销毁最后一个窗口会触发 window-all-closed，

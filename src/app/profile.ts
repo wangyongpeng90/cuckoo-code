@@ -159,6 +159,26 @@ function setAutoOpen(id: string, on: boolean): any {
   return p;
 }
 
+/** 记录某 profile 最后访问的 URL（关闭窗口时调用；仅记 http/https） */
+function setLastUrl(id: string, url: string): any {
+  if (!id || !url || !/^https?:\/\//i.test(url)) return null;
+  const profiles = readProfiles();
+  const p = profiles.find(x => x.id === id);
+  if (!p) return null;
+  p.lastUrl = url;
+  writeProfiles(profiles);
+  return p;
+}
+
+/** 清除某 profile 的最后 URL（如切换平台时） */
+function clearLastUrl(id: string): void {
+  const profiles = readProfiles();
+  const p = profiles.find(x => x.id === id);
+  if (!p || !p.lastUrl) return;
+  delete p.lastUrl;
+  writeProfiles(profiles);
+}
+
 /** 记录某 profile 的窗口大小/位置（关闭窗口时调用） */
 function setWindowBounds(id: string, bounds: any): any {
   if (!id || !bounds) return null;
@@ -207,4 +227,6 @@ export {
   setAutoOpen,
   setWindowBounds,
   getAutoOpenProfiles,
+  setLastUrl,
+  clearLastUrl,
 };
