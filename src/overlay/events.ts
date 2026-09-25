@@ -33,8 +33,18 @@ function getCurrentSessionId(): string | null {
   return null;
 }
 
-/** 读整个 token 缓存（sessionId → accumulatedTokens） */
-function readTokenCache(): Record<string, number> {
+/** 单个会话的 token 数据 */
+interface SessionToken {
+  /** 当前上下文总量（最新 accumulated） */
+  context: number;
+  /** 累计消耗（各轮回复结束时的 accumulated 之和） */
+  cumulative: number;
+  /** 上次记录的 accumulated（用于去重/判断是否新增一轮） */
+  lastAcc: number;
+}
+
+/** 读整个 token 缓存（sessionId → SessionToken） */
+function readTokenCache(): Record<string, SessionToken> {
   try {
     const raw = localStorage.getItem(TOKEN_CACHE_KEY);
     const obj = raw ? JSON.parse(raw) : {};
@@ -44,12 +54,27 @@ function readTokenCache(): Record<string, number> {
   }
 }
 
-/** 写入某会话的 token 值 */
-function saveTokenForSession(sessionId: string, tokens: number): void {
-  if (!sessionId || typeof tokens !== 'number') return;
+/**
+ * 记录某会话的当前上下文 token，并累加累计消耗。
+ * 累计消耗 = 各轮回复结束时的 accumulated 之和
+ *（每轮实际计费 ≈ 该轮的上下文总量：输入=历史，输出=增量，合计=累计后总量）。
+ * 仅在 acc 相比上次增大时才累加，避免重复事件重复计数。
+ */
+function saveTokenForSession(sessionId: string, acc: number): void {
+  if (!sessionId || typeof acc !== 'number') return;
   try {
     const cache = readTokenCache();
-    cache[sessionId] = tokens;
+    let entry: any = cache[sessionId];
+    // 兼容旧格式（数字）
+    if (typeof entry === 'number') entry = { context: entry, cumulative: entry, lastAcc: entry };
+    if (!entry || typeof entry !== 'object') entry = { context: 0, cumulative: 0, lastAcc: 0 };
+    const lastAcc = typeof entry.lastAcc === 'number' ? entry.lastAcc : 0;
+    if (acc > lastAcc) {
+      entry.cumulative = (typeof entry.cumulative === 'number' ? entry.cumulative : 0) + acc;
+    }
+    entry.context = acc;
+    entry.lastAcc = acc;
+    cache[sessionId] = entry;
     // 限制缓存条数，避免无限增长（保留最近 200 个）
     const keys = Object.keys(cache);
     if (keys.length > 200) {
@@ -57,6 +82,20 @@ function saveTokenForSession(sessionId: string, tokens: number): void {
     }
     localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify(cache));
   } catch (_) {}
+}
+
+/** 取某会话的 token 数据（兼容旧格式） */
+function getTokenForSession(sessionId: string | null): { context: number; cumulative: number } {
+  if (!sessionId) return { context: 0, cumulative: 0 };
+  const entry: any = readTokenCache()[sessionId];
+  if (typeof entry === 'number') return { context: entry, cumulative: entry };
+  if (entry && typeof entry === 'object') {
+    return {
+      context: typeof entry.context === 'number' ? entry.context : 0,
+      cumulative: typeof entry.cumulative === 'number' ? entry.cumulative : 0,
+    };
+  }
+  return { context: 0, cumulative: 0 };
 }
 /** 由 bridge/entry 在初始化时注入 bridge 能力 */
 function wireEvents(h: typeof hooks): void {
@@ -125,19 +164,19 @@ function formatTokenCount(n: number): string {
  */
 function updateConversationTokenDisplay() {
   const countEl = document.getElementById('cuckoo-conv-token-count');
-  if (!countEl) return;
-
   // 优先用"当前会话"的缓存值（切会话/刷新后仍能显示该会话的 token）
   const sid = getCurrentSessionId();
-  const cached = sid ? readTokenCache()[sid] : undefined;
-  const tokens = (typeof cached === 'number')
-    ? cached
+  const cached = sid ? getTokenForSession(sid) : { context: 0, cumulative: 0 };
+  const context = (cached.context > 0)
+    ? cached.context
     : (serverTokenUsage && typeof serverTokenUsage.accumulatedTokens === 'number' ? serverTokenUsage.accumulatedTokens : 0);
-  countEl.textContent = formatTokenCount(tokens);
+  const cumulative = cached.cumulative || 0;
 
-  // 同步到壳页面状态条（地址栏下方）
+  if (countEl) countEl.textContent = formatTokenCount(context);
+
+  // 同步到壳页面状态条（地址栏下方）：上下文 + 累计
   try {
-    (window as any).electronAPI.updateTokenUsage(tokens).catch(() => {});
+    (window as any).electronAPI.updateTokenUsage(context, cumulative).catch(() => {});
   } catch (_) {}
 }
 

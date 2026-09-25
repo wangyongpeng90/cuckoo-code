@@ -70,8 +70,8 @@ let electronAPI: any = {
   showAiNotification: () => {
     return ipcRenderer.invoke('show-ai-notification');
   },
-  updateTokenUsage: (tokens: any) => {
-    return ipcRenderer.invoke('update-token-usage', { tokens });
+  updateTokenUsage: (context: any, cumulative: any) => {
+    return ipcRenderer.invoke('update-token-usage', { context, cumulative });
   },
   // ========== 技能相关 API ==========
   refreshSkills: () => {

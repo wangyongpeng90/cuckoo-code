@@ -95,8 +95,12 @@
     </div>
     <div class="statusbar">
       <div class="sb-item">
-        <span class="sb-label">对话 Token：</span>
-        <span class="sb-value" id="sb-token">0</span>
+        <span class="sb-label">当前上下文：</span>
+        <span class="sb-value" id="sb-context">0</span>
+      </div>
+      <div class="sb-item">
+        <span class="sb-label">当前累计：</span>
+        <span class="sb-value" id="sb-cumulative">0</span>
       </div>
     </div>
     <div class="viewport"></div>
@@ -145,11 +149,13 @@
     if (n >= 10000) return (n / 10000).toFixed(2) + '万';
     return String(Math.round(n));
   }
-  var tokenEl = document.getElementById('sb-token');
+  var contextEl = document.getElementById('sb-context');
+  var cumulativeEl = document.getElementById('sb-cumulative');
   if (api.onTokenUpdated) {
     api.onTokenUpdated(function (data) {
-      if (!data || !tokenEl) return;
-      tokenEl.textContent = formatTokenCount(data.tokens);
+      if (!data) return;
+      if (contextEl) contextEl.textContent = formatTokenCount(data.context);
+      if (cumulativeEl) cumulativeEl.textContent = formatTokenCount(data.cumulative);
     });
   }
 

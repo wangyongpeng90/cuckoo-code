@@ -28,18 +28,18 @@ function pushUrlState(view: any): void {
   });
 }
 
-/** 把累计 token 推送给壳页面的状态条 */
-function pushTokenUsage(view: any, tokens: number): void {
+/** 把 token 数据（上下文 + 累计）推送给壳页面的状态条 */
+function pushTokenUsage(view: any, context: number, cumulative: number): void {
   const ctx = view ? windowState.getContextByWebContents(view.webContents) : null;
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
-  ctx.win.webContents.send('shell-token-updated', { tokens });
+  ctx.win.webContents.send('shell-token-updated', { context, cumulative });
 }
 
 function registerShellIpc(): void {
-  // AI 页面报告当前对话的累计 token → 转发给壳页面状态条
-  ipcMain.handle('update-token-usage', async (event: any, { tokens }: any) => {
+  // AI 页面报告当前对话 token（上下文 + 累计）→ 转发给壳页面状态条
+  ipcMain.handle('update-token-usage', async (event: any, { context, cumulative }: any) => {
     const view = viewOf(event);
-    if (view && typeof tokens === 'number') pushTokenUsage(view, tokens);
+    if (view && typeof context === 'number') pushTokenUsage(view, context, typeof cumulative === 'number' ? cumulative : 0);
     return { success: true };
   });
 
