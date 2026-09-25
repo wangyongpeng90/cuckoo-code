@@ -2,7 +2,7 @@
 id: 012
 type: feat
 title: Skill 支持（对齐 Claude Code，纯文件驱动）
-status: review
+status: done
 branch: feat/012-skills
 created: 2026-09-25
 updated: 2026-09-25
@@ -74,7 +74,7 @@ updated: 2026-09-25
 - [x] 目录改名 + 兼容读旧 `.cuckooCode`
 - [x] 刷新按钮发送技能清单
 - [x] typecheck / test / lint / compile
-- [ ] 真机验证
+- [x] 真机验证（初始化时技能注入 ✓、"发送skill信息"按钮 ✓）
 
 ## 遗留
 

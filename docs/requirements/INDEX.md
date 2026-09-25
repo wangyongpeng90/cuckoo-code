@@ -15,6 +15,6 @@
 | 008 | feature | [启动时恢复最后活跃的窗口](./008-restore-last-window.md) | done | feat/008-restore-last-window | 2026-09-25 |
 | 010 | refactor | [换行符处理对齐 dsh（LF 归一化）](./010-eol-normalize.md) | done | refactor/010-eol-normalize | 2026-09-25 |
 | 011 | feat | [工具失败日志（仅开发版，长期保留）](./011-tool-error-log.md) | done | feat/011-tool-error-log | 2026-09-25 |
-| 012 | feat | [Skill 支持（对齐 Claude Code，纯文件驱动）](./012-skills.md) | review | feat/012-skills | 2026-09-25 |
+| 012 | feat | [Skill 支持（对齐 Claude Code，纯文件驱动）](./012-skills.md) | done | feat/012-skills | 2026-09-25 |
 
 共 11 个需求。
