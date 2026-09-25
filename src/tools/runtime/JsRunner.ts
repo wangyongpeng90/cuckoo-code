@@ -11,6 +11,7 @@
 
 import vm from 'node:vm';
 import { TOOL_BOOTSTRAP } from './bootstrap.generated.js';
+import { logRun, ToolFailure } from '../../infra/tool-error-log.js';
 
 // 同步执行超时（vm timeout，覆盖无 await 的死循环）
 const SYNC_TIMEOUT = 30 * 1000;
@@ -100,6 +101,8 @@ class JsRunner {
 
     const startTime = Date.now();
     const deadlineMs = RUN_DEADLINE;
+    // 收集本次脚本里"工具级失败"（供开发版错误日志）
+    const toolFailures: ToolFailure[] = [];
 
     // 唯一跨域桥接函数：AI 代码中的每个工具调用都通过它回到主进程执行。
     // 注意：该函数绝不向沙箱抛出宿主对象（错误一律包装成 { success:false, error } 结果），
@@ -119,11 +122,16 @@ class JsRunner {
       const tool = this.registry.get(op);
       if (!tool) {
         result = { success: false, error: '未知工具: ' + op };
+        toolFailures.push({ tool: op || 'unknown', args: args, error: result.error });
       } else {
         try {
           result = await tool.execute(Object.assign({}, settings || {}, args, { projectDir, currentWindowId: windowId }));
+          if (result && result.success === false) {
+            toolFailures.push({ tool: op, args: args, error: result.error || '未知错误' });
+          }
         } catch (err: any) {
           result = { success: false, error: '工具 ' + op + ' 执行异常: ' + (err.message || String(err)) };
+          toolFailures.push({ tool: op, args: args, error: result.error });
         }
       }
       return JSON.stringify(result);
@@ -198,11 +206,19 @@ class JsRunner {
         output = output.slice(0, OUTPUT_LIMIT) + '\n...[输出过长已截断]...';
       }
 
+      // 开发版：记录本次脚本里所有工具级失败（无工具失败则不写）
+      logRun(code, toolFailures, null, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
       return { success: true, output: output || '(脚本执行完成，无输出)\n如需输出请使用 log() 方法' };
     } catch (err: any) {
       console.error('[JsRunner] 脚本执行失败:', err && err.stack ? err.stack : String(err));
       console.error('[JsRunner] [诊断] 失败代码(JSON转义): ' + JSON.stringify(code));
-      return { success: false, error: err && err.message ? err.message : String(err) };
+      const errMsg = err && err.message ? err.message : String(err);
+      // 区分"脚本级失败"与"工具引起的失败"：
+      // 若该错误正是某次工具失败抛出的（工具失败已单独记到 <工具名>.log），
+      // 则不再重复写 _script.log；只有纯脚本级错误（语法/超时/沙箱）才写。
+      const fromTool = toolFailures.length > 0 && toolFailures.some((f) => errMsg.indexOf(f.error) !== -1);
+      logRun(code, toolFailures, fromTool ? null : errMsg, { projectDir: projectDir || '(未设置)', windowId: windowId, 耗时ms: Date.now() - startTime });
+      return { success: false, error: errMsg };
     } finally {
       if (settleTimer) clearTimeout(settleTimer);
     }
