@@ -58,6 +58,9 @@ let electronAPI: any = {
   openProfileWindow: (profileId: any) => {
     return ipcRenderer.invoke('open-profile-window', { profileId });
   },
+  setProfileAutoOpen: (profileId: any, autoOpen: any) => {
+    return ipcRenderer.invoke('set-profile-auto-open', { profileId, autoOpen });
+  },
   deleteProfileWindow: (profileId: any) => {
     return ipcRenderer.invoke('delete-profile', { profileId });
   },

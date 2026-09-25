@@ -16,5 +16,6 @@
 | 010 | refactor | [换行符处理对齐 dsh（LF 归一化）](./010-eol-normalize.md) | done | refactor/010-eol-normalize | 2026-09-25 |
 | 011 | feat | [工具失败日志（仅开发版，长期保留）](./011-tool-error-log.md) | done | feat/011-tool-error-log | 2026-09-25 |
 | 012 | feat | [Skill 支持（对齐 Claude Code，纯文件驱动）](./012-skills.md) | done | feat/012-skills | 2026-09-25 |
+| 013 | feat | [窗口默认打开（多选）+ 记录大小位置](./013-window-auto-open.md) | doing | feat/013-window-auto-open | 2026-09-25 |
 
-共 11 个需求。
+共 12 个需求。

@@ -28,7 +28,12 @@ async function renderWindowList() {
 
     list.innerHTML = profiles.map((p: any) => {
       const pname = providerMap[p.providerId] || '平台';
+      const checked = p.autoOpen === true ? ' checked' : '';
       return '<div class="cuckoo-window-item" data-profile-id="' + p.id + '">' +
+        '<label class="cuckoo-window-auto" title="启动时默认打开此窗口">' +
+          '<input type="checkbox" data-profile-id="' + p.id + '"' + checked + ' />' +
+          '默认' +
+        '</label>' +
         '<span class="cuckoo-window-left">' +
           '<span class="cuckoo-window-name">' + p.name + '</span>' +
           '<span class="cuckoo-window-sep">|</span>' +
@@ -37,10 +42,31 @@ async function renderWindowList() {
         '<span class="cuckoo-window-del" data-profile-id="' + p.id + '" title="删除窗口">删除</span>' +
       '</div>';
     }).join('');
+    // 绑定"默认打开"复选框
+    list.querySelectorAll('.cuckoo-window-auto input').forEach(cb => {
+      cb.addEventListener('change', async (e) => {
+        e.stopPropagation();
+        const profileId = (cb as any).dataset.profileId;
+        const on = (cb as any).checked;
+        try {
+          const r = await (window as any).electronAPI.setProfileAutoOpen(profileId, on);
+          if (!r || !r.success) {
+            showToast((r && r.error) || '设置失败', 3000);
+            (cb as any).checked = !on; // 回滚
+          }
+        } catch (err: any) {
+          showToast('设置失败: ' + (err.message || err), 3000);
+          (cb as any).checked = !on;
+        }
+      });
+      (cb as any).addEventListener('click', (e: any) => e.stopPropagation());
+    });
+
     list.querySelectorAll('.cuckoo-window-item').forEach(el => {
       el.addEventListener('click', async (e) => {
-        // 点击删除按钮不触发切换
+        // 点击删除按钮或复选框不触发切换
         if ((e.target as any).classList.contains('cuckoo-window-del')) return;
+        if ((e.target as any).closest('.cuckoo-window-auto')) return;
         const profileId = (el as any).dataset.profileId;
         try {
           const r = await (window as any).electronAPI.openProfileWindow(profileId);

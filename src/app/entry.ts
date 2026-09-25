@@ -76,10 +76,19 @@ function createWindow(profile: any) {
   // providerId 已确定 → 直接打开；未确定 → 显示平台选择页
   const providerChosen = !!profileData.providerId;
 
+  // 窗口大小/位置：优先用该 profile 上次记录；无记录则用默认 + 级联偏移（避免多窗口完全重叠）
+  const savedBounds = profileData.bounds;
+  const winCount = windowState.getAllWindows().length;
+  const defaultBounds = savedBounds
+    ? { x: savedBounds.x, y: savedBounds.y, width: savedBounds.width, height: savedBounds.height }
+    : { x: undefined, y: undefined, width: 1280, height: 900 };
+  const cascadeOffset = savedBounds ? 0 : winCount * 30;
+
   // 壳窗口：webContents 承载地址栏（src/ui/shell.html），AI 页面放入下方 WebContentsView
   const mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 900,
+    width: defaultBounds.width,
+    height: defaultBounds.height,
+    ...(defaultBounds.x !== undefined ? { x: defaultBounds.x + cascadeOffset, y: (defaultBounds.y || 0) + cascadeOffset } : {}),
     icon: resolveAsset('assets/icon.png'),
     title: 'Cuckoo Code Pro - ' + (provider ? provider.name : '未选择平台') + ' - ' + profileData.name,
     webPreferences: {
@@ -162,7 +171,10 @@ function createWindow(profile: any) {
     fs.appendFileSync(logFile, '[' + timeIso + '][' + profileData.name + '] ' + message + '\n', 'utf-8');
   });
 
-  mainWindow.maximize();
+  // 恢复最大化状态（若有记录且曾最大化）
+  if (savedBounds && savedBounds.maximized) {
+    mainWindow.maximize();
+  }
 
   // 设置与 Electron 33（Chromium 130）匹配的普通 Chrome UA：
   // 1. 不带 Electron 标识，避免 DeepSeek 识别为第三方客户端
@@ -202,6 +214,18 @@ function createWindow(profile: any) {
     if (input.key === 'F12') {
       view.webContents.toggleDevTools();
     }
+  });
+
+  // 关闭前记录窗口大小/位置（用 getNormalBounds 取"还原后"尺寸；closed 时窗口已销毁取不到）
+  mainWindow.on('close', () => {
+    try {
+      if (mainWindow.isDestroyed()) return;
+      const b = mainWindow.getNormalBounds();
+      profileManager.setWindowBounds(profileData.id, {
+        x: b.x, y: b.y, width: b.width, height: b.height,
+        maximized: mainWindow.isMaximized(),
+      });
+    } catch (_) { /* ignore */ }
   });
 
   mainWindow.on('closed', () => {
@@ -505,6 +529,14 @@ ipcMainForProfile.handle('select-platform', async (event: any, { providerId }: a
   return { success: true };
 });
 
+// 设置某 profile 是否"启动时默认打开"
+ipcMainForProfile.handle('set-profile-auto-open', async (_event: any, { profileId, autoOpen }: any) => {
+  if (!profileId) return { success: false, error: '缺少 profileId' };
+  const p = profileManager.setAutoOpen(profileId, !!autoOpen);
+  if (!p) return { success: false, error: '窗口不存在' };
+  return { success: true };
+});
+
 // 打开指定 profile 的窗口（若已存在则聚焦）
 ipcMainForProfile.handle('open-profile-window', async (_event: any, { profileId }: any) => {
   const existing = windowState.getWindowByProfileId(profileId);
@@ -599,7 +631,14 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(() => {
     setupAppMenu();
-    createWindow(null);
+    // 启动时打开所有"默认打开"的窗口；若一个都没勾，回退默认（上次活跃的或第一个）
+    const autoOpen = profileManager.getAutoOpenProfiles();
+    if (autoOpen.length > 0) {
+      console.log('[Cuckoo Code] 启动默认打开 ' + autoOpen.length + ' 个窗口');
+      for (const p of autoOpen) createWindow(p);
+    } else {
+      createWindow(null);
+    }
 
     // 后台连接已启用的 MCP server，不阻塞窗口创建
     mcpClient.connectEnabledServers().catch(err => {
