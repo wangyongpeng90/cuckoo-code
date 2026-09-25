@@ -92,22 +92,22 @@ function setSuspended(v: any): void {
   }
 }
 
-// ===== 会话切换监视：SPA 路由（pushState）不触发 popstate/hashchange，
-// 用轮询检测 session 变化，一旦切换立即重置，避免误打扰新会话。=====
-let sessionWatcherTimer: any = null;
+// ===== 会话切换检测（由 bridge/entry 的 URL 变化事件驱动，不再高频轮询）=====
 let lastSeenSessionId: string | null = null;
 
+/** URL 变化时调用：检测到会话切换则重置计数（避免误打扰新会话） */
+function checkSessionChange(): void {
+  const sid = getCurrentSessionId();
+  if (sid !== lastSeenSessionId) {
+    console.log('[Cuckoo Code][看门狗] 检测到会话切换（' + lastSeenSessionId + ' -> ' + sid + '），重置');
+    lastSeenSessionId = sid;
+    reset();
+  }
+}
+
+/** 初始化会话监视（记录初始 sessionId，供 checkSessionChange 比对） */
 function startSessionWatcher(): void {
-  if (sessionWatcherTimer) return;
   lastSeenSessionId = getCurrentSessionId();
-  sessionWatcherTimer = setInterval(function () {
-    const sid = getCurrentSessionId();
-    if (sid !== lastSeenSessionId) {
-      console.log('[Cuckoo Code][看门狗] 检测到会话切换（' + lastSeenSessionId + ' -> ' + sid + '），重置');
-      lastSeenSessionId = sid;
-      reset();
-    }
-  }, 1500);
 }
 
 /** 启动：订阅流静默事件 */
@@ -127,6 +127,7 @@ export {
   reset,
   setSuspended,
   startSessionWatcher,
+  checkSessionChange,
   readConfig as _readConfig,
   getIdleCount as _getIdleCount,
 };

@@ -11,16 +11,16 @@ import './api.js';
 import { createRequire } from 'node:module';
 import * as ui from '../overlay/panel.js';
 import * as projectDir from '../overlay/project-dir.js';
-import { bindEvents } from '../overlay/events.js';
+import { bindEvents, refreshTokenForCurrentSession } from '../overlay/events.js';
 import * as chatInput from '../overlay/chat-input.js';
 import { wireEvents } from '../overlay/events.js';
 import { getProviderByUrl } from '../providers/registry.js';
 import { startInterceptObserver, onInterceptedResponse } from './intercept/observer.js';
 import { startRetryEngine } from './loop/retry.js';
-import { startSessionWatcher, startWatchdog } from './loop/watchdog.js';
+import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/watchdog.js';
 
 const require = createRequire(import.meta.url);
-const { webFrame } = require('electron');
+const { webFrame, ipcRenderer } = require('electron');
 
 // ========== 平台识别 ==========
 // 在 init 之前先判断当前平台，决定走"网络拦截"还是"DOM 抓取"模式
@@ -55,6 +55,34 @@ wireEvents({ onInterceptedResponse });
 
 // ========== 初始化 ==========
 
+// 用户名/会话相关状态（供 handleUrlChanged 使用）
+let lastSentUserName = '';
+let lastUserNameKey = '';
+
+/**
+ * URL 变化统一处理（由主进程 cuckoo-url-changed 事件 / popstate / hashchange 触发）：
+ * 刷新首页模式、检测会话切换、更新窗口名。
+ */
+function handleUrlChanged(): void {
+  try { ui.updateHomeMode(); } catch (_) {}
+  try { checkSessionChange(); } catch (_) {}
+  try { refreshTokenForCurrentSession(); } catch (_) {}
+  try {
+    const url = window.location.href;
+    const m = url.match(/\/chat\/s\/([a-f0-9-]+)/i);
+    const key = m ? m[1] : '(home)';
+    if (key === lastUserNameKey && lastSentUserName) return;
+    lastUserNameKey = key;
+    const provider = getProviderByUrl(url);
+    if (!provider || typeof provider.extractUserInfo !== 'function') return;
+    const text = provider.extractUserInfo();
+    if (text && text !== lastSentUserName) {
+      lastSentUserName = text;
+      (window as any).electronAPI.updateWindowName(text).catch(() => {});
+    }
+  } catch (_) {}
+}
+
 /**
  * 初始化 Cuckoo Code 扩展
  * 注入样式、覆盖层 HTML，绑定事件，启动回复监听（拦截或 DOM 观察）
@@ -67,18 +95,10 @@ function init(): void {
     bindEvents();
     ui.updateHomeMode();
 
-    // 监听 URL 变化（SPA 路由）
-    window.addEventListener('popstate', ui.updateHomeMode);
-    window.addEventListener('hashchange', ui.updateHomeMode);
-    // SPA 路由（pushState）不触发 popstate/hashchange，用低频轮询兜底：
-    // 仅当 URL 变化时才执行，避免每 1.5s 都做正则+DOM 查询
-    let lastHomeUrl = window.location.href;
-    setInterval(() => {
-      if (window.location.href !== lastHomeUrl) {
-        lastHomeUrl = window.location.href;
-        ui.updateHomeMode();
-      }
-    }, 1500);
+    // URL 变化：主进程 did-navigate/-in-page 会推 'cuckoo-url-changed'
+    ipcRenderer.on('cuckoo-url-changed', handleUrlChanged);
+    window.addEventListener('popstate', handleUrlChanged);
+    window.addEventListener('hashchange', handleUrlChanged);
     // 首次延迟执行，确保 overlay 已注入
     setTimeout(ui.updateHomeMode, 500);
 
@@ -103,29 +123,13 @@ function init(): void {
   // 定期巡检：防止面板被意外隐藏
   ui.startOverlayWatcher();
 
-  // 定期提取当前平台用户信息并更新窗口名
-  // 优化：先做零成本的 sessionId 变化检测，未变则跳过 DOM 查询；
-  // 且只在用户名变化时才发 IPC。
-  let lastSentUserName = '';
-  let lastUserNameKey = '';
+  // 15 秒低频兜底：主进程 URL 事件若漏发（罕见路由方式），这里补一次
   setInterval(() => {
     try {
-      const url = window.location.href;
-      const m = url.match(/\/chat\/s\/([a-f0-9-]+)/i);
-      const key = m ? m[1] : '(home)';
-      if (key === lastUserNameKey && lastSentUserName) return; // 会话未变且已发送过，跳过
-      lastUserNameKey = key;
-      const provider = getProviderByUrl(url);
-      if (!provider || typeof provider.extractUserInfo !== 'function') return;
-      const text = provider.extractUserInfo();
-      if (text && text !== lastSentUserName) {
-        lastSentUserName = text;
-        (window as any).electronAPI.updateWindowName(text).catch(() => {});
-      }
-    } catch (e: any) {
-      console.error('[Cuckoo Code] 轮询用户名异常:', e.message);
-    }
-  }, 3000);
+      ui.updateHomeMode();
+      checkSessionChange();
+    } catch (_) {}
+  }, 15000);
 }
 
 if (document.readyState === 'loading') {
