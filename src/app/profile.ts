@@ -167,6 +167,7 @@ function setLastUrl(id: string, url: string): any {
   if (!p) return null;
   p.lastUrl = url;
   writeProfiles(profiles);
+  console.log('[Profile] 已记录 lastUrl:', id, url);
   return p;
 }
 

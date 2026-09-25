@@ -2,7 +2,7 @@
 id: 013
 type: feat
 title: 窗口默认打开（多选）+ 记录大小位置
-status: doing
+status: done
 branch: feat/013-window-auto-open
 created: 2026-09-25
 updated: 2026-09-25
@@ -67,13 +67,14 @@ updated: 2026-09-25
 
 ## 验收标准
 
-- [ ] profile 加 autoOpen/bounds 字段 + 读写函数
-- [ ] 启动按勾选打开多窗口；无勾选回退默认
-- [ ] 关闭窗口记录大小/位置/最大化
-- [ ] 打开窗口按记录恢复；首次默认 + 级联偏移
-- [ ] 面板复选框可勾选 + 回显
-- [ ] typecheck / test / lint / compile
-- [ ] 真机验证
+- [x] profile 加 autoOpen/bounds 字段 + 读写函数
+- [x] 启动按勾选打开多窗口；无勾选回退默认
+- [x] 关闭窗口记录大小/位置/最大化
+- [x] 打开窗口按记录恢复；首次默认 + 级联偏移
+- [x] 面板复选框可勾选 + 回显
+- [x] 记录/恢复最后访问的 URL（补充，http/https + 主页按钮兜底）
+- [x] typecheck / test / lint / compile
+- [x] 真机验证（自动打开 ✓、URL 恢复 ✓）
 
 ## 遗留
 

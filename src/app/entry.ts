@@ -185,6 +185,7 @@ function createWindow(profile: any) {
 
   // 优先恢复上次关闭时的 URL（仅 http/https，且平台已确定）
   const lastUrl = profileData.lastUrl;
+  console.log('[Cuckoo Code] 创建窗口: profile=' + profileData.id + ' providerChosen=' + providerChosen + ' lastUrl=' + (lastUrl || '(无)'));
   if (providerChosen && provider && lastUrl && /^https?:\/\//i.test(lastUrl)) {
     view.webContents.loadURL(lastUrl);
   } else if (providerChosen && provider) {
@@ -231,7 +232,11 @@ function createWindow(profile: any) {
       });
       // 记录最后 URL（仅 http/https；view 可能已销毁）
       if (view && view.webContents && !view.webContents.isDestroyed()) {
-        profileManager.setLastUrl(profileData.id, view.webContents.getURL());
+        const curUrl = view.webContents.getURL();
+        console.log('[Cuckoo Code] 关闭窗口记录 lastUrl: profile=' + profileData.id + ' url=' + curUrl);
+        profileManager.setLastUrl(profileData.id, curUrl);
+      } else {
+        console.log('[Cuckoo Code] 关闭窗口：view 已销毁，跳过记录 URL (profile=' + profileData.id + ')');
       }
     } catch (_) { /* ignore */ }
   });
