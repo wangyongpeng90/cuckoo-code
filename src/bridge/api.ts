@@ -67,6 +67,10 @@ let electronAPI: any = {
   showAiNotification: () => {
     return ipcRenderer.invoke('show-ai-notification');
   },
+  // ========== 技能相关 API ==========
+  refreshSkills: () => {
+    return ipcRenderer.invoke('refresh-skills');
+  },
   // ========== MCP 相关 API ==========
   listMcpServers: () => {
     return ipcRenderer.invoke('list-mcp-servers');

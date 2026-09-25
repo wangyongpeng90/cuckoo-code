@@ -8,6 +8,7 @@ import { getProvider } from '../providers/registry.js';
 import * as mcpClient from '../mcp/client.js';
 import { resolveSrc, resolveToolSpec } from '../infra/paths.js';
 import { registry as toolRegistry } from '../tools/index.js';
+import { scanSkills, buildSkillsSection } from '../skills/index.js';
 
 // 提示词模板目录（D20：锚定应用根，与 dist 结构解耦）
 const PROMPT_DIR = resolveSrc('prompt');
@@ -102,13 +103,20 @@ function buildMcpSection(): string {
   ].join('\n');
 }
 
-/** 读取项目介绍（.cuckooCode/CUCKOO.md），无则返回空串 */
+/**
+ * 读取项目介绍（CUCKOO.md），无则返回空串。
+ * 优先新路径 `.cuckoo/CUCKOO.md`，兼容旧路径 `.cuckooCode/CUCKOO.md`。
+ */
 function readProjectIntro(selectedDir: string): string {
-  const cuckooMdPath = path.join(selectedDir, '.cuckooCode', 'CUCKOO.md');
-  if (!fs.existsSync(cuckooMdPath)) return '';
+  const candidates = [
+    path.join(selectedDir, '.cuckoo', 'CUCKOO.md'),
+    path.join(selectedDir, '.cuckooCode', 'CUCKOO.md'),
+  ];
+  const cuckooMdPath = candidates.find((p) => fs.existsSync(p));
+  if (!cuckooMdPath) return '';
   try {
     const content = fs.readFileSync(cuckooMdPath, 'utf-8');
-    console.log('[Cuckoo Code] 已读取 CUCKOO.md 内容');
+    console.log('[Cuckoo Code] 已读取 CUCKOO.md 内容:', cuckooMdPath);
     return content;
   } catch (err: any) {
     console.error('[Cuckoo Code] 读取 CUCKOO.md 失败:', err.message);
@@ -149,6 +157,7 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   const platformInfo = buildPlatformInfo();
   const projectIntro = readProjectIntro(selectedDir);
   const projectIntroSection = projectIntro ? '---\n## 项目介绍\n' + projectIntro : '';
+  const skillsSection = buildSkillsSection(scanSkills(selectedDir));
 
   const placeholders: Record<string, string> = {
     '{{TOOL_API_TYPES}}': toolApiTypes,
@@ -158,10 +167,16 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     '{{PROJECT_DIR}}': selectedDir,
     '{{PROJECT_INTRO_SECTION}}': projectIntroSection,
     '{{MCP_SECTION}}': mcpSection,
+    '{{SKILLS_SECTION}}': skillsSection,
   };
   let combined = tpl.content;
   for (const [key, value] of Object.entries(placeholders)) {
     combined = combined.split(key).join(value);
+  }
+
+  // 无技能时，清掉 {{SKILLS_SECTION}} 所在整段（含其前后的 "---" 分隔线），避免留下空分隔
+  if (!skillsSection) {
+    combined = combined.replace(/\n---\n\n(\n)*---\n/g, '\n---\n');
   }
 
   // 压缩后初始化：末尾追加提示，让 AI 接着之前的工作继续
