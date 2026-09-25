@@ -117,7 +117,7 @@ function createWindow(profile: any) {
   mainWindow.contentView.addChildView(view);
 
   // 布局：AI 页面占地址栏下方区域，随窗口尺寸变化
-  const TOOLBAR_HEIGHT = 44;
+  const TOOLBAR_HEIGHT = 44 + 26; // 地址栏 44 + 状态条 26
   const layoutView = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const [w, h] = mainWindow.getContentSize();
