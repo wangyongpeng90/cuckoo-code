@@ -110,6 +110,10 @@
         <span class="sb-label">今日窗口：</span>
         <span class="sb-value" id="sb-today">0</span>
       </div>
+      <div class="sb-item">
+        <span class="sb-label">系统：</span>
+        <span class="sb-value" id="sb-system">0</span>
+      </div>
     </div>
     <div class="viewport"></div>
   </div>
@@ -161,6 +165,7 @@
   var cumulativeEl = document.getElementById('sb-cumulative');
   var windowEl = document.getElementById('sb-window');
   var todayEl = document.getElementById('sb-today');
+  var systemEl = document.getElementById('sb-system');
   if (api.onTokenUpdated) {
     api.onTokenUpdated(function (data) {
       if (!data) return;
@@ -169,6 +174,17 @@
       if (windowEl) windowEl.textContent = formatTokenCount(data.windowCumulative);
       if (todayEl) todayEl.textContent = formatTokenCount(data.todayCumulative);
     });
+  }
+  // 系统总累计：订阅广播 + 加载时拉取一次
+  if (api.onTotalUpdated) {
+    api.onTotalUpdated(function (data) {
+      if (data && systemEl) systemEl.textContent = formatTokenCount(data.systemTotal);
+    });
+  }
+  if (api.getSystemTotal) {
+    api.getSystemTotal().then(function (r) {
+      if (r && r.success && systemEl) systemEl.textContent = formatTokenCount(r.systemTotal);
+    }).catch(function () {});
   }
 
   btnBack.addEventListener('click', function () { if (api.back) api.back(); });

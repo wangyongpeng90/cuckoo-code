@@ -19,6 +19,10 @@ const shellAPI = {
   onTokenUpdated: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-token-updated', (_e: any, data: any) => cb(data));
   },
+  onTotalUpdated: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-total-updated', (_e: any, data: any) => cb(data));
+  },
+  getSystemTotal: () => ipcRenderer.invoke('get-system-total'),
 };
 
 try {

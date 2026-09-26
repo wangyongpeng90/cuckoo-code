@@ -5,6 +5,7 @@
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { getProvider } from '../../providers/registry.js';
+import { setWindowCumulative, getTotal } from '../token-stats.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -28,6 +29,18 @@ function pushUrlState(view: any): void {
   });
 }
 
+/** 把系统总累计广播给所有窗口的壳页面 */
+function broadcastSystemTotal(): void {
+  const total = getTotal();
+  for (const ctx of windowState.getAllContexts()) {
+    try {
+      if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+        ctx.win.webContents.send('shell-total-updated', { systemTotal: total });
+      }
+    } catch (_) {}
+  }
+}
+
 /** 把 token 数据推送给壳页面的状态条 */
 function pushTokenUsage(view: any, context: number, cumulative: number, windowCumulative = 0, todayCumulative = 0): void {
   const ctx = view ? windowState.getContextByWebContents(view.webContents) : null;
@@ -48,7 +61,20 @@ function registerShellIpc(): void {
         typeof todayCumulative === 'number' ? todayCumulative : 0
       );
     }
+    // 更新系统总累计并广播给所有窗口
+    try {
+      const ctx = view ? windowState.getContextByWebContents(view.webContents) : null;
+      if (ctx && ctx.profileId && typeof windowCumulative === 'number') {
+        setWindowCumulative(ctx.profileId, windowCumulative);
+        broadcastSystemTotal();
+      }
+    } catch (_) {}
     return { success: true };
+  });
+
+  // 查询当前系统总累计（壳页面加载时拉取一次）
+  ipcMain.handle('get-system-total', async () => {
+    return { success: true, systemTotal: getTotal() };
   });
 
   ipcMain.handle('shell-navigate', async (event: any, { url }: any) => {
