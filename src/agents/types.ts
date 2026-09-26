@@ -17,6 +17,8 @@ export interface AgentMeta {
   description: string;
   /** 允许使用的工具（frontmatter 的 tools，缺省=全部） */
   tools?: string[];
+  /** 最大轮数（frontmatter 的 maxTurns，缺省=无限制；防子代理无限循环） */
+  maxTurns?: number;
   /** 代理定义文件绝对路径 */
   agentPath: string;
   /** 系统提示正文（frontmatter 之后的内容） */

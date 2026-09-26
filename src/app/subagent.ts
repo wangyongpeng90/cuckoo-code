@@ -76,6 +76,7 @@ export async function runAgent(opts: {
   task: string;
   systemPrompt: string;
   tools?: string[];
+  maxTurns?: number;
   timeoutMs?: number;
 }): Promise<string> {
   if (!_createWindow || !_profileManager) throw new Error('子代理依赖未注入');
@@ -96,6 +97,7 @@ export async function runAgent(opts: {
     task: opts.task,
     systemPrompt: opts.systemPrompt,
     tools: opts.tools || null,
+    maxTurns: opts.maxTurns || null,
   };
   const windowId = _createWindow(subProfile);
 

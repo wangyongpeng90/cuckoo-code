@@ -63,10 +63,17 @@ function scanDir(baseDir: string, source: AgentSource): AgentMeta[] {
       tools = data.tools.split(',').map((s) => s.trim()).filter(Boolean);
     }
 
+    let maxTurns: number | undefined;
+    if (data.maxTurns) {
+      const n = parseInt(data.maxTurns, 10);
+      if (Number.isFinite(n) && n > 0) maxTurns = n;
+    }
+
     result.push({
       name,
       description,
       tools,
+      maxTurns,
       agentPath,
       systemPrompt: body.trim(),
       source,

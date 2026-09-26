@@ -428,6 +428,7 @@ injectAgentRunner(async ({ agent, task, currentWindowId }: any) => {
     task,
     systemPrompt: agent.systemPrompt,
     tools: agent.tools,
+    maxTurns: agent.maxTurns,
   });
 });
 

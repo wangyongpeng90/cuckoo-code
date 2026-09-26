@@ -18,6 +18,7 @@ export interface SubagentConfig {
   task: string;
   systemPrompt: string;
   tools: string[] | null;
+  maxTurns: number | null;
 }
 
 /** 从 process.argv 解析子代理配置（无则 null） */
@@ -61,16 +62,24 @@ export function initSubagentIfNeeded(): boolean {
 
   console.log('[Cuckoo Code][子代理] 激活：' + cfg.agentName);
 
-  // 监听回复：无工具调用 = 完成 → 上报主进程
+  // 监听回复：无工具调用 = 完成；含工具 = 一轮（受 maxTurns 限制）
+  let turnCount = 0;
   onInterceptedResponse((text: string) => {
     const raw = (text || '').trim();
     if (!raw) return;
     const blocks = extractJsToolBlocks(raw);
     if (blocks.length === 0) {
       console.log('[Cuckoo Code][子代理] 收到最终回复，长度=' + raw.length + '，上报主进程');
-      ipcRenderer.invoke('subagent-response', { text: raw }).catch(() => {});
+      ipcRenderer.invoke('subagent-response', { text: raw, done: true }).catch(() => {});
+      return;
+    }
+    // 含工具调用 = 一轮
+    turnCount++;
+    if (cfg.maxTurns && turnCount >= cfg.maxTurns) {
+      console.log('[Cuckoo Code][子代理] 达到 maxTurns=' + cfg.maxTurns + '，停止并上报部分结果');
+      ipcRenderer.invoke('subagent-response', { text: raw, partial: true, turns: turnCount }).catch(() => {});
     } else {
-      console.log('[Cuckoo Code][子代理] 回复含 ' + blocks.length + ' 个工具块，继续循环');
+      console.log('[Cuckoo Code][子代理] 第 ' + turnCount + ' 轮，含 ' + blocks.length + ' 个工具块，继续');
     }
   });
 
