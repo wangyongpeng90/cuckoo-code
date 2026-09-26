@@ -90,8 +90,11 @@ function handleUrlChanged(): void {
  */
 function init(): void {
   // 子代理窗口：不注入 overlay / 看门狗，只跑子代理流程
-  if (initSubagentIfNeeded()) {
+  const isSubagent = initSubagentIfNeeded();
+  if (isSubagent) {
     console.log('[Cuckoo Code] 子代理窗口已接管，跳过 overlay 初始化');
+    // 仍需启动拦截监听器：hook 派发的 cuckoo-ai-response 事件要有人接
+    startInterceptObserver();
     return;
   }
   try {
