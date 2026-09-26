@@ -21,13 +21,21 @@ function install(): void {
   // 采集：我方 consume 耗时 / 读取字节 / 页面长任务，流结束时经事件上报。
   var perf = {
     t0: 0, frames: 0, consumeMs: 0, maxConsume: 0, bytes: 0,
-    longTasks: 0, longTaskMs: 0, maxLongTask: 0, _lastLong: 0,
+    longTasks: 0, longTaskMs: 0, maxLongTask: 0,
+    // 长任务明细：[{off: 相对流起点的偏移ms, dur: 时长ms}]，最多记 120 条
+    longList: [],
+    // chunk 到达时间点（相对流起点 ms），最多记 200 条
+    chunkTimes: [],
     reset: function () {
       this.t0 = performance.now();
       this.frames = 0; this.consumeMs = 0; this.maxConsume = 0; this.bytes = 0;
-      this.longTasks = 0; this.longTaskMs = 0; this.maxLongTask = 0; this._lastLong = this.t0;
+      this.longTasks = 0; this.longTaskMs = 0; this.maxLongTask = 0;
+      this.longList = []; this.chunkTimes = [];
     },
     addConsume: function (ms) { this.consumeMs += ms; if (ms > this.maxConsume) this.maxConsume = ms; },
+    addChunkTime: function () {
+      if (this.chunkTimes.length < 200) this.chunkTimes.push(Math.round(performance.now() - this.t0));
+    },
     summary: function () {
       var now = performance.now();
       return {
@@ -39,7 +47,9 @@ function install(): void {
         maxConsumeMs: Math.round(this.maxConsume * 10) / 10,
         longTasks: this.longTasks,
         longTaskMs: Math.round(this.longTaskMs),
-        maxLongTaskMs: Math.round(this.maxLongTask)
+        maxLongTaskMs: Math.round(this.maxLongTask),
+        longList: this.longList.slice(0, 120),
+        chunkTimes: this.chunkTimes.slice(0, 200)
       };
     }
   };
@@ -51,6 +61,12 @@ function install(): void {
           perf.longTasks++;
           perf.longTaskMs += es[i].duration;
           if (es[i].duration > perf.maxLongTask) perf.maxLongTask = es[i].duration;
+          if (perf.longList.length < 120) {
+            perf.longList.push({
+              off: Math.round(es[i].startTime - perf.t0),
+              dur: Math.round(es[i].duration)
+            });
+          }
         }
       });
       _po.observe({ entryTypes: ['longtask'] });
@@ -355,6 +371,7 @@ function install(): void {
 
     function feed(chunk) {
       var _t = performance.now();
+      perf.addChunkTime();
       perf.bytes += (chunk ? chunk.length : 0);
       var frames = frameDecoder.push(chunk);
       perf.frames += frames.length;
@@ -551,6 +568,7 @@ function install(): void {
       if (typeof raw !== 'string' || raw.length <= lastLen) return;
       xhrReads++;
       xhrRawBytes += raw.length;
+      perf.addChunkTime();
       var chunk = raw.slice(lastLen);
       lastLen = raw.length;
       var frames = frameDecoder.push(chunk);
