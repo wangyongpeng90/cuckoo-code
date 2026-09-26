@@ -256,7 +256,8 @@ function loadAutoCompactConfig() {
     const en = localStorage.getItem('cuckoo-auto-compact-enabled');
     const th = localStorage.getItem('cuckoo-auto-compact-threshold');
     autoCompactEnabled = en === '1';
-    autoCompactThresholdWan = th ? (parseFloat(th) || 80) : 80;
+    // 同样避免 "parseFloat() || 80"（0 会被丢弃）
+    if (th !== null) { const v = parseFloat(th); if (Number.isFinite(v) && v > 0) autoCompactThresholdWan = v; }
   } catch (_) {}
   const enEl = document.getElementById('cuckoo-auto-compact-enabled');
   const thEl = document.getElementById('cuckoo-auto-compact-threshold');
@@ -336,8 +337,9 @@ function bindEvents() {
   try {
     const savedMin = localStorage.getItem('cuckoo-send-delay-min');
     const savedMax = localStorage.getItem('cuckoo-send-delay-max');
-    if (savedMin) state.sendDelayMin = parseInt(savedMin, 10) || 2000;
-    if (savedMax) state.sendDelayMax = parseInt(savedMax, 10) || 4000;
+    // 注意：不能用 "parseInt() || 默认值"——0 是有效值，会被 || 误判为假值丢弃
+    if (savedMin !== null) { const v = parseInt(savedMin, 10); if (Number.isFinite(v) && v >= 0) state.sendDelayMin = v; }
+    if (savedMax !== null) { const v = parseInt(savedMax, 10); if (Number.isFinite(v) && v >= 0) state.sendDelayMax = v; }
     // 同步到输入框
     const minInput = document.getElementById('cuckoo-delay-min');
     const maxInput = document.getElementById('cuckoo-delay-max');
