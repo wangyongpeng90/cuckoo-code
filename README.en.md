@@ -30,7 +30,7 @@ No AI platform API is called, and no API token is used. It directly reuses the c
 
 ### Multi-Platform Provider Framework
 
-- Built-in **DeepSeek** and **Claude** platforms
+- Built-in **DeepSeek**, **Claude**, and **ChatGPT** platforms
 - Each platform independently encapsulates differences such as input box location, send button detection, reply completion detection, and message parsing
 - You can choose a platform when creating a new window, or **import a custom Provider** (type declarations and templates are provided to lower the barrier to extension)
 
@@ -42,13 +42,16 @@ Not just chat. The AI can read/write files, search code, execute commands, query
 
 ## Main Features
 
-- **Multi-window management**: each window has an independent profile context without interference
-- **Project initialization**: after selecting a project directory, the AI gets the directory tree and system prompt, so operations are based on real project context
-- **Tool call system**: the AI can call tools for reading/writing files, searching code, executing commands, querying databases, and more
-- **Command interception**: automatically detects cmd / powershell / bash code blocks and executes them after confirmation
-- **MCP support**: uses Claude Desktop compatible configuration format and supports stdio / http server types
+- **Multi-window management**: each window has an independent profile context; tick "Default" to auto-open on startup
+- **Address bar**: top bar to view/copy the URL, navigate back/forward/reload, quick-jump; a status bar below shows token usage
+- **Project initialization**: after selecting a project directory, the AI gets the directory tree and system prompt
+- **Skill support**: Claude Code-aligned skills (project `.cuckoo/skills/` + user `~/.cuckoo/skills/`), progressive disclosure
+- **Tool call system**: the AI can read/write files, search code, execute commands, query databases, and more
+- **Tool execution mask**: a mask over the AI page during execution, with a "Stop" button to cancel sending results back
+- **MCP support**: Claude Desktop compatible config format, stdio / http server types
 - **Overlay panel**: shows command previews, execution results, and history; toggle with Ctrl+Shift+C or Esc
-- **Automatic retry**: when JS execution fails and the code appears incomplete, it automatically waits 1 second, refetches, and retries (up to 3 times); only reports back to the AI if it still fails
+- **Context compaction**: long sessions auto-compact (clear IDB + refresh + share link) to avoid hitting the context limit
+- **Automatic retry**: two mechanisms — (1) retry with backoff when a reply is truncated/fails; (2) watchdog prompts "continue" when the SSE stream goes silent
 - **Session persistence**: login state and settings are saved to %APPDATA%/cuckoo-ai-pro-session
 - **Safety mechanisms**: 30-second command timeout, 60-second sandbox timeout, 1MB output buffer, dangerous command confirmation
 
@@ -58,7 +61,7 @@ Not just chat. The AI can read/write files, search code, execute commands, query
 
 ### Requirements
 
-- Node.js >= 16.0.0
+- Node.js >= 16.0.0 (matches `engines` in `package.json`; 18+ recommended)
 - npm
 
 ### Steps
@@ -71,10 +74,10 @@ cd cuckoo-code
 # Install dependencies
 npm install
 
-# If npm blocks the electron postinstall script (allowScripts), approve it first:
-#   npm install-scripts ls
-#   npm install-scripts approve electron
-#   npm install
+# If npm blocks the electron/esbuild postinstall scripts (allowScripts), approve first:
+#   npm install-scripts ls             # list blocked packages
+#   npm install-scripts approve --all  # or approve electron esbuild individually
+#   npm install                        # reinstall to ensure binaries are downloaded
 # Otherwise the electron binary will not be downloaded and startup will fail.
 
 # Start the app
@@ -98,8 +101,8 @@ When an AI reply contains a `cuckoo` code block in the following format, the sys
 
 ````markdown
 ```cuckoo
-const content = await read("src/utils/helper.js");
-await write("src/utils/helper.js", content.replace("formatDate", "formatTime"));
+const content = await read("src/infra/paths.ts");
+await write("src/infra/paths.ts", content.replace("resolveAsset", "resolveResource"));
 ```
 ````
 
@@ -125,6 +128,7 @@ Supported tools (called through `cuckoo` code blocks):
 | `mysql(options)` | Execute MySQL SQL |
 | `openBrowserWindow(url, options?)` | Open an Electron browser window |
 | `injectJS(windowId, code)` | Inject JS into a specified window |
+| `attachFile(path)` | Upload a local file as an attachment to the input box |
 | `mcpListServers()` | List configured MCP servers |
 | `mcpGetTools(serverName)` | List tools of an MCP server |
 | `mcpCall(server, tool, args)` | Call an MCP tool |
@@ -162,7 +166,7 @@ Want to integrate a new AI platform? Copy `src/providers/custom/provider.templat
 - Methods such as `matchesUrl()` and `extractSessionId()`
 - Auto-parsing related methods (completion detection, message location, etc.)
 
-See `src/providers/custom/provider.d.ts` for type declarations. Import the JS file from the platform selection page in the app to use it.
+See `src/providers/types.ts` for type declarations. Import the JS file from the platform selection page in the app to use it.
 
 ---
 
@@ -170,44 +174,58 @@ See `src/providers/custom/provider.d.ts` for type declarations. Import the JS fi
 
 ```
 cuckoo-code/
-├── main.js                 # Electron main process entry (thin shell, forwards to src/main/)
-├── start.js                # Cross-platform startup script (logs to wyp/log/)
-├── preload.js              # Preload entry
+├── start.js                 # Cross-platform startup script (compiles then starts, logs to wyp/log/)
+├── package.json             # "main" points to out/src/app/entry.js (no thin-shell entry)
 ├── src/
-│   ├── main/               # Main process logic
-│   │   ├── index.js        # App entry, window creation, IPC registration
-│   │   ├── window.js       # Multi-window management (per-window profile context)
-│   │   ├── ipc.js          # IPC handlers
-│   │   ├── profile-manager.js  # Window profile management
-│   │   ├── project-context.js  # Project initialization, directory tree, systemPrompt assembly
-│   │   ├── session-store.js    # Session persistence
-│   │   ├── mcp-config.js       # MCP configuration management
-│   │   ├── mcp-client.js       # MCP SDK client
-│   │   ├── tool-registry.js    # Tool registration (main process side)
-│   │   ├── dangerous-commands.js  # Dangerous command detection
-│   │   └── updater.js          # Auto update
-│   ├── preload/            # Renderer process logic
-│   │   ├── index.js        # Preload entry
-│   │   ├── api.js          # contextBridge API exposure
-│   │   ├── overlay/        # Overlay UI (templates, events, styles)
-│   │   └── dom/            # DOM monitoring, parsing, execution
-│   └── providers/          # Platform providers
-│       ├── deepseek.js     # DeepSeek platform definition
-│       ├── claude.js       # Claude platform definition
-│       └── custom/         # Custom Provider loader and template
-├── tools/                  # Tool implementations
-│   ├── ToolRegistry.js     # Tool registry
-│   ├── JsRunner.js         # JS sandbox executor
-│   └── *.js                # Individual tool implementations
-├── test/                   # Unit tests
-└── dist/                   # Build output
+│   ├── app/                 # Application shell (main process)
+│   │   ├── entry.ts         # App entry, window creation, app menu
+│   │   ├── shell-preload.ts # Address-bar shell page preload
+│   │   ├── window.ts        # Multi-window management (WebContentsView architecture)
+│   │   ├── profile.ts       # Window profile management
+│   │   ├── token-stats.ts   # System-wide token total (cross-window, persisted)
+│   │   └── ipc/             # IPC handlers (project/session/command/tool/renderer/shell)
+│   ├── session/             # Session and project context
+│   │   ├── store.ts         # Session-directory mapping persistence
+│   │   ├── project-context.ts # Project initialization
+│   │   ├── prompt-builder.ts  # System prompt assembly
+│   │   └── compaction.ts      # Context compaction
+│   ├── bridge/              # Bridge to the AI web page (preload)
+│   │   ├── entry.ts         # Preload entry
+│   │   ├── api.ts           # contextBridge API exposure
+│   │   ├── intercept/       # Network interception response handling
+│   │   ├── parser/          # JS/JSON tool-call parsing
+│   │   └── loop/            # Executor, watchdog, retry engine
+│   ├── overlay/             # Overlay UI
+│   │   ├── panel.ts         # Panel basics (injection, toasts, history)
+│   │   ├── events.ts        # Event binding (orchestration)
+│   │   ├── panels/          # Panels (window manager / MCP / settings)
+│   │   ├── fab.ts           # Floating-ball dragging
+│   │   └── template/        # HTML/CSS templates (generated to TS at build time)
+│   ├── tools/               # Tool system
+│   │   ├── api.d.ts         # AI tool contract (generated)
+│   │   ├── core/            # Tool / ToolRegistry / ToolResult
+│   │   ├── runtime/         # JsRunner sandbox executor
+│   │   └── impl/            # Individual tool implementations
+│   ├── providers/           # Platform providers
+│   │   ├── types.ts         # Provider interface
+│   │   ├── deepseek.ts / claude.ts / chatgpt.ts
+│   │   ├── hooks/           # Network interceptor sources (packed to a string at build time)
+│   │   └── custom/          # Custom provider loader and template
+│   ├── skills/              # Skill mechanism (scanner / frontmatter / prompt)
+│   ├── mcp/                 # MCP client and config
+│   ├── infra/               # Infrastructure (paths / EOL / logging / dangerous commands)
+│   ├── prompt/              # Platform prompt templates
+│   └── ui/                  # Shell pages (shell.html / platform-select.html)
+├── scripts/                 # Build scripts (hook packing, tool API generation)
+├── test/                    # Unit tests
+└── out/                     # TypeScript build output
 ```
 
 ---
 
 ## Build and Release
 
-- This repository has GitHub Actions configured. Pushing a `v*` tag (e.g. `v0.3.0`) automatically builds Windows and macOS installers and publishes them to Releases
+- This repository has GitHub Actions configured. Pushing a `v*` tag (e.g. `v0.7.1`) automatically builds Windows and macOS installers and publishes them to Releases
 - Local manual builds: `npm run build:win:local` or `npm run build:mac:local`
 - Build output goes to the `dist/` directory
 

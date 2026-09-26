@@ -44,13 +44,16 @@
 
 ## 主要功能
 
-- **多窗口管理**：每个窗口独立 Profile 上下文，互不干扰
+- **多窗口管理**：每个窗口独立 Profile 上下文，互不干扰；可勾选「默认」在启动时自动打开
+- **地址栏**：顶部地址栏显示/复制 URL、前进后退刷新、快速跳转；下方状态条显示 token 用量
 - **项目初始化**：选择项目目录后，AI 获得目录树和系统提示词，操作基于真实项目上下文
+- **Skill 支持**：对齐 Claude Code 的技能机制（项目级 `.cuckoo/skills/` + 用户级 `~/.cuckoo/skills/`），渐进式披露
 - **工具调用系统**：AI 可调用读写文件、搜索代码、执行命令、查询数据库等工具
-- **命令拦截**：自动检测 cmd / powershell / bash 代码块，确认后执行
+- **工具执行遮罩**：执行期间在 AI 页面显示遮罩，可点击「停止」取消回传
 - **MCP 支持**：采用 Claude Desktop 兼容格式配置，支持 stdio / http 类型 server
 - **覆盖层面板**：显示命令预览、执行结果和历史记录，支持 Ctrl+Shift+C 或 Esc 切换
-- **自动重试**：JS 代码执行失败且疑似代码不完整时，自动等待 1 秒重新获取并重试（最多 3 次），仍失败才回传 AI
+- **上下文压缩**：长会话自动压缩（清 IDB + 刷新 + 建分享链接），避免超上下文上限
+- **自动重试**：两类机制——① 回复被服务端截断/失败时按退避重试；② 看门狗检测 SSE 流静默时催「请继续」
 - **会话持久化**：登录状态和设置保存到 %APPDATA%/cuckoo-ai-pro-session
 - **安全机制**：30 秒命令超时、60 秒沙箱超时、1MB 输出缓冲区、危险命令确认
 
@@ -60,7 +63,7 @@
 
 ### 环境要求
 
-- Node.js >= 22.0.0
+- Node.js >= 16.0.0（与 `package.json` 的 `engines` 一致；建议 18+）
 - npm
 
 ### 步骤
@@ -73,10 +76,10 @@ cd cuckoo-code
 # 安装依赖
 npm install
 
-# 如果 npm 提示 electron postinstall 脚本被阻止（allowScripts），先批准：
-#   npm install-scripts ls
-#   npm install-scripts approve electron
-#   npm install
+# 若 npm 阻止了 electron/esbuild 的 postinstall 脚本（allowScripts 机制），先批准：
+#   npm install-scripts ls          # 查看被阻止的包
+#   npm install-scripts approve --all   # 或逐个 approve electron esbuild
+#   npm install                     # 再装一次，确保二进制下载
 # 否则 electron 二进制不会下载，启动会报错
 
 # 启动应用
@@ -100,8 +103,8 @@ AI 回复中包含以下格式的 `cuckoo` 代码块时，系统会在沙箱中�
 
 ````markdown
 ```cuckoo
-const content = await read("src/utils/helper.js");
-await write("src/utils/helper.js", content.replace("formatDate", "formatTime"));
+const content = await read("src/infra/paths.ts");
+await write("src/infra/paths.ts", content.replace("resolveAsset", "resolveResource"));
 ```
 ````
 
@@ -127,6 +130,7 @@ await write("src/utils/helper.js", content.replace("formatDate", "formatTime"));
 | `mysql(options)` | 执行 MySQL SQL |
 | `openBrowserWindow(url, options?)` | 打开 Electron 浏览器窗口 |
 | `injectJS(windowId, code)` | 向指定窗口注入 JS |
+| `attachFile(path)` | 将本地文件作为附件上传到输入框 |
 | `mcpListServers()` | 列出已配置的 MCP server |
 | `mcpGetTools(serverName)` | 查看 MCP server 工具列表 |
 | `mcpCall(server, tool, args)` | 调用 MCP 工具 |
@@ -172,15 +176,15 @@ MCP 配置采用 **Claude Desktop 兼容格式**（可直接分享/导入）：
 
 ```
 cuckoo-code/
-├── main.js                  # Electron 主进程入口（薄壳，加载 out/src/app/entry.js）
 ├── start.js                 # 跨平台启动脚本（先编译再启动，日志写入 wyp/log/）
-├── preload.js               # Preload 入口（薄壳）
+├── package.json             # main 指向 out/src/app/entry.js（无薄壳入口）
 ├── src/
 │   ├── app/                 # 应用外壳（主进程）
 │   │   ├── entry.ts         # 应用入口、窗口创建、应用菜单
 │   │   ├── shell-preload.ts # 地址栏壳页面 preload
 │   │   ├── window.ts        # 多窗口管理（WebContentsView 架构）
 │   │   ├── profile.ts       # 窗口 Profile 管理
+│   │   ├── token-stats.ts   # 系统总累计 token（跨窗口持久化）
 │   │   └── ipc/             # IPC 处理器（project/session/command/tool/renderer/shell）
 │   ├── session/             # 会话与项目上下文
 │   │   ├── store.ts         # 会话-目录映射持久化
@@ -209,9 +213,11 @@ cuckoo-code/
 │   │   ├── deepseek.ts / claude.ts / chatgpt.ts
 │   │   ├── hooks/           # 网络拦截器源码（构建期打包为字符串）
 │   │   └── custom/          # 自定义 Provider 加载器与模板
+│   ├── skills/              # Skill 机制（扫描 / frontmatter / 提示词）
 │   ├── mcp/                 # MCP 客户端与配置
-│   ├── infra/               # 基础设施（路径 / 日志 / 危险命令）
-│   └── prompt/              # 各平台提示词模板
+│   ├── infra/               # 基础设施（路径 / 换行符 / 日志 / 危险命令）
+│   ├── prompt/              # 各平台提示词模板
+│   └── ui/                  # 壳页面（shell.html / platform-select.html）
 ├── scripts/                 # 构建脚本（hook 打包、工具 API 生成）
 ├── test/                    # 单元测试
 └── out/                     # TypeScript 编译产物
@@ -221,7 +227,7 @@ cuckoo-code/
 
 ## 构建与发布
 
-- 本仓库已配置 GitHub Actions，推送 `v*` 标签（如 `v0.3.0`）会自动构建 Windows 和 macOS 安装包并发布到 Releases
+- 本仓库已配置 GitHub Actions，推送 `v*` 标签（如 `v0.7.1`）会自动构建 Windows 和 macOS 安装包并发布到 Releases
 - 本地手动构建：`npm run build:win:local` 或 `npm run build:mac:local`
 - 构建产物输出到 `dist/` 目录
 
