@@ -1,0 +1,35 @@
+# Codecov 配置
+# 目标：展示真实的"可测代码覆盖率"，允许小幅波动不误报红叉。
+
+coverage:
+  status:
+    project:
+      default:
+        # 以基准分支（master）为准：只要不倒退即可（threshold 内允许小幅波动）
+        target: auto
+        # 允许下降 2% 以内不判失败（防止重构/新增少量代码时误报）
+        threshold: 2%
+    patch:
+      default:
+        # 新增代码（patch）要求至少 50% 覆盖
+        target: 50%
+        threshold: 5%
+
+# 忽略不计入覆盖率的路径（与 vitest.config.mjs 的 coverage.exclude 保持一致）
+ignore:
+  - "src/app/**"
+  - "src/bridge/entry.ts"
+  - "src/bridge/api.ts"
+  - "src/providers/hooks/chatgpt.ts"
+  - "src/providers/hooks/claude.ts"
+  - "src/providers/hooks/deepseek.ts"
+  - "src/updater/**"
+  - "**/*.d.ts"
+  - "test/**"
+  - "docs/**"
+  - "scripts/**"
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false

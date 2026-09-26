@@ -20,5 +20,6 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
-          files: ./coverage.lcov
+          # vitest 的 lcov reporter 输出到 coverage/lcov.info（原写 ./coverage.lcov 路径错误）
+          files: ./coverage/lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
