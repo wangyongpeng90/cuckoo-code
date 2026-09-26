@@ -17,6 +17,51 @@ function install(): void {
   // 用户主动停止标志：拦截到 stop_stream 请求时置位，新的 completion 开始时复位
   var userStopped = false;
 
+  // ---------- 性能探针（诊断长对话卡顿）----------
+  // 采集：我方 consume 耗时 / 读取字节 / 页面长任务，流结束时经事件上报。
+  var perf = {
+    t0: 0, frames: 0, consumeMs: 0, maxConsume: 0, bytes: 0,
+    longTasks: 0, longTaskMs: 0, maxLongTask: 0, _lastLong: 0,
+    reset: function () {
+      this.t0 = performance.now();
+      this.frames = 0; this.consumeMs = 0; this.maxConsume = 0; this.bytes = 0;
+      this.longTasks = 0; this.longTaskMs = 0; this.maxLongTask = 0; this._lastLong = this.t0;
+    },
+    addConsume: function (ms) { this.consumeMs += ms; if (ms > this.maxConsume) this.maxConsume = ms; },
+    summary: function () {
+      var now = performance.now();
+      return {
+        durMs: Math.round(now - this.t0),
+        frames: this.frames,
+        bytes: this.bytes,
+        consumeMs: Math.round(this.consumeMs),
+        consumePct: (now - this.t0) > 0 ? Math.round(this.consumeMs / (now - this.t0) * 100) : 0,
+        maxConsumeMs: Math.round(this.maxConsume * 10) / 10,
+        longTasks: this.longTasks,
+        longTaskMs: Math.round(this.longTaskMs),
+        maxLongTaskMs: Math.round(this.maxLongTask)
+      };
+    }
+  };
+  try {
+    if (typeof PerformanceObserver !== 'undefined') {
+      var _po = new PerformanceObserver(function (list) {
+        var es = list.getEntries();
+        for (var i = 0; i < es.length; i++) {
+          perf.longTasks++;
+          perf.longTaskMs += es[i].duration;
+          if (es[i].duration > perf.maxLongTask) perf.maxLongTask = es[i].duration;
+        }
+      });
+      _po.observe({ entryTypes: ['longtask'] });
+    }
+  } catch (e) { /* 不支持 longtask 则忽略 */ }
+  function perfReport(path, extra) {
+    try {
+      window.dispatchEvent(new CustomEvent('cuckoo-perf', { detail: Object.assign({ path: path, sessionId: getSessionIdFromUrl() }, perf.summary(), extra || {}) }));
+    } catch (e) { /* ignore */ }
+  }
+
   function isStopStream(url, method) {
     if (!url) return false;
     if (String(method || 'GET').toUpperCase() !== 'POST') return false;
@@ -290,6 +335,7 @@ function install(): void {
     var idleTimer = null;
     var idleSessionId = getSessionIdFromUrl();
     var idleTimeout = readIdleTimeout();
+    perf.reset();
 
     function stopIdleTimer() {
       if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
@@ -308,14 +354,19 @@ function install(): void {
     }
 
     function feed(chunk) {
+      var _t = performance.now();
+      perf.bytes += (chunk ? chunk.length : 0);
       var frames = frameDecoder.push(chunk);
+      perf.frames += frames.length;
       for (var i = 0; i < frames.length; i++) {
         var parsed = parseBlock(frames[i]);
         if (parsed) extractor.consume(parsed);
       }
+      perf.addConsume(performance.now() - _t);
       if (extractor.finished && !dispatched) {
         dispatched = true;
         dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'feed-finished-frame' }, extractor.snapshot()));
+        perfReport('fetch-stream-end', { textLen: extractor.text.length, thinkLen: extractor.thinkLen });
       }
     }
 
@@ -489,21 +540,30 @@ function install(): void {
     var extractor = createExtractor();
     var dispatched = false;
     var reqSessionId = getSessionIdFromUrl(); // 发起时记录会话
+    var xhrReads = 0;      // responseText 全量读取次数
+    var xhrRawBytes = 0;   // responseText 累计长度（诊断 O(n²)）
+    perf.reset();
 
     function consumeChunk() {
+      var _t = performance.now();
       var raw;
       try { raw = xhr.responseText; } catch (e) { return; }
       if (typeof raw !== 'string' || raw.length <= lastLen) return;
+      xhrReads++;
+      xhrRawBytes += raw.length;
       var chunk = raw.slice(lastLen);
       lastLen = raw.length;
       var frames = frameDecoder.push(chunk);
+      perf.frames += frames.length;
       for (var i = 0; i < frames.length; i++) {
         var parsed = parseBlock(frames[i]);
         if (parsed) extractor.consume(parsed);
       }
+      perf.addConsume(performance.now() - _t);
       if (extractor.finished && !dispatched) {
         dispatched = true;
         dispatch(extractor.text, resolveStatus(extractor), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'xhr-finished-frame' }, extractor.snapshot()));
+        perfReport('xhr-stream-end', { textLen: extractor.text.length, xhrReads: xhrReads, xhrRawBytes: xhrRawBytes });
       }
     }
 
