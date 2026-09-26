@@ -66,9 +66,11 @@
     font-size: 12px; color: var(--ck-text-dim);
     user-select: none;
   }
-  .statusbar .sb-item { display: flex; align-items: center; gap: 4px; }
-  .statusbar .sb-label { color: var(--ck-text-dim); }
+  .statusbar .sb-item { display: flex; align-items: center; gap: 3px; }
+  .statusbar .sb-icon { font-size: 11px; opacity: .75; }
   .statusbar .sb-value { color: var(--ck-text); font-variant-numeric: tabular-nums; }
+  .statusbar .sb-item[title] { cursor: help; }
+  .statusbar .sb-sep { width: 1px; height: 12px; background: var(--ck-border); margin: 0 4px; }
   .viewport { flex: 1; }
 </style>
 </head>
@@ -94,24 +96,25 @@
       </button>
     </div>
     <div class="statusbar">
-      <div class="sb-item">
-        <span class="sb-label">对话上下文：</span>
+      <div class="sb-item" title="对话上下文：本会话当前占用的 token 总量">
+        <span class="sb-icon">💬</span>
         <span class="sb-value" id="sb-context">0</span>
       </div>
-      <div class="sb-item">
-        <span class="sb-label">对话累计：</span>
+      <div class="sb-item" title="对话累计：本会话累计消耗的 token">
+        <span class="sb-icon">📈</span>
         <span class="sb-value" id="sb-cumulative">0</span>
       </div>
-      <div class="sb-item">
-        <span class="sb-label">窗口：</span>
+      <div class="sb-sep"></div>
+      <div class="sb-item" title="窗口累计：本窗口所有会话累计之和">
+        <span class="sb-icon">🪟</span>
         <span class="sb-value" id="sb-window">0</span>
       </div>
-      <div class="sb-item">
-        <span class="sb-label">今日窗口：</span>
+      <div class="sb-item" title="今日窗口：本窗口今天的累计消耗">
+        <span class="sb-icon">📅</span>
         <span class="sb-value" id="sb-today">0</span>
       </div>
-      <div class="sb-item">
-        <span class="sb-label">系统：</span>
+      <div class="sb-item" title="系统总累计：所有窗口累计之和（含已关闭窗口）">
+        <span class="sb-icon">🌐</span>
         <span class="sb-value" id="sb-system">0</span>
       </div>
     </div>
