@@ -61,15 +61,16 @@
 - [ ] bug 稳定不复现后，清理 dbg/snapshot/statusFrames 与诊断日志
 - [ ] 保留 thinkLen/textLen（真实逻辑）
 
-### 5. README 修正
+### ~~5. README 修正~~ ✅ 已完成（2026-09-26）
 
-- [ ] 删"项目结构"里的 `main.js` / `preload.js`（已不存在）
-- [ ] 工具表补 `attachFile`
-- [ ] 工具示例的 `src/utils/` 路径改掉
-- [ ] "自动重试"描述过时（现有两个机制）
-- [ ] "主要功能"补：地址栏、工具遮罩、上下文压缩
-- [ ] Node 版本统一（README 写 22，engines 写 16）
-- [ ] allowScripts 提示过时
+- [x] 删"项目结构"里的 `main.js` / `preload.js`（已不存在）
+- [x] 工具表补 `attachFile`
+- [x] 工具示例的 `src/utils/` 路径改掉（→ `src/infra/paths.ts`）
+- [x] "自动重试"描述过时（改为两个机制：退避重试 + 看门狗流静默）
+- [x] "主要功能"补：地址栏、工具遮罩、上下文压缩、Skill、窗口默认打开
+- [x] Node 版本统一（README 22 → 16，与 engines 一致）
+- [x] allowScripts 提示过时（改为 `npm install-scripts ls` / `approve --all`）
+- [x] **额外**：README.en.md 项目结构整段重写（原为旧架构 `src/main/`、`src/preload/`，与实际完全不符）
 
 ### 6. 清理历史分支
 
