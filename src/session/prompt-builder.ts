@@ -9,6 +9,7 @@ import * as mcpClient from '../mcp/client.js';
 import { resolveSrc, resolveToolSpec } from '../infra/paths.js';
 import { registry as toolRegistry } from '../tools/index.js';
 import { scanSkills, buildSkillsSection } from '../skills/index.js';
+import { scanAgents, buildAgentsSection } from '../agents/index.js';
 
 // 提示词模板目录（D20：锚定应用根，与 dist 结构解耦）
 const PROMPT_DIR = resolveSrc('prompt');
@@ -162,6 +163,7 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   const projectIntro = readProjectIntro(selectedDir);
   const projectIntroSection = projectIntro ? '---\n## 项目介绍\n' + projectIntro : '';
   const skillsSection = buildSkillsSection(scanSkills(selectedDir));
+  const agentsSection = buildAgentsSection(scanAgents(selectedDir));
 
   const placeholders: Record<string, string> = {
     '{{TOOL_API_TYPES}}': toolApiTypes,
@@ -172,6 +174,7 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     '{{PROJECT_INTRO_SECTION}}': projectIntroSection,
     '{{MCP_SECTION}}': mcpSection,
     '{{SKILLS_SECTION}}': skillsSection,
+    '{{AGENTS_SECTION}}': agentsSection,
   };
   let combined = tpl.content;
   for (const [key, value] of Object.entries(placeholders)) {
