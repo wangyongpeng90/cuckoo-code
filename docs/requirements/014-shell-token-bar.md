@@ -2,10 +2,10 @@
 id: 014
 type: feat
 title: 地址栏下方显示当前对话 token 量
-status: review
+status: done
 branch: feat/014-shell-token-bar
 created: 2026-09-25
-updated: 2026-09-25
+updated: 2026-09-26
 ---
 
 ## 背景
@@ -46,12 +46,12 @@ AI 页面（overlay/events.ts 收到 token）→ IPC → 主进程 → 壳页面
 
 ## 验收标准
 
-- [ ] 壳页面显示累计 token
-- [ ] AI 页面 token 更新时，状态条实时刷新
-- [ ] 格式化（过万显示「x.xx 万」）
-- [ ] AI 页面区域高度正确（不被状态条遮挡）
-- [ ] typecheck / test / lint / compile
-- [ ] 真机验证
+- [x] 壳页面显示累计 token
+- [x] AI 页面 token 更新时，状态条实时刷新
+- [x] 格式化（过万显示「x.xx 万」）
+- [x] AI 页面区域高度正确（不被状态条遮挡）
+- [x] typecheck / test / lint / compile
+- [x] 真机验证（后续扩展为多值：对话上下文/对话累计/窗口/今日窗口/系统）
 
 ## 遗留
 
