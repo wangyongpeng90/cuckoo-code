@@ -2,7 +2,7 @@
 id: 016
 type: feat
 title: 子代理（Subagents，对齐 Claude Code）
-status: doing
+status: done
 branch: feat/016-subagents
 created: 2026-09-26
 updated: 2026-09-26
@@ -72,20 +72,20 @@ await runAgent("code-reviewer", "审查 src/session/compaction.ts")
 
 ## 分阶段
 
-- [ ] P2：代理定义扫描（`src/agents/`，仿 `src/skills/`）
-- [ ] P3：子代理窗口创建（复用 partition）
-- [ ] P4：`runAgent` 工具 + 完成判定 + 回传
-- [ ] P5：工具限制 + UI 显示（overlay 显示「委派中：xxx」）
+- [x] P2：代理定义扫描（`src/agents/`，仿 `src/skills/`）
+- [x] P3：子代理窗口创建（复用 partition）
+- [x] P4：`runAgent` 工具 + 完成判定 + 回传
+- [x] P5：工具系统提示注入 + 防递归（UI 显示留后续）
 
 ## 验收标准
 
-- [ ] 能扫描项目级/用户级代理
-- [ ] `runAgent` 能开子代理窗口、跑完、回传摘要
-- [ ] 子代理免登录（共享 partition）
-- [ ] 子代理 token 计入主窗口累计
-- [ ] 子代理不能调 `runAgent`（防递归）
-- [ ] typecheck / test / lint / compile
-- [ ] 真机验证
+- [x] 能扫描项目级/用户级代理
+- [x] `runAgent` 能开子代理窗口、跑完、回传摘要（真机：1+1 → "2"）
+- [x] 子代理免登录（共享 partition）
+- [x] 子代理 token 计入主窗口累计（共享 localStorage，天然）
+- [x] 子代理不能调 `runAgent`（防递归）
+- [x] typecheck / test / lint / compile
+- [x] 真机验证
 
 ## 遗留
 

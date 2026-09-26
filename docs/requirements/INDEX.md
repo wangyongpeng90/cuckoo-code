@@ -19,6 +19,6 @@
 | 013 | feat | [窗口默认打开（多选）+ 记录大小位置](./013-window-auto-open.md) | done | feat/013-window-auto-open | 2026-09-25 |
 | 014 | feat | [地址栏下方显示当前对话 token 量](./014-shell-token-bar.md) | done | feat/014-shell-token-bar | 2026-09-26 |
 | 015 | feat | [token 按会话缓存 + 去掉高频轮询（改主进程推送）](./015-token-cache-no-poll.md) | done | feat/015-token-cache-no-poll | 2026-09-26 |
-| 016 | feat | [子代理（Subagents，对齐 Claude Code）](./016-subagents.md) | doing | feat/016-subagents | 2026-09-26 |
+| 016 | feat | [子代理（Subagents，对齐 Claude Code）](./016-subagents.md) | done | feat/016-subagents | 2026-09-26 |
 
 共 15 个需求。
