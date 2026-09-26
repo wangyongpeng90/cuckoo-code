@@ -23,13 +23,15 @@
 
 **原则**（见 `docs/arch/06-testing.md`）：只写真实集成测试，不 mock 内部模块；可测的补，Electron-only 的标注跳过（靠真机验证）。
 
-**可测但未覆盖的（优先）**：
-- [ ] `src/session/compaction.ts`（压缩流程的纯逻辑：ID 提取、消息 id 处理）
-- [ ] `src/mcp/config.ts`（配置读写、启用状态）
-- [ ] `src/overlay/chat-input.ts`（输入框查找、延迟计算等纯逻辑）
-- [ ] `src/overlay/panels/window-manager.ts`（列表渲染逻辑）
-- [ ] `src/overlay/panels/mcp-manager.ts`（JSON 校验逻辑）
-- [ ] `src/providers/hooks/*.ts` 的纯函数（如 deepseek 的 `resolveStatus`）
+**已补（2026-09-26，+40 测试，覆盖率 45.2% → 50.1%）**：
+- [x] `src/session/compaction.ts`（`_pickRecentPairedIds`：parent_id 回溯、成对裁剪、分支/回退/边界）
+- [x] `src/mcp/config.ts`（读写、upsert stdio/http、启停、删除、覆盖；mock electron app.getPath）
+- [x] `src/overlay/chat-input.ts`（randomDelay 边界、isInputVisible、findInputArea 兜底）
+- [x] `src/overlay/panels/window-manager.ts`（空列表/平台名映射/autoOpen/失败兜底）
+- [x] `src/overlay/panels/mcp-manager.ts`（handleMcpSave 的 8 条校验失败路径 + 成功 upsert/删除旧 server）
+
+**仍可补（可选）**：
+- [ ] `src/providers/hooks/*.ts` 的纯函数（如 deepseek 的 `resolveStatus`）—— 嵌套在 IIFE 内，需先导出才能测
 
 **失败路径（重点，D20 教训）**：
 - [ ] 各工具的异常分支（参数缺失、文件不存在、命令失败）
