@@ -101,6 +101,16 @@ export async function runAgent(opts: {
   };
   const windowId = _createWindow(subProfile);
 
+  // 关键：把父窗口的项目目录写入子代理窗口的 sessionStore，
+  // 否则子代理执行工具（execute-js 从 ctx.sessionStore.state.selectedProjectDir 取）
+  // 时 projectDir 为 null，相对路径/初始化状态都会错。
+  try {
+    const subCtx = windowState.getWindowContext(windowId);
+    if (subCtx && subCtx.sessionStore && projectDir) {
+      subCtx.sessionStore.state.selectedProjectDir = projectDir;
+    }
+  } catch (_) { /* ignore */ }
+
   // 构建工具系统提示（复用 buildPrompt；含工具 API/列表/说明）
   try {
     const built = buildPrompt({ providerId, selectedDir: projectDir, isCompaction: false });
