@@ -357,3 +357,5 @@ function checkPendingInit(): void {
 }
 
 export { runCompaction, checkPendingCompact, checkPendingInit };
+// 纯函数导出（测试用）
+export { pickRecentPairedIds as _pickRecentPairedIds };
