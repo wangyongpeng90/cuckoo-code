@@ -89,13 +89,10 @@ function handleUrlChanged(): void {
  * 注入样式、覆盖层 HTML，绑定事件，启动回复监听（拦截或 DOM 观察）
  */
 function init(): void {
-  // 子代理窗口：不注入 overlay / 看门狗，只跑子代理流程
+  // 子代理窗口：注册完成判定（onInterceptedResponse 计数），但 overlay 照常初始化
   const isSubagent = initSubagentIfNeeded();
   if (isSubagent) {
-    console.log('[Cuckoo Code] 子代理窗口已接管，跳过 overlay 初始化');
-    // 仍需启动拦截监听器：hook 派发的 cuckoo-ai-response 事件要有人接
-    startInterceptObserver();
-    return;
+    console.log('[Cuckoo Code] 子代理窗口：overlay + 拦截监听器照常初始化，额外挂完成判定');
   }
   try {
     ui.injectCSS();
