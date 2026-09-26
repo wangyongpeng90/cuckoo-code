@@ -21,6 +21,42 @@ let serverTokenUsage: any = null;
 
 // ========== 对话 token 按会话缓存 ==========
 const TOKEN_CACHE_KEY = 'cuckoo-token-cache';
+// 按天累计（保留所有历史，供后续统计）
+const TOKEN_DAILY_KEY = 'cuckoo-token-daily';
+
+/** 取本地日期字符串 YYYY-MM-DD */
+function todayKey(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+/** 某天累加 token 消耗 */
+function addDailyToken(delta: number): void {
+  if (typeof delta !== 'number' || delta <= 0) return;
+  try {
+    const raw = localStorage.getItem(TOKEN_DAILY_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    const map = (obj && typeof obj === 'object') ? obj : {};
+    const k = todayKey();
+    map[k] = (typeof map[k] === 'number' ? map[k] : 0) + delta;
+    localStorage.setItem(TOKEN_DAILY_KEY, JSON.stringify(map));
+  } catch (_) {}
+}
+
+/** 今日累计消耗 */
+function getTodayCumulative(): number {
+  try {
+    const raw = localStorage.getItem(TOKEN_DAILY_KEY);
+    const obj = raw ? JSON.parse(raw) : {};
+    const v = obj ? obj[todayKey()] : 0;
+    return typeof v === 'number' ? v : 0;
+  } catch (_) {
+    return 0;
+  }
+}
 
 /** 取当前页面对应的会话 ID（无则 null） */
 function getCurrentSessionId(): string | null {
@@ -57,8 +93,8 @@ function readTokenCache(): Record<string, SessionToken> {
 /**
  * 记录某会话的当前上下文 token，并累加累计消耗。
  * 累计消耗 = 各轮回复结束时的 accumulated 之和
- *（每轮实际计费 ≈ 该轮的上下文总量：输入=历史，输出=增量，合计=累计后总量）。
- * 仅在 acc 相比上次增大时才累加，避免重复事件重复计数。
+ *（DeepSeek 每轮都把完整历史作为 prompt 重发，故每轮实际处理的 token ≈ 当轮 accumulated）。
+ * 仅在 acc 相比上次增大时才累加，避免同一轮重复事件重复计数。
  */
 function saveTokenForSession(sessionId: string, acc: number): void {
   if (!sessionId || typeof acc !== 'number') return;
@@ -70,7 +106,11 @@ function saveTokenForSession(sessionId: string, acc: number): void {
     if (!entry || typeof entry !== 'object') entry = { context: 0, cumulative: 0, lastAcc: 0 };
     const lastAcc = typeof entry.lastAcc === 'number' ? entry.lastAcc : 0;
     if (acc > lastAcc) {
+      // 累加"当轮完整上下文"：DeepSeek 每轮都重发完整历史，
+      // 故每轮实际处理的 token ≈ 当轮 accumulated，直接累加 acc（不是增量）
       entry.cumulative = (typeof entry.cumulative === 'number' ? entry.cumulative : 0) + acc;
+      // 按天累加（供"今日窗口累计"与后续统计）
+      addDailyToken(acc);
     }
     entry.context = acc;
     entry.lastAcc = acc;
@@ -190,9 +230,11 @@ function updateConversationTokenDisplay() {
 
   if (countEl) countEl.textContent = formatTokenCount(context);
 
-  // 同步到壳页面状态条（地址栏下方）：上下文 + 累计 + 窗口累计
+  // 同步到壳页面状态条（地址栏下方）：上下文 + 对话累计 + 窗口累计 + 今日累计
   try {
-    (window as any).electronAPI.updateTokenUsage(context, cumulative, getWindowCumulative()).catch(() => {});
+    (window as any).electronAPI.updateTokenUsage(
+      context, cumulative, getWindowCumulative(), getTodayCumulative()
+    ).catch(() => {});
   } catch (_) {}
 }
 

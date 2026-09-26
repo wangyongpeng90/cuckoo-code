@@ -106,6 +106,10 @@
         <span class="sb-label">窗口：</span>
         <span class="sb-value" id="sb-window">0</span>
       </div>
+      <div class="sb-item">
+        <span class="sb-label">今日：</span>
+        <span class="sb-value" id="sb-today">0</span>
+      </div>
     </div>
     <div class="viewport"></div>
   </div>
@@ -156,12 +160,14 @@
   var contextEl = document.getElementById('sb-context');
   var cumulativeEl = document.getElementById('sb-cumulative');
   var windowEl = document.getElementById('sb-window');
+  var todayEl = document.getElementById('sb-today');
   if (api.onTokenUpdated) {
     api.onTokenUpdated(function (data) {
       if (!data) return;
       if (contextEl) contextEl.textContent = formatTokenCount(data.context);
       if (cumulativeEl) cumulativeEl.textContent = formatTokenCount(data.cumulative);
       if (windowEl) windowEl.textContent = formatTokenCount(data.windowCumulative);
+      if (todayEl) todayEl.textContent = formatTokenCount(data.todayCumulative);
     });
   }
 
