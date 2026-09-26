@@ -72,9 +72,40 @@ function install(): void {
       _po.observe({ entryTypes: ['longtask'] });
     }
   } catch (e) { /* 不支持 longtask 则忽略 */ }
+  // ---------- DOM 结构探测（找"消息列表容器"选择器，供 content-visibility 优化）----------
+  // 策略：找"子元素数 >= 5 且子元素 className 高度相似"的容器（消息列表的典型特征）。
+  function dumpDom() {
+    var out = [];
+    try {
+      var all = document.querySelectorAll('div, ul, ol, section');
+      for (var i = 0; i < all.length && out.length < 40; i++) {
+        var el = all[i];
+        var kids = el.children;
+        if (!kids || kids.length < 5) continue;
+        var cls0 = kids[0] && kids[0].getAttribute ? (kids[0].getAttribute('class') || '') : '';
+        if (!cls0) continue;
+        var same = 0;
+        for (var j = 0; j < kids.length; j++) {
+          var cj = kids[j].getAttribute ? (kids[j].getAttribute('class') || '') : '';
+          if (cj === cls0) same++;
+        }
+        if (same >= kids.length * 0.8) {
+          var own = el.getAttribute ? (el.getAttribute('class') || '') : '';
+          out.push({
+            tag: el.tagName,
+            cls: String(own).slice(0, 100),
+            count: kids.length,
+            childTag: kids[0].tagName,
+            childCls: String(cls0).slice(0, 100)
+          });
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return out;
+  }
   function perfReport(path, extra) {
     try {
-      window.dispatchEvent(new CustomEvent('cuckoo-perf', { detail: Object.assign({ path: path, sessionId: getSessionIdFromUrl() }, perf.summary(), extra || {}) }));
+      window.dispatchEvent(new CustomEvent('cuckoo-perf', { detail: Object.assign({ path: path, sessionId: getSessionIdFromUrl() }, perf.summary(), extra || {}, { dom: dumpDom() }) }));
     } catch (e) { /* ignore */ }
   }
 
