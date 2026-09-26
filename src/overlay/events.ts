@@ -84,6 +84,22 @@ function saveTokenForSession(sessionId: string, acc: number): void {
   } catch (_) {}
 }
 
+/** 窗口累计：本窗口所有会话的累计消耗之和（localStorage 按 partition 隔离，天然是本窗口的） */
+function getWindowCumulative(): number {
+  try {
+    const cache = readTokenCache();
+    let sum = 0;
+    for (const k of Object.keys(cache)) {
+      const e: any = cache[k];
+      if (typeof e === 'number') sum += e;
+      else if (e && typeof e.cumulative === 'number') sum += e.cumulative;
+    }
+    return sum;
+  } catch (_) {
+    return 0;
+  }
+}
+
 /** 取某会话的 token 数据（兼容旧格式） */
 function getTokenForSession(sessionId: string | null): { context: number; cumulative: number } {
   if (!sessionId) return { context: 0, cumulative: 0 };
@@ -174,9 +190,9 @@ function updateConversationTokenDisplay() {
 
   if (countEl) countEl.textContent = formatTokenCount(context);
 
-  // 同步到壳页面状态条（地址栏下方）：上下文 + 累计
+  // 同步到壳页面状态条（地址栏下方）：上下文 + 累计 + 窗口累计
   try {
-    (window as any).electronAPI.updateTokenUsage(context, cumulative).catch(() => {});
+    (window as any).electronAPI.updateTokenUsage(context, cumulative, getWindowCumulative()).catch(() => {});
   } catch (_) {}
 }
 
