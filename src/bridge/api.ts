@@ -73,10 +73,6 @@ let electronAPI: any = {
   updateTokenUsage: (context: any, cumulative: any, windowCumulative: any, todayCumulative: any) => {
     return ipcRenderer.invoke('update-token-usage', { context, cumulative, windowCumulative, todayCumulative });
   },
-  // 性能探针上报（开发版写日志）
-  reportPerf: (tag: any, data: any) => {
-    return ipcRenderer.invoke('perf-report', { tag, data });
-  },
   // ========== 技能相关 API ==========
   refreshSkills: () => {
     return ipcRenderer.invoke('refresh-skills');

@@ -191,15 +191,6 @@ function startInterceptObserver(): void {
       console.error('[Cuckoo Code][拦截] 处理回复事件出错:', err);
     }
   });
-  // 性能探针：hook 上报 → 转发主进程写日志（开发版）
-  window.addEventListener('cuckoo-perf', (ev: any) => {
-    try {
-      const detail = ev && ev.detail;
-      if (detail && (window as any).electronAPI && (window as any).electronAPI.reportPerf) {
-        (window as any).electronAPI.reportPerf('stream', detail).catch(() => {});
-      }
-    } catch (_) { /* ignore */ }
-  });
   window.addEventListener('cuckoo-ai-error', (ev: any) => {
     try {
       const detail = ev && ev.detail;

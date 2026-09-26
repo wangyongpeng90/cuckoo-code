@@ -6,7 +6,6 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { getProvider } from '../../providers/registry.js';
 import { setWindowCumulative, getTotal } from '../token-stats.js';
-import { writePerfLog } from '../../infra/perf-log.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -78,11 +77,6 @@ function registerShellIpc(): void {
     return { success: true, systemTotal: getTotal() };
   });
 
-  // 性能探针上报（开发版写日志，用于诊断卡顿）
-  ipcMain.handle('perf-report', async (_event: any, { tag, data }: any) => {
-    try { writePerfLog(tag, data); } catch (_) {}
-    return { success: true };
-  });
 
   ipcMain.handle('shell-navigate', async (event: any, { url }: any) => {
     const view = viewOf(event);
