@@ -149,6 +149,22 @@ function updateProfileProvider(id: string, providerId: string): any {
   return p;
 }
 
+/**
+ * 创建子代理窗口的临时 profile。
+ * 关键：partition 复用父 profile 的（免登录 + token 计入同一"窗口"）。
+ * 该 profile 不写入 profile-list.json（窗口关闭即弃）。
+ */
+function createSubagentProfile(parent: any, agentName: string): any {
+  return {
+    id: 'subagent-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    providerId: parent.providerId,
+    name: '子代理: ' + (agentName || 'agent'),
+    partition: parent.partition, // 复用父窗口 partition（同一"用户"）
+    isSubagent: true,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 /** 设置某 profile 是否"启动时默认打开" */
 function setAutoOpen(id: string, on: boolean): any {
   const profiles = readProfiles();
@@ -218,6 +234,7 @@ export {
   readProfiles,
   writeProfiles,
   createProfile,
+  createSubagentProfile,
   getDefaultProfile,
   getProfileById,
   updateProfileName,

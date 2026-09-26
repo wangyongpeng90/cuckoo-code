@@ -8,6 +8,7 @@ import { registerCommandIpc } from './command.js';
 import { registerToolIpc } from './tool.js';
 import { registerRendererIpc } from './renderer.js';
 import { registerShellIpc } from './shell.js';
+import { registerSubagentIpc } from './subagent.js';
 
 function registerIpcHandlers(): void {
   registerProjectIpc();
@@ -16,6 +17,7 @@ function registerIpcHandlers(): void {
   registerToolIpc();
   registerRendererIpc();
   registerShellIpc();
+  registerSubagentIpc();
 }
 
 export { registerIpcHandlers };

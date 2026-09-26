@@ -47,6 +47,8 @@ if (RENDERER_LOG_DIR) {
 }
 
 import { registerIpcHandlers } from './ipc/index.js';
+import { injectSubagentDeps, runAgent as runAgentImpl } from './subagent.js';
+import { injectAgentRunner } from '../tools/impl/run-agent.js';
 import { pushUrlState } from './ipc/shell.js';
 
 // 退出前需要 flush 的 sessions
@@ -102,6 +104,11 @@ function createWindow(profile: any) {
     },
   });
 
+  // 子代理配置：序列化后经 additionalArguments 传给 bridge（供子代理窗口自识别）
+  const subagentArg = profileData.subagentConfig
+    ? '--cuckoo-subagent=' + encodeURIComponent(JSON.stringify(profileData.subagentConfig))
+    : null;
+
   // AI 页面视图（复用现有 bridge preload；与壳共用 partition）
   const view = new WebContentsView({
     webPreferences: {
@@ -111,7 +118,9 @@ function createWindow(profile: any) {
       sandbox: false,
       partition: profileData.partition,
       backgroundThrottling: false,
-      additionalArguments: ['--cuckoo-user-data=' + app.getPath('userData')],
+      additionalArguments: subagentArg
+        ? ['--cuckoo-user-data=' + app.getPath('userData'), subagentArg]
+        : ['--cuckoo-user-data=' + app.getPath('userData')],
     },
   });
   mainWindow.contentView.addChildView(view);
@@ -143,11 +152,13 @@ function createWindow(profile: any) {
   windowState.setMainWindow(mainWindow);
 
   // 记录最后活跃的 profile，供下次启动恢复。
-  // 创建时先记一次（覆盖首次启动无记录的情况），之后窗口获得焦点时更新。
-  try { profileManager.setLastActiveProfileId(profileData.id); } catch (_) { /* ignore */ }
-  mainWindow.on('focus', () => {
+  // 子代理窗口跳过（临时 profile，不参与"上次活跃"恢复）。
+  if (!profileData.isSubagent) {
     try { profileManager.setLastActiveProfileId(profileData.id); } catch (_) { /* ignore */ }
-  });
+    mainWindow.on('focus', () => {
+      try { profileManager.setLastActiveProfileId(profileData.id); } catch (_) { /* ignore */ }
+    });
+  }
 
   // 初始化自动更新（仅第一个窗口时初始化）
   if (windowState.getAllWindows().length === 1) {
@@ -227,6 +238,7 @@ function createWindow(profile: any) {
 
   // 关闭前记录窗口大小/位置（用 getNormalBounds 取"还原后"尺寸；closed 时窗口已销毁取不到）
   mainWindow.on('close', () => {
+    if (profileData.isSubagent) return; // 子代理窗口不记录
     try {
       if (mainWindow.isDestroyed()) return;
       const b = mainWindow.getNormalBounds();
@@ -249,6 +261,22 @@ function createWindow(profile: any) {
     sessionsToFlush.delete(winSession);
     windowState.removeWindow(mainWindow.id);
   });
+
+  return mainWindow.id;
+}
+
+// ========== 子代理窗口 ==========
+/**
+ * 创建子代理窗口（复用父窗口 partition → 免登录 + token 计入同一"窗口"）。
+ * @param parentProfileId 父窗口 profile id
+ * @param agentName 代理名（用于窗口标题）
+ * @returns 子代理窗口的 windowId
+ */
+function createSubagentWindow(parentProfileId: string, agentName: string): number {
+  const parent = profileManager.getProfileById(parentProfileId);
+  if (!parent) throw new Error('父 profile 不存在: ' + parentProfileId);
+  const sub = profileManager.createSubagentProfile(parent, agentName);
+  return createWindow(sub);
 }
 
 // ========== 应用菜单 ==========
@@ -386,6 +414,23 @@ function setupAppMenu() {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 }
+
+// ========== 子代理依赖注入 ==========
+injectSubagentDeps({ createWindow, profileManager });
+// 给 runAgent 工具注入执行器（tools 层不依赖 app）
+injectAgentRunner(async ({ agent, task, currentWindowId }: any) => {
+  const ctx = windowState.getWindowContext(currentWindowId);
+  if (!ctx) throw new Error('父窗口上下文不存在');
+  return runAgentImpl({
+    parentProfileId: ctx.profileId,
+    parentWindowId: currentWindowId,
+    agentName: agent.name,
+    task,
+    systemPrompt: agent.systemPrompt,
+    tools: agent.tools,
+    maxTurns: agent.maxTurns,
+  });
+});
 
 // ========== IPC 处理器 ==========
 registerIpcHandlers();

@@ -18,6 +18,7 @@ import { getProviderByUrl } from '../providers/registry.js';
 import { startInterceptObserver, onInterceptedResponse } from './intercept/observer.js';
 import { startRetryEngine } from './loop/retry.js';
 import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/watchdog.js';
+import { initSubagentIfNeeded } from './subagent.js';
 
 const require = createRequire(import.meta.url);
 const { webFrame, ipcRenderer } = require('electron');
@@ -88,6 +89,11 @@ function handleUrlChanged(): void {
  * 注入样式、覆盖层 HTML，绑定事件，启动回复监听（拦截或 DOM 观察）
  */
 function init(): void {
+  // 子代理窗口：注册完成判定（onInterceptedResponse 计数），但 overlay 照常初始化
+  const isSubagent = initSubagentIfNeeded();
+  if (isSubagent) {
+    console.log('[Cuckoo Code] 子代理窗口：overlay + 拦截监听器照常初始化，额外挂完成判定');
+  }
   try {
     ui.injectCSS();
     ui.injectOverlay();

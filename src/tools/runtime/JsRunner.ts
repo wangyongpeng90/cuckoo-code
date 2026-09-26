@@ -15,8 +15,12 @@ import { logRun, ToolFailure } from '../../infra/tool-error-log.js';
 
 // 同步执行超时（vm timeout，覆盖无 await 的死循环）
 const SYNC_TIMEOUT = 30 * 1000;
-// 整体运行截止时间（配合宿主桥接检查，覆盖 async 死循环）
+// "无活动"截止时间：距最后一次工具调用超过这么久才判超时。
+// 每次工具调用都续命，故合法长任务（多次调用）不会误杀；
+// 异步死循环（如 while(true){ await sleep() }）不经过工具桥接 → 无续命 → 仍会被兜底。
 const RUN_DEADLINE = 60 * 1000;
+// 长任务工具：执行期间不计入脚本 deadline（自身有独立等待/超时，如子代理）
+const LONG_TASK_TOOLS = new Set(['runAgent']);
 // 输出长度上限
 const OUTPUT_LIMIT = 20000;
 
@@ -111,6 +115,10 @@ class JsRunner {
 
     const startTime = Date.now();
     const deadlineMs = RUN_DEADLINE;
+    // 最后一次"活动"时间（每次工具调用刷新）；deadline 基于它，而非脚本起点
+    let lastActivity = startTime;
+    // 正在执行的长任务数（>0 时暂停 deadline 检查）
+    let longTaskRunning = 0;
     // 收集本次脚本里"工具级失败"（供开发版错误日志）
     const toolFailures: ToolFailure[] = [];
 
@@ -118,9 +126,9 @@ class JsRunner {
     // 注意：该函数绝不向沙箱抛出宿主对象（错误一律包装成 { success:false, error } 结果），
     // 避免沙箱内出现宿主 realm 的 Error / Function 逃逸通道。
     const hostBridge = async (op: any, argsJson: any) => {
-      if (Date.now() - startTime > deadlineMs) {
-        return JSON.stringify({ success: false, error: 'JS 脚本执行超时（' + Math.round(deadlineMs / 1000) + ' 秒）' });
-      }
+      const isLongTask = LONG_TASK_TOOLS.has(op);
+      if (isLongTask) longTaskRunning++;
+      lastActivity = Date.now(); // 每次工具调用续命
       let args = {};
       try {
         args = JSON.parse(argsJson || '{}');
@@ -144,6 +152,8 @@ class JsRunner {
           toolFailures.push({ tool: op, args: args, error: result.error });
         }
       }
+      if (isLongTask) longTaskRunning = Math.max(0, longTaskRunning - 1);
+      lastActivity = Date.now(); // 工具返回后也续命
       return JSON.stringify(result);
     };
 
@@ -204,11 +214,16 @@ class JsRunner {
 
     let settleTimer: any = null;
     try {
+      // 动态 deadline：距上次"活动"超过 deadlineMs 且无长任务在跑时才超时
       const deadline = new Promise((_resolve, reject) => {
-        settleTimer = setTimeout(
-          () => reject(new Error('JS 脚本执行超时（' + Math.round(deadlineMs / 1000) + ' 秒）')),
-          deadlineMs
-        );
+        const check = () => {
+          if (longTaskRunning === 0 && Date.now() - lastActivity > deadlineMs) {
+            reject(new Error('JS 脚本执行超时（' + Math.round(deadlineMs / 1000) + ' 秒无活动）'));
+          } else {
+            settleTimer = setTimeout(check, 1000);
+          }
+        };
+        settleTimer = setTimeout(check, 1000);
       });
 
       const ret = await Promise.race([script.runInContext(context, { timeout: SYNC_TIMEOUT }), deadline]);

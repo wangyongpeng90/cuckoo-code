@@ -17,6 +17,7 @@ const TOOL_BOOTSTRAP = [
   "  globalThis.pwsh = async function (command, options) {\n      options = options || {};\n      return await __call('pwsh', {\n          command: command,\n          description: options.description,\n          workdir: options.workdir || options.cwd,\n          timeoutMs: options.timeoutMs || options.timeout,\n      });\n  };",
   "  globalThis.readLines = async function (filePath, options) {\n      options = options || {};\n      return await __call('readLines', {\n          filePath: filePath,\n          offset: options.offset,\n          limit: options.limit,\n      });\n  };",
   "  globalThis.read = async function (filePath, options) {\n      options = options || {};\n      return await __call('read', {\n          filePath: filePath,\n          offset: options.offset,\n          limit: options.limit,\n      });\n  };",
+  "  globalThis.runAgent = async function (name, task) {\n      return await __call('runAgent', { name, task });\n  };",
   "  globalThis.todoWrite = async function (todos) {\n      return await __call('todoWrite', { todos: todos });\n  };",
   "  globalThis.webFetch = async function (url) {\n      return await __call('webFetch', { url: url });\n  };",
   "  globalThis.write = async function (filePath, content) {\n      return await __call('write', { filePath: filePath, content: content });\n  };",
