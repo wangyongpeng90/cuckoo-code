@@ -1,6 +1,3 @@
-<path>src/prompt/chatgpt.md</path>
-<type>file</type>
-<content>
 ## 背景
 现在我有个机器因为权限问题,只能通过一个古老的后管进行操作.
 这个后管只能提供了
@@ -166,8 +163,3 @@ log(r);
 {{PROJECT_INTRO_SECTION}}
 
 ---
-
-
-
-(End of file - total 165 lines)
-</content>
