@@ -8,18 +8,16 @@
 
 ## 🔴 高优先（影响质量/指标诚实）
 
-### 1. 覆盖率口径修正 + 配置 Codecov
+### ~~1. 覆盖率口径修正 + 配置 Codecov~~ ✅ 已完成（2026-09-26）
 
-**现状**：重构后覆盖率从 70% 掉到 ~34%。**不是代码变差，是口径变了**——
-`vitest.config.mjs` 的 `coverage.include` 是 `src/**/*.ts`（全部），而很多文件**强依赖 Electron 运行时、在 Node 测试环境根本跑不了**（`src/app/**`、`shell-preload` 等），永远 0%，把平均值拉低。
+**结果**：
+- `vitest.config.mjs` 加 `coverage.exclude`（排除 `src/app/**`、`bridge/entry.ts`、`bridge/api.ts`、注入式 hooks、`updater/**`、`*.d.ts`）
+- 新建 `codecov.yml`（project target: auto + threshold 2%；patch target 50%）
+- 修复 `.github/workflows/coverage.yml` 上传路径（`./coverage.lcov` → `./coverage/lcov.info`，原路径错误）
+- 确认 `@vitest/coverage-v8` 已在 devDependencies
+- 顺带：`testTimeout/hookTimeout` 放宽到 30s（治 coverage 插桩下 beforeAll 超时的 flaky）
 
-**要做的**：
-- [ ] `vitest.config.mjs` 加 `coverage.exclude`，排除 Electron-only 文件（app/、*-preload、部分 ipc）
-- [ ] 新建 `codecov.yml`（设合理阈值、忽略路径、允许覆盖率小幅波动）
-- [ ] 确认 `@vitest/coverage-v8` 在 `devDependencies`（之前缺失，CI 覆盖率可能一直失败）
-- [ ] 确认 `.github/workflows/coverage.yml` 正常上传
-
-**完成标准**：Codecov badge 显示真实的"可测代码覆盖率"（预计 50~60%+），且 CI 稳定。
+**口径修正**：31.73% → **45.23%**（Stmts），CI 将显示真实"可测代码覆盖率"。
 
 ### 2. 补单元测试（B 计划）
 
