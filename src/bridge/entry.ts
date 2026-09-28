@@ -19,6 +19,8 @@ import { startInterceptObserver, onInterceptedResponse } from './intercept/obser
 import { startRetryEngine } from './loop/retry.js';
 import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/watchdog.js';
 import { initSubagentIfNeeded } from './subagent.js';
+import { initAgentFloat } from '../overlay/agent-float.js';
+import { initMessageFold } from '../overlay/message-fold.js';
 
 const require = createRequire(import.meta.url);
 const { webFrame, ipcRenderer } = require('electron');
@@ -108,6 +110,9 @@ function init(): void {
     bindEvents();
     ui.updateHomeMode();
 
+    // 初始化 Agent 悬浮卡片（AI 页面左侧）
+    try { initAgentFloat(); } catch (err) { console.error('[Cuckoo Code] initAgentFloat 失败:', err); }
+
     // URL 变化：主进程 did-navigate/-in-page 会推 'cuckoo-url-changed'
     ipcRenderer.on('cuckoo-url-changed', handleUrlChanged);
     window.addEventListener('popstate', handleUrlChanged);
@@ -143,6 +148,10 @@ function init(): void {
       checkSessionChange();
     } catch (_) {}
   }, 15000);
+
+  // 启动消息折叠（CSS 折叠，不搬移 DOM）
+  try { initMessageFold(); } catch (err) { console.error('[Cuckoo Code] initMessageFold 失败:', err); }
+
 }
 
 if (document.readyState === 'loading') {
@@ -150,3 +159,4 @@ if (document.readyState === 'loading') {
 } else {
   init();
 }
+

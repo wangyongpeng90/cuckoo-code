@@ -12,6 +12,10 @@ import { getProvider } from '../providers/registry.js';
 import * as updater from '../updater/index.js';
 import * as mcpConfig from '../mcp/config.js';
 import * as mcpClient from '../mcp/client.js';
+import * as agentConfig from '../agents/config.js';
+import * as skillConfig from '../skills/config.js';
+import * as skillMarket from '../skills/market.js';
+import { scanAgents } from '../agents/scanner.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
 
 const require = createRequire(import.meta.url);
@@ -49,7 +53,7 @@ if (RENDERER_LOG_DIR) {
 import { registerIpcHandlers } from './ipc/index.js';
 import { injectSubagentDeps, runAgent as runAgentImpl } from './subagent.js';
 import { injectAgentRunner } from '../tools/impl/run-agent.js';
-import { pushUrlState } from './ipc/shell.js';
+import { pushUrlState, pushAgentStatusTo } from './ipc/shell.js';
 
 // 退出前需要 flush 的 sessions
 const sessionsToFlush = new Set<any>();
@@ -139,6 +143,7 @@ function createWindow(profile: any) {
   mainWindow.loadFile(resolveSrc('ui/shell.html'));
   mainWindow.webContents.on('did-finish-load', () => {
     pushUrlState(view);
+    pushAgentStatusTo(mainWindow);
   });
 
   // 保存 session 引用（窗口销毁后 webContents 不可访问）
@@ -413,13 +418,6 @@ function setupAppMenu() {
     {
       label: '帮助',
       submenu: [
-        {
-          label: '检查更新',
-          click: () => {
-            updater.checkForUpdates();
-          }
-        },
-        { type: 'separator' },
         { role: 'about', label: '关于 Cuckoo Code' }
       ]
     }
@@ -714,6 +712,128 @@ ipcMainForProfile.handle('get-mcp-tools', async (event: any) => {
     } catch (_) {}
   }
   return { success: true, tools };
+});
+
+// ========== Agent（子代理）相关 IPC ==========
+
+// 列出所有全局 agent（带启用状态）
+ipcMainForProfile.handle('list-agents', async () => {
+  try {
+    return { success: true, agents: agentConfig.listAgents() };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 新增或更新 agent
+ipcMainForProfile.handle('upsert-agent', async (_event: any, { agent }: any) => {
+  try {
+    const saved = agentConfig.upsertAgent(agent || {});
+    return { success: true, agent: saved };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 删除 agent
+ipcMainForProfile.handle('remove-agent', async (_event: any, { id }: any) => {
+  try {
+    const ok = agentConfig.removeAgent(id);
+    return { success: ok };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 启用/禁用 agent
+ipcMainForProfile.handle('set-agent-enabled', async (_event: any, { id, enabled }: any) => {
+  try {
+    const ok = agentConfig.setAgentEnabled(id, !!enabled);
+    return { success: ok };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 获取合并后的 agent 清单（全局 + 项目级 + 用户级，供调试/预览）
+ipcMainForProfile.handle('get-all-agents', async (_event: any, { projectDir = null }: any = {}) => {
+  try {
+    return { success: true, agents: scanAgents(projectDir || null) };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// ========== Skill（技能）相关 IPC ==========
+
+// 列出所有应用级技能（带启用状态）
+ipcMainForProfile.handle('list-skills', async () => {
+  try {
+    return { success: true, skills: skillConfig.listSkills() };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 新增或更新技能
+ipcMainForProfile.handle('upsert-skill', async (_event: any, { skill }: any) => {
+  try {
+    const saved = skillConfig.upsertSkill(skill || {});
+    return { success: true, skill: saved };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 删除技能
+ipcMainForProfile.handle('remove-skill', async (_event: any, { id }: any) => {
+  try {
+    const ok = skillConfig.removeSkill(id);
+    return { success: ok };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 启用/禁用技能
+ipcMainForProfile.handle('set-skill-enabled', async (_event: any, { id, enabled }: any) => {
+  try {
+    const ok = skillConfig.setSkillEnabled(id, !!enabled);
+    return { success: ok };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 在线搜索技能（SkillHub 市场）
+ipcMainForProfile.handle('search-skills', async (_event: any, { keyword, page, pageSize }: any) => {
+  try {
+    const result = await skillMarket.searchSkills(keyword || '', page || 1, pageSize || 24);
+    return { success: true, ...result };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 获取市场技能详情
+ipcMainForProfile.handle('get-skill-detail', async (_event: any, { slug, namespace }: any) => {
+  try {
+    const detail = await skillMarket.getSkillDetail(slug, namespace);
+    return { success: true, detail };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+// 从市场下载并安装技能
+ipcMainForProfile.handle('install-skill', async (_event: any, { slug, namespace }: any) => {
+  try {
+    const dir = await skillMarket.downloadAndExtract(slug, namespace);
+    const saved = skillConfig.installSkillFromDir(dir);
+    return { success: true, skill: saved };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 });
 
 // ========== 单实例锁 ==========

@@ -6,21 +6,21 @@
  */
 
 /** 技能的来源作用域 */
-export type SkillSource = 'project' | 'user';
+export type SkillSource = 'project' | 'user' | 'app';
 
 /** 扫描出的技能元数据 */
 export interface SkillMeta {
-  /** 技能名（frontmatter 的 name，缺省取目录名） */
+  /** 技能名（frontmatter 的 name，缺省取目录名/文件名） */
   name: string;
   /** 简述（frontmatter 的 description，缺省取正文首段） */
   description: string;
-  /** 建议使用场景（frontmatter 的 when_to_use，可选） */
+  /** 建议使用场景（frontmatter 的 when_to_use，可选，Claude Code 扩展） */
   whenToUse?: string;
   /** 声明可用工具（frontmatter 的 allowed-tools，仅声明不强制） */
   allowedTools?: string[];
-  /** SKILL.md 的绝对路径（供 AI read） */
+  /** SKILL.md 的绝对路径（供 AI read）；应用级技能为 <app>/skills/<id>.md */
   skillPath: string;
-  /** 技能目录绝对路径 */
+  /** 技能目录绝对路径（应用级为 <app>/skills） */
   dir: string;
   /** 来源 */
   source: SkillSource;

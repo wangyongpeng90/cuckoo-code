@@ -72,6 +72,48 @@
   .statusbar .sb-item[title] { cursor: help; }
   .statusbar .sb-sep { width: 1px; height: 12px; background: var(--ck-border); margin: 0 4px; }
   .viewport { flex: 1; }
+  /* ===== Agent 虚拟人头 ===== */
+  .agent-hud {
+    display: flex; align-items: center; gap: 6px;
+    margin-left: 6px; padding-left: 8px;
+    border-left: 1px solid var(--ck-border);
+    height: 100%; max-width: 420px; overflow-x: auto; overflow-y: hidden;
+  }
+  .agent-hud::-webkit-scrollbar { height: 0; }
+  .agent-hud.empty { display: none; }
+  .cuckoo-hidden-hud { display: none !important; }
+  .agent-pill {
+    display: flex; align-items: center; gap: 5px; flex-shrink: 0;
+    height: 26px; padding: 0 9px; border-radius: 13px;
+    background: var(--ck-surface);
+    border: 1px solid var(--ck-border);
+    font-size: 11px; line-height: 1; color: var(--ck-text);
+    cursor: default; user-select: none;
+    transition: border-color .2s, background .2s;
+  }
+  .agent-pill-emoji { font-size: 13px; line-height: 1; }
+  .agent-pill-name { color: #c8ccff; font-weight: 600; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent-pill-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #ff6b7a; flex-shrink: 0;
+  }
+  .agent-pill-state { color: var(--ck-text-dim); }
+  /* 工作中：绿色 + 呼吸闪烁 */
+  .agent-pill.working {
+    border-color: rgba(74,222,128,0.55);
+    background: rgba(74,222,128,0.10);
+  }
+  .agent-pill.working .agent-pill-dot {
+    background: #4ade80;
+    animation: agent-dot-blink 1s steps(1,end) infinite;
+  }
+  .agent-pill.working .agent-pill-state { color: #4ade80; }
+  /* 已停止：红色圆点（静态） */
+  .agent-pill.idle .agent-pill-state { color: #ff9aa4; }
+  @keyframes agent-dot-blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0.25; }
+  }
 </style>
 </head>
 <body>
@@ -94,6 +136,7 @@
       <button class="nav-btn" id="btn-home" title="主页">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
       </button>
+      <div class="agent-hud empty cuckoo-hidden-hud" id="agent-hud" title="子代理（Agent）运行状态"></div>
     </div>
     <div class="statusbar">
       <div class="sb-item" title="对话上下文：本会话当前占用的 token 总量">
@@ -188,6 +231,54 @@
   if (api.getSystemTotal) {
     api.getSystemTotal().then(function (r) {
       if (r && r.success && systemEl) systemEl.textContent = formatTokenCount(r.systemTotal);
+    }).catch(function () {});
+  }
+
+  // ===== Agent 虚拟人头 =====
+  var AGENT_EMOJI = {
+    'code-reviewer': '🔍', 'reviewer': '🔍',
+    'code1': '🧭', 'code2': '🩺', 'code3': '👨💻',
+    'researcher': '🧭', 'diagnoser': '🩺', 'engineer': '👨💻',
+    'tester': '🧪', 'docs': '📝', 'writer': '📝',
+  };
+  var AGENT_COLORS = ['#8b93ff', '#4ade80', '#ffb84d', '#ff6b7a', '#5fd0e0', '#c98bff'];
+  function agentEmoji(name) {
+    if (AGENT_EMOJI[name]) return AGENT_EMOJI[name];
+    // 未知 agent：按名字 hash 选一个稳定 emoji
+    var pool = ['🤖', '🦾', '🧠', '🐣', '🛰️', '⚙️', '📦', '🔧'];
+    var h = 0;
+    for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    return pool[h % pool.length];
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function renderAgents(agents) {
+    var hud = document.getElementById('agent-hud');
+    if (!hud) return;
+    if (!agents || !agents.length) { hud.classList.add('empty'); hud.innerHTML = ''; return; }
+    hud.classList.remove('empty');
+    hud.innerHTML = agents.map(function (a) {
+      var working = !!a.working;
+      var stateCls = working ? 'working' : 'idle';
+      var stateText = working ? '工作中' : '已停止';
+      return '<div class="agent-pill ' + stateCls + '" data-name="' + esc(a.name) + '"' +
+        (a.task ? ' title="任务：' + esc(a.task) + '"' : '') + '>' +
+        '<span class="agent-pill-emoji">' + agentEmoji(a.name) + '</span>' +
+        '<span class="agent-pill-name">' + esc(a.name) + '</span>' +
+        '<span class="agent-pill-dot"></span>' +
+        '<span class="agent-pill-state">' + stateText + '</span>' +
+        '</div>';
+    }).join('');
+  }
+  if (api.onAgentUpdated) {
+    api.onAgentUpdated(function (data) { if (data) renderAgents(data.agents); });
+  }
+  if (api.getAgentStatus) {
+    api.getAgentStatus().then(function (r) {
+      if (r && r.success) renderAgents(r.agents);
     }).catch(function () {});
   }
 

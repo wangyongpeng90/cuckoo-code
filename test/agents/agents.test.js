@@ -13,14 +13,14 @@ function mk(name, source) {
 test('mergeAgents: 同名项目级优先', () => {
   const p = [mk('a', 'project'), mk('b', 'project')];
   const u = [mk('a', 'user'), mk('c', 'user')];
-  const merged = mergeAgents(p, u);
+  const merged = mergeAgents(p, [], u);
   const a = merged.find((x) => x.name === 'a');
   assert.strictEqual(a.source, 'project');
   assert.strictEqual(merged.length, 3);
 });
 
 test('mergeAgents: 空列表', () => {
-  assert.deepStrictEqual(mergeAgents([], []), []);
+  assert.deepStrictEqual(mergeAgents([], [], []), []);
 });
 
 // ===== buildAgentsSection =====

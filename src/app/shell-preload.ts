@@ -23,6 +23,10 @@ const shellAPI = {
     ipcRenderer.on('shell-total-updated', (_e: any, data: any) => cb(data));
   },
   getSystemTotal: () => ipcRenderer.invoke('get-system-total'),
+  onAgentUpdated: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-agent-updated', (_e: any, data: any) => cb(data));
+  },
+  getAgentStatus: () => ipcRenderer.invoke('get-agent-status'),
 };
 
 try {

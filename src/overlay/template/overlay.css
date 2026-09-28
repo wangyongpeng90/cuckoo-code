@@ -50,11 +50,11 @@
   font-size: 12px; color: #a7f3c0; line-height: 1.5;
   max-height: 140px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0;
 }
-.cuckoo-actions { display: flex; gap: 8px; width: 100%; }
+.cuckoo-actions { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
 .cuckoo-actions .cuckoo-btn { flex: 1 1 auto; }
 .cuckoo-btn {
-  flex: 1; padding: 9px 14px; border: 1px solid transparent; border-radius: 10px;
-  font-size: 12.5px; font-weight: 600; cursor: pointer;
+  flex: 1 1 0; min-width: 72px; padding: 9px 12px; border: 1px solid transparent; border-radius: 10px;
+  font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
   transition: all 0.22s ease; letter-spacing: 0.3px;
 }
 .cuckoo-btn:active { transform: scale(0.98); }
@@ -341,3 +341,136 @@
 .cuckoo-settings-hint { font-size: 12px; color: var(--ck-text-dim); white-space: nowrap; }
 .cuckoo-settings-input { width: 90px; background: var(--ck-code-bg); border: 1px solid var(--ck-border); border-radius: 6px; padding: 4px 8px; color: var(--ck-text); font-size: 12px; }
 .cuckoo-settings-textarea { width: 100%; background: var(--ck-code-bg); border: 1px solid var(--ck-border); border-radius: 6px; padding: 6px 8px; color: var(--ck-text); font-size: 12px; resize: vertical; }
+
+/* ===== Agent 管理面板 ===== */
+#cuckoo-agent-manager { width: 820px; max-width: 92vw; }
+#cuckoo-agent-manager .cuckoo-agent-body { flex-direction: row; gap: 14px; align-items: stretch; overflow: hidden; }
+.cuckoo-agent-left { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; }
+.cuckoo-agent-left .cuckoo-session-list { flex: 1; max-height: none; overflow-y: auto; }
+.cuckoo-agent-right { flex: 1; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; }
+.cuckoo-agent-input { width: 100%; box-sizing: border-box; background: var(--ck-code-bg); border: 1px solid var(--ck-border); border-radius: 8px; color: var(--ck-text); padding: 6px 10px; font-size: 12px; }
+.cuckoo-agent-prompt { min-height: 110px; resize: vertical; }
+.cuckoo-agent-right .cuckoo-label { margin-top: 4px; }
+.cuckoo-agent-right .cuckoo-btn { flex: 0 0 auto; }
+/* ===== 管理按钮网格（窗口/MCP/Agent/Skill） ===== */
+.cuckoo-manage-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; width: 100%;
+}
+.cuckoo-manage-btn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  padding: 10px 4px; border-radius: 12px; cursor: pointer;
+  background: var(--ck-surface); border: 1px solid var(--ck-border);
+  color: #c8ccff; transition: all 0.2s ease;
+}
+.cuckoo-manage-btn:hover {
+  background: rgba(139, 147, 255, 0.16); color: #fff;
+  border-color: rgba(139, 147, 255, 0.45); transform: translateY(-1px);
+}
+.cuckoo-manage-btn:active { transform: translateY(0); }
+.cuckoo-manage-icon { font-size: 18px; line-height: 1; }
+.cuckoo-manage-text { font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
+
+/* ===== Skill 管理面板 ===== */
+#cuckoo-skill-manager { width: 860px; max-width: 92vw; }
+#cuckoo-skill-manager .cuckoo-agent-body { flex-direction: row; gap: 14px; align-items: stretch; overflow: hidden; }
+.cuckoo-skill-tabs { display: flex; gap: 6px; padding: 0 16px 10px; border-bottom: 1px solid var(--ck-border); }
+.cuckoo-skill-tab {
+  flex: 1; padding: 7px 0; text-align: center; cursor: pointer;
+  background: var(--ck-surface); border: 1px solid var(--ck-border); border-radius: 9px;
+  color: var(--ck-text-dim); font-size: 13px; transition: all 0.18s;
+}
+.cuckoo-skill-tab:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+.cuckoo-skill-tab-active { background: var(--ck-primary-strong); color: #fff; border-color: var(--ck-primary-strong); }
+.cuckoo-skill-search-row { display: flex; gap: 8px; padding: 10px 16px 0; }
+.cuckoo-skill-search-input {
+  flex: 1; box-sizing: border-box; background: var(--ck-code-bg); border: 1px solid var(--ck-border);
+  border-radius: 9px; color: var(--ck-text); padding: 7px 12px; font-size: 13px;
+}
+.cuckoo-skill-search-input:focus { outline: none; border-color: var(--ck-primary); }
+.cuckoo-skill-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: background 0.15s;
+  color: #ffffff;
+}
+.cuckoo-skill-item .cuckoo-window-name { color: #ffffff; font-weight: 600; }
+.cuckoo-skill-item:hover { background: var(--ck-surface-hover); }
+.cuckoo-skill-item.cuckoo-item-active { background: rgba(139, 147, 255, 0.16); }
+.cuckoo-skill-installed-tag {
+  font-size: 11px; color: var(--ck-green); border: 1px solid var(--ck-green);
+  border-radius: 6px; padding: 0 5px; flex-shrink: 0;
+}
+.cuckoo-skill-detail {
+  flex: 1; display: flex; flex-direction: column; gap: 8px;
+  overflow-y: auto; padding: 4px; min-width: 0;
+}
+.cuckoo-skill-detail-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cuckoo-skill-detail-name { font-size: 15px; font-weight: 600; color: #c8ccff; }
+.cuckoo-skill-badge {
+  font-size: 11px; color: var(--ck-text-dim); border: 1px solid var(--ck-border);
+  border-radius: 6px; padding: 1px 6px;
+}
+.cuckoo-skill-verified { color: #4ade80; border-color: #4ade80; }
+.cuckoo-skill-detail-meta { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; color: #b9bfe0; }
+.cuckoo-skill-detail-desc { font-size: 13px; color: #ffffff; line-height: 1.6; }
+.cuckoo-skill-detail-fold { font-size: 12px; color: var(--ck-text-dim); }
+.cuckoo-skill-detail-fold summary { cursor: pointer; }
+.cuckoo-skill-detail-body {
+  white-space: pre-wrap; word-break: break-word; background: var(--ck-code-bg);
+  border: 1px solid var(--ck-border); border-radius: 8px; padding: 10px;
+  margin-top: 6px; max-height: 260px; overflow-y: auto; font-size: 12px; line-height: 1.55;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+/* ===== Agent 悬浮卡片（仿左侧栏风格，可拖动） ===== */
+.cuckoo-agent-float {
+  position: fixed; top: 120px; left: 12px; width: 232px;
+  background: rgba(17, 19, 34, 0.97);
+  border: 1px solid var(--ck-border); border-radius: 12px;
+  z-index: 2147483646;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: var(--ck-text); font-size: 12px; line-height: 1.5;
+  overflow: hidden;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.cuckoo-agent-float.cuckoo-hidden { display: none; }
+.cuckoo-af-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 12px; cursor: move; user-select: none;
+  border-bottom: 1px solid var(--ck-border);
+  background: rgba(255,255,255,0.02);
+}
+.cuckoo-af-title { font-size: 12px; font-weight: 700; color: #c8ccff; flex: 1; letter-spacing: 0.3px; }
+.cuckoo-af-count {
+  font-size: 10px; color: var(--ck-text-dim);
+  background: var(--ck-surface); border-radius: 8px; padding: 1px 7px;
+}
+.cuckoo-af-toggle {
+  background: transparent; border: none; color: var(--ck-text-dim);
+  cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px;
+}
+.cuckoo-af-toggle:hover { color: #fff; }
+.cuckoo-af-list { padding: 6px; display: flex; flex-direction: column; gap: 4px; max-height: 46vh; overflow-y: auto; }
+.cuckoo-af-list::-webkit-scrollbar { width: 5px; }
+.cuckoo-af-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+.cuckoo-agent-float.cuckoo-af-collapsed .cuckoo-af-list { display: none; }
+.cuckoo-af-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 9px; border-radius: 8px;
+  background: var(--ck-surface); border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.2s;
+}
+.cuckoo-af-item.working {
+  background: rgba(74,222,128,0.10);
+  border-color: rgba(74,222,128,0.5);
+}
+.cuckoo-af-emoji { font-size: 15px; line-height: 1; flex-shrink: 0; }
+.cuckoo-af-info { flex: 1; min-width: 0; }
+.cuckoo-af-name { color: #c8ccff; font-weight: 600; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cuckoo-af-state { font-size: 10px; color: var(--ck-text-dim); display: flex; align-items: center; gap: 4px; }
+.cuckoo-af-dot { width: 6px; height: 6px; border-radius: 50%; background: #ff6b7a; flex-shrink: 0; }
+.cuckoo-af-item.working .cuckoo-af-dot { background: #4ade80; animation: cuckoo-af-blink 1s steps(1,end) infinite; }
+.cuckoo-af-item.working .cuckoo-af-state { color: #4ade80; }
+.cuckoo-af-task { font-size: 10px; color: #6b7099; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cuckoo-af-empty { color: var(--ck-text-dim); font-size: 11px; text-align: center; padding: 10px 0; }
+@keyframes cuckoo-af-blink { 0%,49% { opacity: 1; } 50%,100% { opacity: 0.25; } }

@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import { getProvider } from '../../providers/registry.js';
 import { setWindowCumulative, getTotal, cleanupSubagentKeys } from '../token-stats.js';
+import { getAgentStatus, pushAgentStatusTo } from '../agent-status.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -82,6 +83,11 @@ function registerShellIpc(): void {
     return { success: true, systemTotal: getTotal() };
   });
 
+  // 查询当前子代理运行状态（壳页面加载时拉取一次）
+  ipcMain.handle('get-agent-status', async () => {
+    return { success: true, agents: getAgentStatus() };
+  });
+
 
   ipcMain.handle('shell-navigate', async (event: any, { url }: any) => {
     const view = viewOf(event);
@@ -132,4 +138,4 @@ function registerShellIpc(): void {
   });
 }
 
-export { registerShellIpc, pushUrlState, pushTokenUsage };
+export { registerShellIpc, pushUrlState, pushTokenUsage, pushAgentStatusTo };

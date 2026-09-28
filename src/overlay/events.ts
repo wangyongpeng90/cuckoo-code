@@ -11,6 +11,8 @@ import { runCompaction, checkPendingCompact, checkPendingInit } from '../session
 import { renderWindowList, openWindowManager, closeWindowManager, handleGenerateDoc } from './panels/window-manager.js';
 import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
 import { openSettings, closeSettings, resetSettings, saveSettings } from './panels/settings.js';
+import { openAgentManager, closeAgentManager, renderAgentList, clearAgentForm, saveAgent, deleteAgent, toggleAgentEnabled } from './panels/agent-manager.js';
+import { openSkillManager, closeSkillManager, switchTab, doSearch } from './panels/skill-manager.js';
 import { makeFabDraggable } from './fab.js';
 import { getProviderByUrl } from '../providers/registry.js';
 
@@ -417,6 +419,33 @@ function bindEvents() {
   const mcpSaveBtn = document.getElementById('cuckoo-mcp-save');
   mcpSaveBtn?.addEventListener('click', () => handleMcpSave(sendToChat));
 
+  // Agent 按钮：打开 Agent 管理面板
+  const agentBtn = document.getElementById('cuckoo-btn-agent');
+  agentBtn?.addEventListener('click', openAgentManager);
+  // Agent 面板：关闭 / 新建 / 刷新
+  document.getElementById('cuckoo-agent-close')?.addEventListener('click', closeAgentManager);
+  document.getElementById('cuckoo-agent-new')?.addEventListener('click', clearAgentForm);
+  document.getElementById('cuckoo-agent-refresh')?.addEventListener('click', renderAgentList);
+  // Agent 面板：保存 / 删除 / 启用禁用
+  document.getElementById('cuckoo-agent-save')?.addEventListener('click', saveAgent);
+  document.getElementById('cuckoo-agent-delete')?.addEventListener('click', deleteAgent);
+  document.getElementById('cuckoo-agent-toggle')?.addEventListener('click', toggleAgentEnabled);
+
+  // Skill 按钮：打开 Skill 管理面板
+  const skillBtn = document.getElementById('cuckoo-btn-skill');
+  skillBtn?.addEventListener('click', openSkillManager);
+  // Skill 面板：关闭
+  document.getElementById('cuckoo-skill-close')?.addEventListener('click', closeSkillManager);
+  // Skill 面板：Tab 切换
+  document.querySelectorAll('.cuckoo-skill-tab').forEach(el => {
+    el.addEventListener('click', () => switchTab((el as any).dataset.tab));
+  });
+  // Skill 面板：搜索
+  document.getElementById('cuckoo-skill-search-btn')?.addEventListener('click', doSearch);
+  document.getElementById('cuckoo-skill-search-input')?.addEventListener('keydown', (e: any) => {
+    if (e.key === 'Enter') doSearch();
+  });
+
   // 浮动面板：新建窗口（不指定平台，让窗口显示平台选择页）
   const wmNewWindowBtn = document.getElementById('cuckoo-wm-new-window');
   wmNewWindowBtn?.addEventListener('click', async () => {
@@ -521,6 +550,8 @@ function bindEvents() {
       hideOverlay();
       closeWindowManager();
       closeMcpManager();
+      closeAgentManager();
+      closeSkillManager();
       closeSettings();
       hideFirstTimeDialog();
     }

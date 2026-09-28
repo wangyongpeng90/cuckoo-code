@@ -255,22 +255,11 @@ autoUpdater.on('error', async (error: any) => {
 });
 
 // ========== 启动时自动检查 ==========
+// 已关闭：不再启动时自动检查更新（避免弹「发现新版本」提示打扰用户）。
+// 如需更新，可通过菜单「检查更新」手动触发。
 function initAutoUpdater(win: any): void {
   setMainWindow(win);
-
-  // 仅在生产环境（打包后）才检查更新
-  if (!app.isPackaged) {
-    console.log('[Updater] 开发环境，跳过自动检查更新');
-    return;
-  }
-
-  // 应用启动后延迟 5 秒检查，避免影响启动速度
-  setTimeout(() => {
-    console.log('[Updater] 启动自动检查更新');
-    autoUpdater.checkForUpdates().catch((error: any) => {
-      console.error('[Updater] 启动检查更新失败:', error);
-    });
-  }, 5000);
+  console.log('[Updater] 启动自动检查已关闭（可经菜单手动检查）');
 }
 
 export {

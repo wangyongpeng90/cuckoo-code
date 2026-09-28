@@ -27,6 +27,8 @@ const DEFAULTS = {
   delay429: 60000,
   count429: 20,
   prompt: DEFAULT_PROMPT,
+  // 优先点击页面上的"继续生成"按钮（而非重发提示词）；默认开启
+  preferContinueBtn: true,
 };
 
 let readConfig = function readConfig(): any {
@@ -46,6 +48,8 @@ let readConfig = function readConfig(): any {
     if (Number.isFinite(c429)) cfg.count429 = c429;
     const p = localStorage.getItem('cuckoo-retry-prompt');
     if (p) cfg.prompt = p;
+    const pcb = localStorage.getItem('cuckoo-retry-prefer-continue-btn');
+    if (pcb !== null) cfg.preferContinueBtn = pcb === '1';
   } catch (e) { /* ignore */ }
   return cfg;
 };
@@ -132,6 +136,70 @@ let ensureCountdownBox = function ensureCountdownBox(): any {
   return box;
 };
 
+/**
+ * 查找页面上的"继续生成"按钮。
+ * 优先按可见文本匹配（DeepSeek 为「继续生成」），并兜底常见英文/属性选择器。
+ * 返回第一个可见且未禁用的候选元素，找不到返回 null。
+ */
+function findContinueButton(): HTMLElement | null {
+  // 1) 按可见文本匹配（覆盖中英文）
+  const TEXT_RE = /^(继续生成|继续|continue generating|continue)$/i;
+  const candidates = document.querySelectorAll('button, div[role="button"], [class*="continue"]');
+  for (let i = 0; i < candidates.length; i++) {
+    const el = candidates[i] as HTMLElement;
+    if (!el) continue;
+    const text = (el.textContent || '').trim();
+    if (!TEXT_RE.test(text)) continue;
+    if ((el as any).disabled) continue;
+    if (el.offsetWidth <= 0 || el.offsetHeight <= 0) continue; // 不可见
+    return el;
+  }
+  // 2) 兜底：常见属性选择器
+  const extra = document.querySelectorAll(
+    'button[data-testid*="continue"], button[aria-label*="继续"], button[aria-label*="continue"]'
+  );
+  for (let j = 0; j < extra.length; j++) {
+    const el = extra[j] as HTMLElement;
+    if (el && !(el as any).disabled && el.offsetWidth > 0 && el.offsetHeight > 0) return el;
+  }
+  return null;
+}
+
+/**
+ * 触发一次完整的鼠标事件序列（React 合成事件对纯 .click() 可能不响应）。
+ */
+function simulateClick(el: HTMLElement): void {
+  const opts = { bubbles: true, cancelable: true, view: window };
+  try {
+    el.dispatchEvent(new PointerEvent('pointerdown', opts));
+    el.dispatchEvent(new MouseEvent('mousedown', opts));
+    el.dispatchEvent(new PointerEvent('pointerup', opts));
+    el.dispatchEvent(new MouseEvent('mouseup', opts));
+  } catch (_) { /* PointerEvent 不支持时忽略 */ }
+  try {
+    el.click();
+  } catch (_) { /* ignore */ }
+}
+
+/**
+ * 尝试点击"继续生成"按钮（带短轮询，等按钮渲染出来）。
+ * @param timeoutMs 最长等待时间
+ * @returns 点击成功返回 true；超时未找到返回 false
+ */
+async function tryClickContinueButton(timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const btn = findContinueButton();
+    if (btn) {
+      simulateClick(btn);
+      console.log('[Cuckoo Code][重试] 已点击"继续生成"按钮');
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return false;
+}
+
 let handleError = function handleError(detail: any): void {
   const cfg = readConfig();
   if (!cfg.enabled) return;
@@ -169,11 +237,22 @@ let handleError = function handleError(detail: any): void {
     : pickDelay(cfg.delayMin, cfg.delayMax);
 
   const cdTimer = showCountdown(delay);
-  const timer = setTimeout(() => {
+  const timer = setTimeout(async () => {
     const box = document.getElementById('cuckoo-retry-countdown');
     if (box) box.classList.add('cuckoo-hidden');
     if (pending && pending.countdownTimer) clearInterval(pending.countdownTimer);
     pending = null;
+    // 优先点击页面上的"继续生成"按钮；点不到再回退到发提示词
+    if (cfg.preferContinueBtn) {
+      let clicked = false;
+      try {
+        clicked = await tryClickContinueButton(5000);
+      } catch (e: any) {
+        console.error('[Cuckoo Code][重试] 点击"继续生成"按钮异常: ' + (e && e.message));
+      }
+      if (clicked) return;
+      console.log('[Cuckoo Code][重试] 未找到"继续生成"按钮，回退到发送提示词');
+    }
     try {
       sendToChat(cfg.prompt, is429 ? '重试(操作频繁)' : '重试', 300);
     } catch (e: any) {

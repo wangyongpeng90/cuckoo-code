@@ -26,6 +26,8 @@ function openSettings() {
     setVal('cuckoo-retry-429-delay', msToSec(localStorage.getItem('cuckoo-retry-429-delay') || '60000', 60));
     setVal('cuckoo-retry-429-count', localStorage.getItem('cuckoo-retry-429-count') || '20');
     setVal('cuckoo-retry-prompt', localStorage.getItem('cuckoo-retry-prompt') || '刚才的回复似乎中断了，请重新完整回答上一个问题。');
+    const pcbEl = document.getElementById('cuckoo-retry-prefer-continue-btn');
+    if (pcbEl) (pcbEl as any).checked = localStorage.getItem('cuckoo-retry-prefer-continue-btn') !== '0';
     setVal('cuckoo-xhr-idle-timeout', msToSec(localStorage.getItem('cuckoo-xhr-idle-timeout') || '300000', 300));
     setVal('cuckoo-watchdog-prompt', localStorage.getItem('cuckoo-watchdog-prompt') || '请继续');
     setVal('cuckoo-watchdog-count', localStorage.getItem('cuckoo-watchdog-count') || '3');
@@ -49,7 +51,8 @@ function resetSettings() {
   const KEYS = [
     'cuckoo-retry-enabled', 'cuckoo-retry-delay-min', 'cuckoo-retry-delay-max',
     'cuckoo-retry-count', 'cuckoo-retry-429-delay', 'cuckoo-retry-429-count',
-    'cuckoo-retry-prompt', 'cuckoo-xhr-idle-timeout', 'cuckoo-watchdog-prompt',
+    'cuckoo-retry-prompt', 'cuckoo-retry-prefer-continue-btn',
+    'cuckoo-xhr-idle-timeout', 'cuckoo-watchdog-prompt',
     'cuckoo-watchdog-count', 'cuckoo-send-delay-min', 'cuckoo-send-delay-max',
     'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
   ];
@@ -104,6 +107,8 @@ function saveSettings() {
     localStorage.setItem('cuckoo-retry-429-delay', String(d429));
     localStorage.setItem('cuckoo-retry-429-count', String(c429));
     localStorage.setItem('cuckoo-retry-prompt', prompt);
+    const pcbEl = document.getElementById('cuckoo-retry-prefer-continue-btn');
+    localStorage.setItem('cuckoo-retry-prefer-continue-btn', (pcbEl && (pcbEl as any).checked) ? '1' : '0');
     localStorage.setItem('cuckoo-xhr-idle-timeout', String(idleTimeout));
     localStorage.setItem('cuckoo-watchdog-prompt', watchdogPrompt);
     localStorage.setItem('cuckoo-watchdog-count', String(watchdogCount));

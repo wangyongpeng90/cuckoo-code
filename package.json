@@ -3,6 +3,7 @@
   "version": "0.8.1",
   "description": "DeepSeek 桌面应用——内嵌浏览器，自动识别 AI 回复中的命令和工具调用并执行",
   "type": "module",
+  "packageManager": "traversal",
   "main": "out/src/app/entry.js",
   "scripts": {
     "compile": "node scripts/build-hooks.mjs && tsc -p tsconfig.build.json && node scripts/build-tool-api.mjs",
@@ -138,16 +139,13 @@
       }
     ],
     "files": [
-      "**/*",
-      "!node_modules/.bin",
-      "!dist",
-      "!build",
-      "!**/*.md",
-      "!LICENSE",
-      "src/prompt/*.md",
-      "src/overlay/template/*.html",
-      "src/overlay/template/*.css",
-      "src/ui/*.html"
+      "out/**/*",
+      "assets/**/*",
+      "src/ui/**/*",
+      "src/prompt/**/*",
+      "src/overlay/template/**/*",
+      "src/tools/api.d.ts",
+      "package.json"
     ]
   },
   "dependencies": {

@@ -7,7 +7,7 @@
  */
 
 /** 代理的来源作用域 */
-export type AgentSource = 'project' | 'user';
+export type AgentSource = 'global' | 'project' | 'user';
 
 /** 扫描出的代理元数据 */
 export interface AgentMeta {

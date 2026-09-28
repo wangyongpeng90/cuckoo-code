@@ -95,6 +95,7 @@ async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterS
   }
   const token: PendingSend = { timer: null, input: input, cancelled: false };
   pendingSend = token;
+  // 消息原样发送（折叠改为按文本特征识别，无需插入标记）
   if (!(await setInputContent(input, msg))) {
     if (pendingSend === token) pendingSend = null;
     return false;
@@ -166,7 +167,7 @@ async function sendCombinedJsResultsToChat(results: any, onSent?: () => void): P
   }
 
   console.log('[Cuckoo Code] 回传 JS 汇总执行结果, 消息长度=' + msg.length);
-  return sendMessageToChat(msg, 'JS汇总', onSent);
+  return sendToChat(msg, 'JS汇总', undefined, onSent);
 }
 /**
  * 查找 DeepSeek 的输入框元素
