@@ -29,6 +29,13 @@ function registerProjectIpc(): void {
     return result;
   });
 
+  // 查询当前窗口的项目目录（壳页面「项目」面板打开时拉取；事件转发可能发生在面板打开前）
+  ipcMain.handle('get-project-dir', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const dir = (ctx && ctx.sessionStore && ctx.sessionStore.state.selectedProjectDir) || null;
+    return { success: true, projectDir: dir };
+  });
+
   // 重新扫描技能 + 代理，返回合并清单文本（供「刷新技能与代理」按钮使用）
   ipcMain.handle('refresh-skills', async (event: any) => {
     try {

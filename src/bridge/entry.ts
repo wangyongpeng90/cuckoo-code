@@ -10,7 +10,7 @@ import './api.js';
 
 import { createRequire } from 'node:module';
 import * as ui from '../overlay/panel.js';
-import * as projectDir from '../overlay/project-dir.js';
+import { state } from '../overlay/state.js';
 import { bindEvents, refreshTokenForCurrentSession, setIsSubagentWindow } from '../overlay/events.js';
 import * as chatInput from '../overlay/chat-input.js';
 import { wireEvents } from '../overlay/events.js';
@@ -19,6 +19,7 @@ import { startInterceptObserver, onInterceptedResponse } from './intercept/obser
 import { startRetryEngine } from './loop/retry.js';
 import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/watchdog.js';
 import { initSubagentIfNeeded } from './subagent.js';
+import { initSettings, applyRemoteSettings } from '../overlay/settings.js';
 
 const require = createRequire(import.meta.url);
 const { webFrame, ipcRenderer } = require('electron');
@@ -62,10 +63,9 @@ let lastUserNameKey = '';
 
 /**
  * URL 变化统一处理（由主进程 cuckoo-url-changed 事件 / popstate / hashchange 触发）：
- * 刷新首页模式、检测会话切换、更新窗口名。
+ * 检测会话切换、刷新 token 显示、更新窗口名。
  */
 function handleUrlChanged(): void {
-  try { ui.updateHomeMode(); } catch (_) {}
   try { checkSessionChange(); } catch (_) {}
   try { refreshTokenForCurrentSession(); } catch (_) {}
   try {
@@ -79,7 +79,7 @@ function handleUrlChanged(): void {
     const text = provider.extractUserInfo();
     if (text && text !== lastSentUserName) {
       lastSentUserName = text;
-      (window as any).electronAPI.updateWindowName(text).catch(() => {});
+      window.electronAPI.updateWindowName(text).catch(() => {});
     }
   } catch (_) {}
 }
@@ -88,35 +88,34 @@ function handleUrlChanged(): void {
  * 初始化 Cuckoo Code 扩展
  * 注入样式、覆盖层 HTML，绑定事件，启动回复监听（拦截或 DOM 观察）
  */
-function init(): void {
-  // 子代理窗口：注册完成判定（onInterceptedResponse 计数），但 overlay 照常初始化
+async function init(): Promise<void> {
+  // 子代理窗口：注册完成判定（onInterceptedResponse 计数），overlay 照常初始化
   const subCfg = initSubagentIfNeeded();
   if (subCfg) {
-    // 子代理窗口在新对话页，但需要完整面板 → 抑制首页模式
-    try { ui.setSuppressHomeMode(true); } catch (_) { /* ignore */ }
     // 子代理共享父窗口 localStorage，不参与 token 统计（否则污染"今日窗口"）
     try { setIsSubagentWindow(true); } catch (_) { /* ignore */ }
+    // 子代理窗口没有 project-dir-updated 事件：直接同步继承的项目目录（压缩流程用）
+    state.currentProjectDir = subCfg.projectDir || null;
   }
   try {
+    // 设置先于一切读取方：迁移旧 localStorage 数据 → 拉取主进程设置到缓存 → 镜像 hook 键
+    await initSettings();
+    // 另一窗口保存/重置设置时，主进程广播 'settings-changed'，这里刷新本窗口缓存
+    ipcRenderer.on('settings-changed', (_e: any, s: any) => {
+      try { applyRemoteSettings(s); } catch (_) { /* ignore */ }
+    });
     ui.injectCSS();
     ui.injectOverlay();
-    projectDir.initProjectDirSection();
-    // 子代理窗口：显示继承的项目目录（它没有 project-dir-updated 事件）
-    if (subCfg && subCfg.projectDir) {
-      try { projectDir.updateProjectDirDisplay(subCfg.projectDir); } catch (_) { /* ignore */ }
-    }
+    // 项目目录只保留运行态（压缩流程用）；展示已迁往 shell 侧栏
+    ipcRenderer.on('project-dir-updated', (_e: any, dirPath: string) => {
+      state.currentProjectDir = dirPath || null;
+    });
     bindEvents();
-    ui.updateHomeMode();
 
     // URL 变化：主进程 did-navigate/-in-page 会推 'cuckoo-url-changed'
     ipcRenderer.on('cuckoo-url-changed', handleUrlChanged);
     window.addEventListener('popstate', handleUrlChanged);
     window.addEventListener('hashchange', handleUrlChanged);
-    // 首次延迟执行，确保 overlay 已注入
-    setTimeout(ui.updateHomeMode, 500);
-
-    // 默认显示覆盖层 - 兜底强制显示
-    ui.forceShowOverlay();
 
     // 拦截模式：监听主世界注入器派发的 'cuckoo-ai-response' 事件
     startInterceptObserver();
@@ -129,24 +128,18 @@ function init(): void {
     startSessionWatcher();
   } catch (err) {
     console.error('[Cuckoo Code] init() 出错:', err);
-    // 兜底：即使出错也强制显示面板
-    ui.forceShowOverlay();
   }
-
-  // 定期巡检：防止面板被意外隐藏
-  ui.startOverlayWatcher();
 
   // 15 秒低频兜底：主进程 URL 事件若漏发（罕见路由方式），这里补一次
   setInterval(() => {
     try {
-      ui.updateHomeMode();
       checkSessionChange();
     } catch (_) {}
   }, 15000);
 }
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => { void init(); });
 } else {
-  init();
+  void init();
 }

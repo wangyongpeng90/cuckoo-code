@@ -131,7 +131,7 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   // 4. 普通文本回复：任务完成，退出工具循环
   console.log('[Cuckoo Code][拦截] 正常文本回复，未检测到工具调用');
   try {
-    (window as any).electronAPI.showAiNotification().catch(() => {});
+    window.electronAPI.showAiNotification().catch(() => {});
   } catch (e) { /* ignore */ }
 }
 

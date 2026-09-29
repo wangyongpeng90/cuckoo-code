@@ -3,51 +3,33 @@
  * 订阅 intercept-observer 的 cuckoo-ai-error 事件，按配置退避后发送提示词，
  * 触发 AI 重新回答。成功回复会重置计数。
  *
- * 配置来源：localStorage（每窗口独立）
- *  - cuckoo-retry-enabled        '1' | '0'  默认 '1'
- *  - cuckoo-retry-delay-min      毫秒，默认 4000
- *  - cuckoo-retry-delay-max      毫秒，默认 10000
- *  - cuckoo-retry-count          普通失败次数，默认 10；负数=无限
- *  - cuckoo-retry-429-delay      毫秒，默认 60000
- *  - cuckoo-retry-429-count      429 次数，默认 20；负数=无限
- *  - cuckoo-retry-prompt         提示词文案
+ * 配置来源：主进程设置（settings.json），经 overlay/settings.ts 的内存缓存同步读取
+ *（init 时拉取一次，saveSettings 后刷新缓存；timer 回调不触达 IPC）。
+ * 字段含义（默认值见 app/settings-store.ts 的 DEFAULT_SETTINGS）：
+ *  - retryEnabled / retryDelayMin / retryDelayMax / retryCount（负数=无限）
+ *  - retry429Delay / retry429Count（负数=无限）/ retryPrompt
  */
 import { sendToChat } from '../../overlay/chat-input.js';
 import { onAiError, onInterceptedResponse } from '../intercept/observer.js';
 import { showToast } from '../../overlay/panel.js';
+import { showRetryCountdown, hideRetryCountdown } from '../../overlay/retry-countdown.js';
 import { withLog } from '../../infra/with-log.js';
 import { getProviderByUrl } from '../../providers/registry.js';
+import { getCachedSettings } from '../../overlay/settings.js';
 
 const DEFAULT_PROMPT = '刚才的回复似乎中断了，请重新完整回答上一个问题。';
-const DEFAULTS = {
-  enabled: true,
-  delayMin: 4000,
-  delayMax: 10000,
-  count: 10,
-  delay429: 60000,
-  count429: 20,
-  prompt: DEFAULT_PROMPT,
-};
 
 let readConfig = function readConfig(): any {
-  const cfg = Object.assign({}, DEFAULTS);
-  try {
-    const en = localStorage.getItem('cuckoo-retry-enabled');
-    if (en !== null) cfg.enabled = en === '1';
-    const dmin = parseInt(localStorage.getItem('cuckoo-retry-delay-min') || '', 10);
-    if (Number.isFinite(dmin)) cfg.delayMin = dmin;
-    const dmax = parseInt(localStorage.getItem('cuckoo-retry-delay-max') || '', 10);
-    if (Number.isFinite(dmax)) cfg.delayMax = dmax;
-    const cnt = parseInt(localStorage.getItem('cuckoo-retry-count') || '', 10);
-    if (Number.isFinite(cnt)) cfg.count = cnt;
-    const d429 = parseInt(localStorage.getItem('cuckoo-retry-429-delay') || '', 10);
-    if (Number.isFinite(d429)) cfg.delay429 = d429;
-    const c429 = parseInt(localStorage.getItem('cuckoo-retry-429-count') || '', 10);
-    if (Number.isFinite(c429)) cfg.count429 = c429;
-    const p = localStorage.getItem('cuckoo-retry-prompt');
-    if (p) cfg.prompt = p;
-  } catch (e) { /* ignore */ }
-  return cfg;
+  const s = getCachedSettings();
+  return {
+    enabled: s.retryEnabled,
+    delayMin: s.retryDelayMin,
+    delayMax: s.retryDelayMax,
+    count: s.retryCount,
+    delay429: s.retry429Delay,
+    count429: s.retry429Count,
+    prompt: s.retryPrompt,
+  };
 };
 
 let pickDelay = function pickDelay(min: any, max: any): number {
@@ -82,8 +64,7 @@ let clearPending = function clearPending(): void {
   if (pending.timer) clearTimeout(pending.timer);
   if (pending.countdownTimer) clearInterval(pending.countdownTimer);
   pending = null;
-  const box = document.getElementById('cuckoo-retry-countdown');
-  if (box) box.classList.add('cuckoo-hidden');
+  hideRetryCountdown();
 };
 
 let onSuccess = function onSuccess(): void {
@@ -98,38 +79,14 @@ let cancelPending = function cancelPending(): void {
 };
 
 let showCountdown = function showCountdown(totalMs: number): any {
-  const box = ensureCountdownBox();
-  const textEl = box.querySelector('#cuckoo-retry-countdown-text');
-  const cancelBtn = box.querySelector('#cuckoo-retry-cancel');
-  cancelBtn.onclick = cancelPending;
-  box.classList.remove('cuckoo-hidden');
-
   let remain = Math.ceil(totalMs / 1000);
-  function render() {
-    if (textEl) textEl.textContent = '请求失败，' + remain + ' 秒后自动重试...';
-  }
-  render();
+  showRetryCountdown(remain, cancelPending);
   const cd = setInterval(() => {
     remain -= 1;
     if (remain <= 0) { clearInterval(cd); return; }
-    render();
+    showRetryCountdown(remain, cancelPending);
   }, 1000);
   return cd;
-};
-
-let ensureCountdownBox = function ensureCountdownBox(): any {
-  let box = document.getElementById('cuckoo-retry-countdown');
-  if (box) return box;
-  box = document.createElement('div');
-  box.id = 'cuckoo-retry-countdown';
-  box.className = 'cuckoo-retry-countdown cuckoo-hidden';
-  box.innerHTML =
-    '<div class="cuckoo-retry-countdown-inner">' +
-    '  <span id="cuckoo-retry-countdown-text">等待重试...</span>' +
-    '  <button id="cuckoo-retry-cancel" class="cuckoo-btn-text">取消</button>' +
-    '</div>';
-  document.body.appendChild(box);
-  return box;
 };
 
 let handleError = function handleError(detail: any): void {
@@ -170,8 +127,7 @@ let handleError = function handleError(detail: any): void {
 
   const cdTimer = showCountdown(delay);
   const timer = setTimeout(() => {
-    const box = document.getElementById('cuckoo-retry-countdown');
-    if (box) box.classList.add('cuckoo-hidden');
+    hideRetryCountdown();
     if (pending && pending.countdownTimer) clearInterval(pending.countdownTimer);
     pending = null;
     try {
@@ -203,7 +159,6 @@ clearPending = withLog(clearPending, 'retry.clearPending');
 onSuccess = withLog(onSuccess, 'retry.onSuccess');
 cancelPending = withLog(cancelPending, 'retry.cancelPending');
 showCountdown = withLog(showCountdown, 'retry.showCountdown');
-ensureCountdownBox = withLog(ensureCountdownBox, 'retry.ensureCountdownBox');
 handleError = withLog(handleError, 'retry.handleError');
 startRetryEngine = withLog(startRetryEngine, 'retry.startRetryEngine');
 

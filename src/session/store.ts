@@ -73,6 +73,18 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
     return ctx ? ctx.view : null;
   }
 
+  /** 把目录更新同步给壳页面（shell 侧「项目」面板）；事件副本，通道名带 shell- 前缀 */
+  function sendShellProjectDir(wc: any, dir: any): void {
+    try {
+      const ctx = windowState && typeof windowState.getContextByWebContents === 'function'
+        ? windowState.getContextByWebContents(wc)
+        : null;
+      if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+        ctx.win.webContents.send('shell-project-dir-updated', dir);
+      }
+    } catch (_) {}
+  }
+
   function handleUrlChange(url: string, targetView?: any): void {
     const sessionId = extractSessionIdFromUrl(url);
     const view = resolveView(targetView);
@@ -90,6 +102,7 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
         if (canSend) {
           wc.send('project-dir-updated', state.selectedProjectDir);
           wc.send('session-restored', { sessionId, projectDir: state.selectedProjectDir });
+          sendShellProjectDir(wc, state.selectedProjectDir);
         }
         console.log('[Cuckoo Code][' + profileId + '] 暂存目录已绑定');
         return;
@@ -101,10 +114,14 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
         if (canSend) {
           wc.send('session-restored', { sessionId, projectDir: restoredDir });
           wc.send('project-dir-updated', restoredDir);
+          sendShellProjectDir(wc, restoredDir);
         }
       } else {
         state.selectedProjectDir = null;
-        if (canSend) wc.send('project-dir-updated', null);
+        if (canSend) {
+          wc.send('project-dir-updated', null);
+          sendShellProjectDir(wc, null);
+        }
       }
     } else {
       // 提取不到会话 ID（如 ChatGPT 首页 https://chatgpt.com/）：
@@ -112,7 +129,10 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
       state.currentSessionId = null;
       if (!state.pendingProjectDir) {
         state.selectedProjectDir = null;
-        if (canSend) wc.send('project-dir-updated', null);
+        if (canSend) {
+          wc.send('project-dir-updated', null);
+          sendShellProjectDir(wc, null);
+        }
       }
     }
   }

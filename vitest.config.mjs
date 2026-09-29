@@ -7,6 +7,14 @@ export default defineConfig({
     // 每个测试文件在独立子进程中运行：这些测试会操作 process.argv / process.type /
     // console / 全局 mock，进程级隔离最干净
     pool: 'forks',
+    poolOptions: {
+      forks: {
+        // happy-dom 环境下失败断言若携带已挂载的 DOM 节点，vitest 会序列化整个
+        // document/window 循环引用图，内存可膨胀到上百 GB（已实测复现）。
+        // 限制 fork 堆上限，让失控用例快速 OOM 崩溃而不是拖垮整机。
+        execArgv: ['--max-old-space-size=2048'],
+      },
+    },
     include: ['test/**/*.test.js'],
     exclude: ['node_modules/**'],
     // 显式导入 vitest API，不用全局注入

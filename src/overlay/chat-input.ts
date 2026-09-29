@@ -305,7 +305,7 @@ function fallbackSend(provider: any, input: any): void {
   }
 }
 /**
- * 注册主进程消息监听（initial-prompt）
+ * 注册主进程消息监听（initial-prompt / shell-send-to-chat）
  * 与原 preload.js 顶层注册时机一致：preload 入口加载时同步调用。
  */
 function registerIpcListeners(): void {
@@ -329,6 +329,16 @@ ipcRenderer.on('initial-prompt', (_event: any, content: string) => {
       console.error('[' + new Date().toISOString() + '] [Cuckoo Code] initial-prompt 处理异常:', e.message);
     }
   }
+});
+
+// 壳页面（MCP 面板「通知 AI」）经主进程 relay 的消息 → 发送到聊天
+ipcRenderer.on('shell-send-to-chat', (_event: any, data: any) => {
+  if (!data || typeof data.msg !== 'string' || !data.msg) return;
+  sendToChat(
+    data.msg,
+    typeof data.tag === 'string' ? data.tag : undefined,
+    typeof data.delayMs === 'number' ? data.delayMs : undefined
+  ).catch((err: any) => console.error('[Cuckoo Code] shell-send-to-chat 发送失败:', err));
 });
 }
 

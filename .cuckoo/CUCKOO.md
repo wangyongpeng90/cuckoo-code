@@ -76,8 +76,8 @@ skills ← agents   （底层共享）
 |---|---|
 | **加工具** | 改 `src/tools/impl/*.ts` 的 `apiMetas` + `bootstrap()` + 注册；**名字四处一致**；`npm run compile` 自动生成契约 |
 | **加平台** | 新建 `src/providers/<id>.ts` + hook；注册到 `build-hooks.mjs` 和 `registry.ts` |
-| **改 UI** | 改 `src/overlay/template/overlay.{html,css}` → `npm run compile` |
-| **加设置项** | `overlay/panels/settings.ts`（open/save/reset 三处）+ `overlay.html` |
+| **改 UI** | 页面内瞬态元素：`src/overlay/template/overlay.{html,css}` → `npm run compile`；shell 侧栏面板：`src/ui/shell.{html,css}` + `src/ui/panels.js` |
+| **加设置项** | `app/settings-store.ts`（默认值/校验）+ shell 设置面板（`src/ui/shell.html` + `src/ui/panels.js`） |
 | **加 IPC** | 主进程 `src/app/ipc/*.ts` + `bridge/api.ts` 暴露 |
 
 ## 七、构建与验证

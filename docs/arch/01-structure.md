@@ -24,9 +24,13 @@
 | 文件 | 职责 |
 |---|---|
 | `entry.ts` | 应用入口：userData 目录、窗口创建（壳+view）、应用菜单、单实例锁 |
-| `shell-preload.ts` | 地址栏壳页面的 preload，暴露 `window.shellAPI` |
+| `shell-preload.ts` | 壳页面 preload，暴露 `window.shellAPI`（导航 + 面板 + 快捷键 relay） |
 | `window.ts` | 多窗口管理：`WindowContext { win, view, profileId, providerId, sessionStore }`；`getContextByWebContents` 同时匹配 win 与 view |
+| `layout.ts` | 壳布局纯函数：图标栏 52 / 面板 280 / 圆角卡片 bounds；`SHELL_PANEL_IDS` 校验 |
+| `shortcuts.ts` | view 按键 → 壳面板动作的纯判定（Ctrl+Shift+C / Esc，before-input-event 用） |
 | `profile.ts` | 窗口 Profile（名称、providerId、partition）的读写 |
+| `settings-store.ts` | 设置主进程持久化（`userData/settings.json`，全局共享）；旧 localStorage 键首启迁移 |
+| `tool-activity.ts` | 工具活动历史（主进程内存，按窗口隔离，上限 50），供壳任务面板拉取 |
 | `ipc/index.ts` | IPC 注册总入口，编排下列子注册器 |
 | `ipc/project.ts` | `init-project` |
 | `ipc/session.ts` | `list-sessions` / `navigate-session`（导航走 `ctx.view`） |
@@ -53,27 +57,30 @@
 | `intercept/observer.ts` | 监听 `cuckoo-ai-response/error` 事件，分派处理；对外提供 `onInterceptedResponse`/`onAiError` |
 | `parser/js-detector.ts` | 检测并提取 `cuckoo` / js 代码块（AI 的 JS 工具调用） |
 | `parser/json-detector.ts` | **仅识别** JSON 格式工具调用（D11 已废除执行，检测到发提示） |
-| `loop/executor.ts` | 执行 JS 工具脚本，渲染结果到面板 |
+| `loop/executor.ts` | 执行 JS 工具脚本，上报工具活动到主进程（shell 任务面板展示） |
 | `loop/watchdog.ts` | 工具循环看门狗：等回复超时则催"请继续" |
 | `loop/retry.ts` | 失败自动重试引擎：订阅 `cuckoo-ai-error`，退避后重发提示词 |
 
 ## src/overlay/ —— 覆盖层 UI（运行在 AI 页面）
 
+UI 改版（Task 6-8）后，面板/悬浮球/弹窗已迁往 shell 侧栏（`src/ui/`），
+页面内只保留**瞬态元素**：工具执行遮罩、toast、重试倒计时。
+
 | 文件 | 职责 |
 |---|---|
-| `panel.ts` | 面板基础：注入 CSS/HTML、toast、历史、徽章闪烁、显隐 |
-| `events.ts` | **事件绑定编排**：把各按钮接到对应处理函数；token 显示 + 自动压缩检查 |
-| `fab.ts` | 悬浮球拖动 + 位置持久化 |
+| `panel.ts` | 瞬态 UI 基础：注入 CSS/HTML、toast、工具遮罩显隐 |
+| `events.ts` | **事件编排**：token 统计 + 自动压缩 + 压缩流程（shell「压缩」按钮 relay） |
 | `chat-input.ts` | 输入框定位/填值/发送；工具结果回传；IPC 监听 |
-| `session-list.ts` | 会话列表渲染、初始化项目按钮 |
-| `project-dir.ts` | 项目目录显示 |
+| `token-counter.ts` | 对话 token 统计（只上报 shell，不写 overlay DOM） |
+| `auto-compact.ts` | 自动压缩运行态（设置 UI 在 shell 侧栏） |
+| `retry-countdown.ts` | 重试倒计时浮层（动态创建） |
+| `settings.ts` | 渲染侧设置缓存：主进程 settings.json 读口 + 旧 localStorage 键迁移 + hook 键镜像 |
 | `state.ts` | overlay 层共享状态（**只放 overlay 内部**；bridge/session 数据走回调） |
-| `panels/window-manager.ts` | 窗口管理面板 |
-| `panels/mcp-manager.ts` | MCP 配置面板（含 JSON 校验、保存） |
-| `panels/settings.ts` | 设置弹窗（重试/看门狗/延迟配置） |
+| `storage.ts` | localStorage 键名集中管理 + 读写封装 |
+| `dom.ts` | 安全 DOM 构建助手（h / replaceChildrenOf） |
 | `template.generated.ts` | **生成**：把 `template/*.html/.css` 变成 TS 字符串 |
-| `template/overlay.html` | 覆盖层 HTML **真源** |
-| `template/overlay.css` | 覆盖层 CSS **真源** |
+| `template/overlay.html` | 覆盖层 HTML **真源**（只剩工具遮罩） |
+| `template/overlay.css` | 覆盖层 CSS **真源**（遮罩/toast/倒计时样式） |
 
 ## src/tools/ —— 工具系统
 
@@ -139,8 +146,9 @@
 | `updater/index.ts` | 自动更新（electron-updater） |
 | `types/third-party.d.ts` | 无 @types 的第三方模块声明（turndown 等） |
 | `prompt/*.md` | 各平台系统提示词模板（含占位符） |
-| `ui/shell.html` | 地址栏壳页面 |
-| `ui/platform-select.html` | 首次选择平台页面 |
+| `ui/shell.html/css/js` | 壳页面骨架：左侧图标栏、顶栏、侧面板状态机（Ctrl+Shift+C / Esc 折叠展开） |
+| `ui/panels.js` | 侧面板内容：主页 / 会话 / 窗口 / MCP / 任务 / 设置 / 项目 |
+| `ui/platform-select.html/css/js` | 首次选择平台页面（浅色主题；导入/替换/删除自定义 Provider，DOM 安全构建） |
 
 ## scripts/
 

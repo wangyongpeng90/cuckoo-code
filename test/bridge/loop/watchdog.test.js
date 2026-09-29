@@ -3,8 +3,11 @@ import { test, beforeEach, afterEach, vi } from 'vitest';
 import assert from 'node:assert';
 
 // watchdog 是带模块级状态的单例，用 resetModules + 动态 import 隔离
+// 设置来源已迁到主进程 settings.json，渲染侧经 overlay/settings.ts 缓存读取；
+// 测试通过 __setCacheForTest 直接覆盖缓存。
 let wd;
 let win;
+let settingsMod;
 
 function setupGlobals() {
   const store = {};
@@ -47,6 +50,7 @@ beforeEach(async () => {
   vi.useFakeTimers();
   setupGlobals();
   wd = await import('../../../src/bridge/loop/watchdog.js');
+  settingsMod = await import('../../../src/overlay/settings.js');
 });
 
 afterEach(() => {
@@ -61,18 +65,11 @@ test('_readConfig 返回默认值', () => {
   assert.strictEqual(cfg.count, 3);
 });
 
-test('_readConfig 从 localStorage 覆盖', () => {
-  localStorage.setItem('cuckoo-watchdog-prompt', '继续吧');
-  localStorage.setItem('cuckoo-watchdog-count', '5');
+test('_readConfig 从设置缓存覆盖', () => {
+  settingsMod.__setCacheForTest({ watchdogPrompt: '继续吧', watchdogCount: 5 });
   const cfg = wd._readConfig();
   assert.strictEqual(cfg.prompt, '继续吧');
   assert.strictEqual(cfg.count, 5);
-});
-
-test('_readConfig 非法值回退默认', () => {
-  localStorage.setItem('cuckoo-watchdog-count', 'xyz');
-  const cfg = wd._readConfig();
-  assert.strictEqual(cfg.count, 3);
 });
 
 test('未启动时派发静默事件不计数', () => {
@@ -108,7 +105,7 @@ test('会话匹配时处理静默事件', () => {
 });
 
 test('次数达上限后停止催继续', () => {
-  localStorage.setItem('cuckoo-watchdog-count', '1');
+  settingsMod.__setCacheForTest({ watchdogCount: 1 });
   wd.startWatchdog();
   emitIdle('abc123'); // 第 1 次
   assert.strictEqual(wd._getIdleCount(), 1);
@@ -117,7 +114,7 @@ test('次数达上限后停止催继续', () => {
 });
 
 test('次数为负数表示无限', () => {
-  localStorage.setItem('cuckoo-watchdog-count', '-1');
+  settingsMod.__setCacheForTest({ watchdogCount: -1 });
   wd.startWatchdog();
   for (let i = 0; i < 5; i++) emitIdle('abc123');
   assert.strictEqual(wd._getIdleCount(), 5);

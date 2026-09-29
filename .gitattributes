@@ -1,0 +1,3 @@
+# 覆盖层模板与其生成物钉死 LF 行尾，避免 Windows 下生成内容行尾翻转
+src/overlay/template/** text eol=lf
+src/overlay/template.generated.ts text eol=lf

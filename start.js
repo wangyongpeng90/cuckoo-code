@@ -40,8 +40,12 @@ const logFile = path.join(logDir, 'electron.log');
 const logStream = fs.createWriteStream(logFile, { flags: 'a' });
 
 // ========== 3. 启动 Electron ==========
+// 防御：若会话环境残留 ELECTRON_RUN_AS_NODE=1，`electron .` 会以纯 Node 模式加载
+// 主入口，导致 require('electron') 拿不到 app（app undefined）。启动 GUI 时必须清除。
+const childEnv = { ...process.env };
+delete childEnv.ELECTRON_RUN_AS_NODE;
 const cmd = isWin ? 'chcp 65001 > nul && electron .' : 'electron .';
-const child = spawn(cmd, { shell: true, stdio: ['inherit', 'pipe', 'pipe'] });
+const child = spawn(cmd, { shell: true, env: childEnv, stdio: ['inherit', 'pipe', 'pipe'] });
 
 child.stdout.pipe(logStream);
 child.stderr.pipe(logStream);

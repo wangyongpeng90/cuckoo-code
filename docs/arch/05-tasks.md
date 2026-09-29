@@ -96,15 +96,16 @@ export { MyTool };
 
 ## 任务 3：改覆盖层 UI
 
-### 改结构/样式
-- HTML 真源：`src/overlay/template/overlay.html`
-- CSS 真源：`src/overlay/template/overlay.css`
-- 改完 `npm run compile`
+UI 改版后页面内 overlay 只剩**瞬态元素**（工具遮罩 / toast / 重试倒计时）；
+会话/窗口/MCP/设置/项目/任务等面板 UI 都在 shell 侧栏（`src/ui/shell.html` + `src/ui/panels.js` + `src/ui/shell.css`）。
 
-### 加按钮/交互
-1. `overlay.html` 加元素（带 id）
-2. `overlay/events.ts` 的 `bindEvents()` 绑事件
-3. 复杂逻辑放 `overlay/panels/*.ts`
+### 改结构/样式
+- 页面内瞬态 UI：HTML 真源 `src/overlay/template/overlay.html`，CSS 真源 `src/overlay/template/overlay.css`，改完 `npm run compile`
+- shell 侧栏面板：改 `src/ui/shell.html` / `src/ui/panels.js` / `src/ui/shell.css`（直接生效，无生成步骤）
+
+### 加瞬态交互（页面内）
+1. `overlay.html` 加元素（带 id），或在对应模块动态创建（如 retry-countdown.ts）
+2. `overlay/events.ts` 的 `bindEvents()` 接线
 
 ### 注意事项
 - overlay **不依赖 bridge/session**；需要下层能力 → 回调注入（见 02-依赖.md）。
@@ -114,9 +115,9 @@ export { MyTool };
 
 ## 任务 4：加一个设置项
 
-1. `overlay/panels/settings.ts`：`openSettings` / `saveSettings`（含校验）/ `resetSettings` 三处加
-2. `overlay.html` 加输入框（id 如 `cuckoo-xxx`）
-3. 消费方读 `localStorage.getItem('cuckoo-xxx')`（**每窗口独立**）
+1. 主进程 `src/app/settings-store.ts`：`DEFAULT_SETTINGS` 加字段（含校验/重置语义）
+2. shell 设置面板：`src/ui/shell.html` 加输入框（id 如 `shell-set-xxx`）+ `src/ui/panels.js` 的 `fillSettingsForm` / `handleSettingsSave` 两处加
+3. 渲染侧消费方读 `getCachedSettings()`（`overlay/settings.ts` 内存缓存，同步读取）
 
 **约定**：时间类**存毫秒、显示秒**。
 

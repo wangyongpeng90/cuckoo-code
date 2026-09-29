@@ -72,7 +72,7 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
 
     if (!result || result.length === 0) {
       console.log('[Cuckoo Code] 用户取消了目录选择');
-      return { success: false, message: '用户取消了目录选择' };
+      return { success: false, canceled: true, message: '用户取消了目录选择' };
     }
     selectedDir = result[0];
     console.log('[Cuckoo Code] 用户选择目录:', selectedDir);
@@ -108,10 +108,15 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
   }
 
   stepLog('目录保存完成');
-  // 发送目录更新事件到渲染进程
+  // 发送目录更新事件到渲染进程（AI 页面 overlay + 壳页面「项目」面板）
   if (view && view.webContents && !view.webContents.isDestroyed()) {
     view.webContents.send('project-dir-updated', selectedDir);
   }
+  try {
+    if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+      ctx.win.webContents.send('shell-project-dir-updated', selectedDir);
+    }
+  } catch (_) {}
 
   // 如果只是修改目录，跳过发送初始提示
   if (skipPrompt) {

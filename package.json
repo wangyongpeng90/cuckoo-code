@@ -8,10 +8,15 @@
     "compile": "node scripts/build-hooks.mjs && tsc -p tsconfig.build.json && node scripts/build-tool-api.mjs",
     "fetch-runtime": "node scripts/fetch-runtime.mjs",
     "start": "node scripts/fetch-runtime.mjs && node start.js",
+    "pretest": "node scripts/build-hooks.mjs",
     "test": "vitest run",
+    "pretest:watch": "node scripts/build-hooks.mjs",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
+    "pretest:ci": "node scripts/build-hooks.mjs",
     "test:ci": "vitest run",
+    "pretest:coverage": "node scripts/build-hooks.mjs",
+    "test:coverage": "vitest run --coverage",
+    "pretypecheck": "node scripts/build-hooks.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.hooks.json",
     "lint": "eslint .",
     "docs:index": "node scripts/build-docs-index.mjs",
@@ -60,6 +65,7 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
+    "happy-dom": "^20.14.5",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
   },
@@ -147,7 +153,9 @@
       "src/prompt/*.md",
       "src/overlay/template/*.html",
       "src/overlay/template/*.css",
-      "src/ui/*.html"
+      "src/ui/*.html",
+      "src/ui/*.css",
+      "src/ui/*.js"
     ]
   },
   "dependencies": {

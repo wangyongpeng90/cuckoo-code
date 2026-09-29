@@ -2,8 +2,12 @@
 import { test, beforeEach, afterEach, vi } from 'vitest';
 import assert from 'node:assert';
 
+// retry 的设置来源已迁到主进程 settings.json，渲染侧经 overlay/settings.ts
+// 的内存缓存同步读取；测试通过 __setCacheForTest 直接覆盖缓存。
+
 let retry;
 let observer;
+let settingsMod;
 
 function setupGlobals() {
   const store = {};
@@ -27,12 +31,16 @@ function setupGlobals() {
     createElement: () => ({
       classList: { add() {}, remove() {}, toggle() {} },
       style: {},
+      isConnected: true,
       appendChild() {},
+      addEventListener() {},
+      removeEventListener() {},
       querySelector: () => ({ onclick: null, textContent: '' }),
       set innerHTML(v) {},
       get innerHTML() { return ''; },
     }),
-    body: { appendChild() {} },
+    createTextNode: (t) => ({ nodeType: 3, textContent: String(t) }),
+    body: { appendChild() {}, contains: () => true },
   };
   return { store, listeners };
 }
@@ -56,6 +64,7 @@ async function boot() {
   const { listeners } = setupGlobals();
   retry = await import('../../../src/bridge/loop/retry.js');
   observer = await import('../../../src/bridge/intercept/observer.js');
+  settingsMod = await import('../../../src/overlay/settings.js');
   return listeners;
 }
 
@@ -71,15 +80,17 @@ test('readConfig 返回默认值', async () => {
   assert.ok(cfg.prompt);
 });
 
-test('readConfig 从 localStorage 覆盖', async () => {
+test('readConfig 从设置缓存覆盖', async () => {
   await boot();
-  localStorage.setItem('cuckoo-retry-enabled', '0');
-  localStorage.setItem('cuckoo-retry-delay-min', '500');
-  localStorage.setItem('cuckoo-retry-delay-max', '800');
-  localStorage.setItem('cuckoo-retry-count', '3');
-  localStorage.setItem('cuckoo-retry-429-delay', '1234');
-  localStorage.setItem('cuckoo-retry-429-count', '5');
-  localStorage.setItem('cuckoo-retry-prompt', '自定义');
+  settingsMod.__setCacheForTest({
+    retryEnabled: false,
+    retryDelayMin: 500,
+    retryDelayMax: 800,
+    retryCount: 3,
+    retry429Delay: 1234,
+    retry429Count: 5,
+    retryPrompt: '自定义',
+  });
   const cfg = retry.readConfig();
   assert.strictEqual(cfg.enabled, false);
   assert.strictEqual(cfg.delayMin, 500);
@@ -95,9 +106,9 @@ test('DEFAULT_PROMPT 存在', async () => {
   assert.ok(typeof retry.DEFAULT_PROMPT === 'string' && retry.DEFAULT_PROMPT.length > 0);
 });
 
-test('enabled=0 时错误不触发重试', async () => {
+test('enabled=false 时错误不触发重试', async () => {
   const listeners = await boot();
-  localStorage.setItem('cuckoo-retry-enabled', '0');
+  settingsMod.__setCacheForTest({ retryEnabled: false });
   retry.startRetryEngine();
   observer.startInterceptObserver();
   dispatch(listeners, 'cuckoo-ai-error', { httpStatus: 500 });
@@ -107,9 +118,7 @@ test('enabled=0 时错误不触发重试', async () => {
 
 test('启用时错误触发重试（普通失败）', async () => {
   const listeners = await boot();
-  localStorage.setItem('cuckoo-retry-enabled', '1');
-  localStorage.setItem('cuckoo-retry-delay-min', '1000');
-  localStorage.setItem('cuckoo-retry-delay-max', '1000');
+  settingsMod.__setCacheForTest({ retryEnabled: true, retryDelayMin: 1000, retryDelayMax: 1000 });
   retry.startRetryEngine();
   observer.startInterceptObserver();
   dispatch(listeners, 'cuckoo-ai-error', { httpStatus: 500 });
@@ -139,8 +148,7 @@ test('会话不匹配的错误被忽略', async () => {
 
 test('成功回复重置计数', async () => {
   const listeners = await boot();
-  localStorage.setItem('cuckoo-retry-delay-min', '1000');
-  localStorage.setItem('cuckoo-retry-delay-max', '1000');
+  settingsMod.__setCacheForTest({ retryDelayMin: 1000, retryDelayMax: 1000 });
   retry.startRetryEngine();
   observer.startInterceptObserver();
   dispatch(listeners, 'cuckoo-ai-error', { httpStatus: 500 });
@@ -150,9 +158,7 @@ test('成功回复重置计数', async () => {
 
 test('普通失败达上限后停止重试', async () => {
   const listeners = await boot();
-  localStorage.setItem('cuckoo-retry-count', '1');
-  localStorage.setItem('cuckoo-retry-delay-min', '500');
-  localStorage.setItem('cuckoo-retry-delay-max', '500');
+  settingsMod.__setCacheForTest({ retryCount: 1, retryDelayMin: 500, retryDelayMax: 500 });
   retry.startRetryEngine();
   observer.startInterceptObserver();
   dispatch(listeners, 'cuckoo-ai-error', { httpStatus: 500 }); // 第 1 次
@@ -163,8 +169,7 @@ test('普通失败达上限后停止重试', async () => {
 
 test('429 使用独立计数与延迟', async () => {
   const listeners = await boot();
-  localStorage.setItem('cuckoo-retry-429-count', '1');
-  localStorage.setItem('cuckoo-retry-429-delay', '500');
+  settingsMod.__setCacheForTest({ retry429Count: 1, retry429Delay: 500 });
   retry.startRetryEngine();
   observer.startInterceptObserver();
   dispatch(listeners, 'cuckoo-ai-error', { httpStatus: 429 }); // 第 1 次

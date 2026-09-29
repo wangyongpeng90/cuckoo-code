@@ -54,3 +54,6 @@ test/coverage.lcov
 coverage/
 /wyp/
 /dist-verify/
+
+# 构建生成物（由 scripts/build-hooks.mjs 生成，真源为 src/overlay/template/）
+src/overlay/template.generated.ts

@@ -4,6 +4,7 @@
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import * as profileManager from '../profile.js';
+import * as toolActivity from '../tool-activity.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, Notification } = require('electron');
@@ -79,6 +80,41 @@ function registerRendererIpc(): void {
       console.error('[Cuckoo Code] ❌ simulate-mouse 失败:', err.message);
       return false;
     }
+  });
+
+  // ===== 任务面板：工具活动上报 / 历史拉取 / 清空（历史存主进程内存，按窗口隔离）=====
+
+  // AI 页面 executor 上报工具活动（同 id 从 running 更新为 done）→ 存历史 + 转发壳页面任务面板
+  ipcMain.handle('report-tool-activity', async (event: any, { entry }: any = {}) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed() || !entry || !entry.id) {
+      return { success: false };
+    }
+    const normalized = toolActivity.upsertEntry(ctx.win.id, entry);
+    try {
+      // 转发归一化副本（与历史存储一致），不转发渲染进程原始对象
+      if (normalized) ctx.win.webContents.send('shell-tool-activity', normalized);
+    } catch (_) { /* 壳页面未就绪时历史已存，面板打开时会拉全量 */ }
+    return { success: true };
+  });
+
+  // 壳页面打开任务面板时拉取本窗口全量历史（转发是增量的，面板后开需要补全）
+  ipcMain.handle('shell-get-tool-history', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) {
+      return { success: true, entries: [] };
+    }
+    return { success: true, entries: toolActivity.getHistory(ctx.win.id) };
+  });
+
+  // 任务面板「清空」按钮：清掉本窗口历史
+  ipcMain.handle('shell-clear-tool-history', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) {
+      return { success: false };
+    }
+    toolActivity.clearHistory(ctx.win.id);
+    return { success: true };
   });
 }
 

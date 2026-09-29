@@ -3,198 +3,311 @@
 <head>
 <meta charset="UTF-8">
 <title>Cuckoo</title>
-<style>
-  :root {
-    --ck-bg: #111322;
-    --ck-toolbar: #171a2b;
-    --ck-surface: rgba(255, 255, 255, 0.04);
-    --ck-surface-hover: rgba(255, 255, 255, 0.08);
-    --ck-border: rgba(255, 255, 255, 0.08);
-    --ck-primary: #8b93ff;
-    --ck-text: #e8eaf6;
-    --ck-text-dim: #9aa0c0;
-  }
-  * { box-sizing: border-box; }
-  html, body {
-    margin: 0; height: 100%;
-    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-    background: var(--ck-bg); color: var(--ck-text); overflow: hidden;
-  }
-  .shell { display: flex; flex-direction: column; height: 100vh; }
-  .toolbar {
-    display: flex; align-items: center; gap: 6px;
-    height: 44px; padding: 0 10px;
-    background: var(--ck-toolbar);
-    border-bottom: 1px solid var(--ck-border);
-    flex-shrink: 0;
-  }
-  .nav-btn {
-    width: 30px; height: 30px; flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-    border: none; border-radius: 8px; cursor: pointer;
-    background: transparent; color: var(--ck-text-dim);
-    transition: background .15s, color .15s;
-  }
-  .nav-btn:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
-  .nav-btn:active { background: var(--ck-surface); }
-  .nav-btn.disabled { opacity: .3; cursor: default; pointer-events: none; }
-  .nav-btn svg { width: 16px; height: 16px; }
-  .url-wrap {
-    flex: 1; display: flex; align-items: center;
-    height: 30px; padding: 0 10px; margin: 0 4px;
-    background: var(--ck-surface);
-    border: 1px solid var(--ck-border);
-    border-radius: 8px;
-    transition: border-color .15s, background .15s;
-  }
-  .url-wrap:hover { background: var(--ck-surface-hover); }
-  .url-wrap:focus-within { border-color: var(--ck-primary); background: rgba(255,255,255,0.06); }
-  .lock { width: 12px; height: 12px; flex-shrink: 0; margin-right: 8px; color: #5fbf7f; }
-  .url-input {
-    flex: 1; border: none; outline: none; background: transparent;
-    color: var(--ck-text); font-size: 13px; font-family: inherit;
-  }
-  .url-input::placeholder { color: var(--ck-text-dim); }
-  .url-input::selection { background: var(--ck-primary); color: #fff; }
-  .divider { width: 1px; height: 20px; background: var(--ck-border); margin: 0 4px; }
-  .statusbar {
-    display: flex; align-items: center; justify-content: flex-end; gap: 10px;
-    height: 26px; padding: 0 12px;
-    background: var(--ck-toolbar);
-    border-bottom: 1px solid var(--ck-border);
-    flex-shrink: 0;
-    font-size: 12px; color: var(--ck-text-dim);
-    user-select: none;
-  }
-  .statusbar .sb-item { display: flex; align-items: center; gap: 3px; }
-  .statusbar .sb-icon { font-size: 11px; opacity: .75; }
-  .statusbar .sb-value { color: var(--ck-text); font-variant-numeric: tabular-nums; }
-  .statusbar .sb-item[title] { cursor: help; }
-  .statusbar .sb-sep { width: 1px; height: 12px; background: var(--ck-border); margin: 0 4px; }
-  .viewport { flex: 1; }
-</style>
+<link rel="stylesheet" href="./shell.css">
 </head>
 <body>
   <div class="shell">
-    <div class="toolbar">
+    <!-- 常驻标题栏（42px，全宽）：无边框窗口的拖拽区（-webkit-app-region: drag）。
+         左：macOS 红绿灯内嵌留白 + 平台/页面标题；右：导航/刷新/主页/token 徽章；
+         win32 时最右侧追加自绘 min/max/close（shell.js 按平台渲染）。 -->
+    <header class="titlebar" id="titlebar">
+      <div class="titlebar-title" id="titlebar-title">Cuckoo Code</div>
+      <div class="titlebar-actions">
+        <button class="nav-btn" id="btn-nav-toggle" title="导航条（Ctrl+L）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18z"/></svg>
+        </button>
+        <button class="nav-btn" id="btn-reload" title="刷新">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        </button>
+        <button class="nav-btn" id="btn-home" title="平台主页">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+        </button>
+        <!-- 点击徽章：展开「项目」面板并滚动到用量区（shell.js 接线） -->
+        <button class="token-badge" id="token-badge" title="对话上下文：本会话当前占用的 token 总量（点击查看用量明细）">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="token-value" id="token-value">0</span>
+        </button>
+        <!-- 缩放：点击弹出原生子窗口 mini 菜单（放大/缩小/重置），按钮显示当前倍率（shell.js 接线） -->
+        <div class="zoom-wrap">
+          <button class="zoom-btn" id="btn-zoom" title="缩放（Ctrl/Cmd +/-）">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M11 8v6"/><path d="M8 11h6"/></svg>
+            <span class="zoom-value" id="zoom-value">100%</span>
+          </button>
+        </div>
+        <!-- 自绘窗口控制：仅 win32 显示（shell.js 按 api.platform 决定），macOS 用系统红绿灯 -->
+        <div class="win-controls" id="win-controls" hidden>
+          <button class="win-btn" id="btn-win-min" title="最小化">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+          </button>
+          <button class="win-btn" id="btn-win-max" title="最大化 / 还原">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+          </button>
+          <button class="win-btn win-btn-close" id="btn-win-close" title="关闭">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg>
+          </button>
+        </div>
+      </div>
+    </header>
+    <div class="shell-row">
+      <aside class="rail">
+      <nav class="rail-main">
+        <button class="rail-btn" id="rail-btn-home" title="平台主页">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+        </button>
+        <button class="rail-btn" data-panel="chat" title="会话">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <button class="rail-btn" data-panel="window" title="窗口">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M6.5 6.5h.01M9.5 6.5h.01"/></svg>
+        </button>
+        <button class="rail-btn" data-panel="mcp" title="MCP">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 7V3"/><path d="M15 7V3"/><path d="M7 7h10v4a5 5 0 0 1-10 0V7z"/><path d="M12 16v5"/></svg>
+        </button>
+        <button class="rail-btn" data-panel="task" title="任务">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4a3 3 0 0 1 6 0"/><path d="M9 12l2 2 4-4"/></svg>
+        </button>
+      </nav>
+      <div class="rail-bottom">
+        <button class="rail-btn" data-panel="settings" title="设置">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="rail-btn" data-panel="project" title="项目">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        </button>
+      </div>
+    </aside>
+    <div class="main">
+      <div class="body">
+        <aside class="panel" id="side-panel" hidden>
+          <div class="panel-header">
+            <span class="panel-title" id="panel-title"></span>
+            <button class="panel-close" id="panel-close" title="收起面板">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div class="panel-body">
+            <!-- 会话面板：当前项目目录关联的会话列表 -->
+            <div class="panel-content" data-panel-content="chat" hidden>
+              <div class="panel-list" id="shell-session-list"></div>
+            </div>
+            <!-- 窗口面板：profile 列表 + 新建窗口 -->
+            <div class="panel-content" data-panel-content="window" hidden>
+              <div class="panel-toolbar">
+                <button class="panel-btn" id="shell-btn-new-window" title="新建窗口（显示平台选择页）">+ 新建窗口</button>
+                <button class="panel-btn" id="shell-btn-refresh-windows" title="刷新窗口列表">刷新</button>
+              </div>
+              <div class="panel-list" id="shell-window-list"></div>
+            </div>
+            <!-- MCP 面板：server 列表 + 用户级配置 JSON 编辑 + 保存/通知 AI -->
+            <div class="panel-content" data-panel-content="mcp" hidden>
+              <div class="panel-toolbar">
+                <button class="panel-btn" id="shell-btn-refresh-mcp" title="刷新 MCP 列表">刷新</button>
+              </div>
+              <div class="panel-list mcp-list" id="shell-mcp-list"></div>
+              <div class="mcp-editor">
+                <textarea id="shell-mcp-json" class="mcp-json" spellcheck="false" placeholder='{
+  "mcpServers": {
+    "server-name": {
+      "command": "npx",
+      "args": ["-y", "some-mcp-server"]
+    }
+  }
+}'></textarea>
+                <div class="mcp-actions">
+                  <button class="panel-btn" id="shell-btn-mcp-save">保存配置</button>
+                </div>
+                <div class="mcp-notify" id="shell-mcp-notify" hidden>
+                  <span class="mcp-notify-text">配置已保存，是否通知 AI？</span>
+                  <button class="panel-btn" id="shell-btn-mcp-notify-send">发送</button>
+                  <button class="panel-btn" id="shell-btn-mcp-notify-cancel">取消</button>
+                </div>
+              </div>
+            </div>
+            <!-- 任务面板：当前命令 + 状态 + 结果输出 + 历史列表（点击条目展开详情） -->
+            <div class="panel-content" data-panel-content="task" hidden>
+              <div class="panel-toolbar">
+                <button class="panel-btn" id="shell-btn-clear-tasks" title="清空历史记录">清空</button>
+              </div>
+              <div class="task-current" id="shell-task-current" hidden>
+                <div class="task-current-status" id="shell-task-current-status"></div>
+                <div class="task-current-command" id="shell-task-current-command"></div>
+                <pre class="task-output" id="shell-task-current-output" hidden></pre>
+              </div>
+              <div class="panel-list" id="shell-task-list"></div>
+            </div>
+            <!-- 设置面板：行式布局（标签左/上、控件右/下），读写走 settings IPC -->
+            <div class="panel-content" data-panel-content="settings" hidden>
+              <div class="settings-form">
+                <div class="settings-section">
+                  <div class="settings-section-title">失败自动重试</div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="shell-set-retry-enabled">失败自动重试</label>
+                    <input id="shell-set-retry-enabled" type="checkbox" class="settings-checkbox" />
+                  </div>
+                  <div class="settings-row settings-row-col">
+                    <label class="settings-label" for="shell-set-retry-delay-min">普通失败间隔（秒）</label>
+                    <div class="settings-range">
+                      <input id="shell-set-retry-delay-min" type="number" min="0" step="1" class="settings-input" />
+                      <span class="settings-sep">至</span>
+                      <input id="shell-set-retry-delay-max" type="number" min="0" step="1" class="settings-input" />
+                    </div>
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="shell-set-retry-count">普通失败重试次数（负数=无限）</label>
+                    <input id="shell-set-retry-count" type="number" step="1" class="settings-input" />
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="shell-set-retry-429-delay">操作频繁后重试间隔（秒）</label>
+                    <input id="shell-set-retry-429-delay" type="number" min="0" step="1" class="settings-input" />
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="shell-set-retry-429-count">操作频繁后重试次数（负数=无限）</label>
+                    <input id="shell-set-retry-429-count" type="number" step="1" class="settings-input" />
+                  </div>
+                  <div class="settings-row settings-row-col">
+                    <label class="settings-label" for="shell-set-retry-prompt">重试提示词</label>
+                    <textarea id="shell-set-retry-prompt" class="settings-textarea" rows="2"></textarea>
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="shell-set-xhr-idle-timeout">AI 回复时间超时后重试（秒）</label>
+                    <input id="shell-set-xhr-idle-timeout" type="number" min="0" step="1" class="settings-input" />
+                  </div>
+                  <div class="settings-row settings-row-col">
+                    <label class="settings-label" for="shell-set-watchdog-prompt">AI 回复时间超时后重试提示词</label>
+                    <input id="shell-set-watchdog-prompt" type="text" class="settings-input" />
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="shell-set-watchdog-count">AI 回复时间超时重试次数（负数=无限）</label>
+                    <input id="shell-set-watchdog-count" type="number" step="1" class="settings-input" />
+                  </div>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-title">发送延迟设置</div>
+                  <div class="settings-row settings-row-col">
+                    <label class="settings-label" for="shell-set-delay-min">发送延迟（秒）</label>
+                    <div class="settings-range">
+                      <input id="shell-set-delay-min" type="number" min="0" step="0.1" class="settings-input" />
+                      <span class="settings-sep">至</span>
+                      <input id="shell-set-delay-max" type="number" min="0" step="0.1" class="settings-input" />
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-title">附件上传间隔</div>
+                  <div class="settings-row settings-row-col">
+                    <label class="settings-label" for="shell-set-attach-delay-min">附件上传后等待检测的时长（秒）</label>
+                    <div class="settings-range">
+                      <input id="shell-set-attach-delay-min" type="number" min="0" step="0.1" class="settings-input" />
+                      <span class="settings-sep">至</span>
+                      <input id="shell-set-attach-delay-max" type="number" min="0" step="0.1" class="settings-input" />
+                    </div>
+                  </div>
+                </div>
+                <div class="settings-actions">
+                  <button class="panel-btn" id="shell-btn-settings-save">保存设置</button>
+                  <button class="panel-btn" id="shell-btn-settings-reset">恢复默认</button>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-title">技能与代理（Skills / Agents）</div>
+                  <div class="settings-row settings-row-col">
+                    <button class="panel-btn" id="shell-btn-skills-send">刷新技能与代理</button>
+                    <span class="settings-hint">重新扫描技能/代理目录，并把最新清单发给 AI</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- 项目面板：项目目录 + 初始化/文档/催促 + token 用量 + 压缩/自动压缩 -->
+            <div class="panel-content" data-panel-content="project" hidden>
+              <div class="settings-form">
+                <div class="settings-section">
+                  <div class="settings-section-title">项目目录</div>
+                  <div class="settings-row settings-row-col">
+                    <span class="project-dir-path" id="shell-project-dir-path">未选择</span>
+                  </div>
+                  <div class="settings-row">
+                    <button class="panel-btn" id="shell-btn-init-project">初始化项目</button>
+                    <button class="panel-btn" id="shell-btn-change-dir" title="修改项目目录（不重新发送初始提示）">修改目录</button>
+                  </div>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-title">更多操作</div>
+                  <div class="settings-row">
+                    <button class="panel-btn" id="shell-btn-gen-doc" title="让 AI 生成项目说明文档 (CUCKOO.md)">生成项目说明</button>
+                    <button class="panel-btn" id="shell-btn-nudge" title="AI 卡住时，点我给 AI 发一句继续">催促继续</button>
+                  </div>
+                </div>
+                <div class="settings-section" id="shell-usage-section">
+                  <div class="settings-section-title">Token 用量</div>
+                  <div class="settings-row">
+                    <span class="settings-label">当前上下文</span>
+                    <span class="usage-value" id="shell-usage-context">0</span>
+                  </div>
+                  <div class="settings-row">
+                    <span class="settings-label">对话累计</span>
+                    <span class="usage-value" id="shell-usage-cumulative">0</span>
+                  </div>
+                  <div class="settings-row">
+                    <span class="settings-label">窗口累计</span>
+                    <span class="usage-value" id="shell-usage-window">0</span>
+                  </div>
+                  <div class="settings-row">
+                    <span class="settings-label">今日累计</span>
+                    <span class="usage-value" id="shell-usage-today">0</span>
+                  </div>
+                  <div class="settings-row">
+                    <span class="settings-label">系统总累计</span>
+                    <span class="usage-value" id="shell-usage-system">0</span>
+                  </div>
+                  <div class="settings-row">
+                    <button class="panel-btn" id="shell-btn-compact" title="压缩上下文：生成摘要并分享最近对话，在新会话继续">压缩上下文</button>
+                  </div>
+                </div>
+                <div class="settings-section">
+                  <div class="settings-section-title">自动压缩</div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="shell-auto-compact-enabled">自动压缩</label>
+                    <input id="shell-auto-compact-enabled" type="checkbox" class="settings-checkbox" />
+                  </div>
+                  <div class="settings-row">
+                    <span class="settings-hint">超过</span>
+                    <input id="shell-auto-compact-threshold" type="number" min="1" max="1000" step="1" class="settings-input" />
+                    <span class="settings-hint">万 tokens 时触发</span>
+                  </div>
+                  <div class="settings-row">
+                    <button class="panel-btn" id="shell-btn-auto-compact-save">保存自动压缩设置</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="panel-toast" id="panel-toast" hidden></div>
+        </aside>
+        <div class="viewport"></div>
+      </div>
+    </div>
+    </div>
+    <!-- 导航条：默认隐藏的浮层（position: fixed，不占布局高度），位于常驻标题栏下沿。
+         滑出时由 shell.js 加 .visible；主进程同步把 view 下移 44px 露出浮层。
+         唤出方式：标题栏导航图标 / Ctrl+L（无 hover 热区——常驻标题栏已占顶部）。 -->
+    <header class="navbar" id="navbar">
       <button class="nav-btn disabled" id="btn-back" title="后退">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
       <button class="nav-btn disabled" id="btn-forward" title="前进">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
-      </button>
-      <button class="nav-btn" id="btn-reload" title="刷新">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
       </button>
       <div class="url-wrap">
         <svg class="lock" id="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
         <input class="url-input" id="url-input" placeholder="输入网址后回车" spellcheck="false" autocomplete="off"/>
       </div>
-      <div class="divider"></div>
-      <button class="nav-btn" id="btn-home" title="主页">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
-      </button>
-    </div>
-    <div class="statusbar">
-      <div class="sb-item" title="对话上下文：本会话当前占用的 token 总量">
-        <span class="sb-icon">💬</span>
-        <span class="sb-value" id="sb-context">0</span>
-      </div>
-      <div class="sb-item" title="对话累计：本会话累计消耗的 token">
-        <span class="sb-icon">📈</span>
-        <span class="sb-value" id="sb-cumulative">0</span>
-      </div>
-      <div class="sb-sep"></div>
-      <div class="sb-item" title="今日窗口：本窗口今天的累计消耗">
-        <span class="sb-icon">📅</span>
-        <span class="sb-value" id="sb-today">0</span>
-      </div>
-      <div class="sb-item" title="窗口累计：本窗口所有会话累计之和">
-        <span class="sb-icon">🪟</span>
-        <span class="sb-value" id="sb-window">0</span>
-      </div>
-      <div class="sb-item" title="系统总累计：所有窗口累计之和（含已关闭窗口）">
-        <span class="sb-icon">🌐</span>
-        <span class="sb-value" id="sb-system">0</span>
-      </div>
-    </div>
-    <div class="viewport"></div>
+    </header>
   </div>
-<script>
-  var api = window.shellAPI || {};
-  var input = document.getElementById('url-input');
-  var btnBack = document.getElementById('btn-back');
-  var btnForward = document.getElementById('btn-forward');
-  var currentUrl = '';
-
-  function setBtn(btn, enabled) {
-    if (enabled) btn.classList.remove('disabled');
-    else btn.classList.add('disabled');
-  }
-
-  if (api.onUrlUpdated) {
-    api.onUrlUpdated(function (data) {
-      if (!data) return;
-      currentUrl = data.url || '';
-      if (document.activeElement !== input) input.value = currentUrl;
-      setBtn(btnBack, data.canGoBack);
-      setBtn(btnForward, data.canGoForward);
-      var lock = document.getElementById('lock');
-      if (lock) lock.style.color = /^https:/i.test(currentUrl) ? '#5fbf7f' : '#c0a060';
-    });
-  }
-
-  input.addEventListener('focus', function () { input.select(); });
-  input.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') {
-      var url = input.value.trim();
-      if (!url) return;
-      if (!/^[a-z]+:\/\//i.test(url)) url = 'https://' + url;
-      if (api.navigate) api.navigate(url);
-      input.blur();
-    } else if (e.key === 'Escape') {
-      input.value = currentUrl;
-      input.blur();
-    }
-  });
-
-  // 对话 token 显示
-  function formatTokenCount(n) {
-    if (!isFinite(n) || n < 0) return '0';
-    if (n >= 100000000) return (n / 100000000).toFixed(2) + '亿';
-    if (n >= 10000) return (n / 10000).toFixed(2) + '万';
-    return String(Math.round(n));
-  }
-  var contextEl = document.getElementById('sb-context');
-  var cumulativeEl = document.getElementById('sb-cumulative');
-  var windowEl = document.getElementById('sb-window');
-  var todayEl = document.getElementById('sb-today');
-  var systemEl = document.getElementById('sb-system');
-  if (api.onTokenUpdated) {
-    api.onTokenUpdated(function (data) {
-      if (!data) return;
-      if (contextEl) contextEl.textContent = formatTokenCount(data.context);
-      if (cumulativeEl) cumulativeEl.textContent = formatTokenCount(data.cumulative);
-      if (windowEl) windowEl.textContent = formatTokenCount(data.windowCumulative);
-      if (todayEl) todayEl.textContent = formatTokenCount(data.todayCumulative);
-    });
-  }
-  // 系统总累计：订阅广播 + 加载时拉取一次
-  if (api.onTotalUpdated) {
-    api.onTotalUpdated(function (data) {
-      if (data && systemEl) systemEl.textContent = formatTokenCount(data.systemTotal);
-    });
-  }
-  if (api.getSystemTotal) {
-    api.getSystemTotal().then(function (r) {
-      if (r && r.success && systemEl) systemEl.textContent = formatTokenCount(r.systemTotal);
-    }).catch(function () {});
-  }
-
-  btnBack.addEventListener('click', function () { if (api.back) api.back(); });
-  btnForward.addEventListener('click', function () { if (api.forward) api.forward(); });
-  document.getElementById('btn-reload').addEventListener('click', function () { if (api.reload) api.reload(); });
-  document.getElementById('btn-home').addEventListener('click', function () { if (api.home) api.home(); });
+<script type="module">
+  import { initShell } from './shell.js';
+  import { initPanels } from './panels.js';
+  const api = window.shellAPI || {};
+  const panels = initPanels(api, document);
+  initShell(api, document, { onPanelChange: panels.handlePanelChange, onRevealUsage: panels.revealUsage });
 </script>
 </body>
 </html>

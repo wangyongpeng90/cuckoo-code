@@ -238,8 +238,6 @@ async function createShare(sessionId: string, messageIds: number[], headers: any
 
 /** 段1：当前页 —— 发摘要 → 清 IDB → 刷新 */
 async function runCompaction(projectDir?: string): Promise<void> {
-  const btn = document.getElementById('cuckoo-btn-compact') as any;
-  if (btn) { btn.disabled = true; btn.textContent = '压缩中...'; }
   retryEngine.setCompacting(true);
   watchdog.setSuspended(true);
 
@@ -275,7 +273,6 @@ async function runCompaction(projectDir?: string): Promise<void> {
     showToast('压缩失败: ' + err.message, 5000);
     retryEngine.setCompacting(false);
     watchdog.setSuspended(false);
-    if (btn) { btn.disabled = false; btn.textContent = '压缩'; }
   }
 }
 
@@ -349,7 +346,7 @@ function checkPendingInit(): void {
   console.log('[Cuckoo Compact] 检测到压缩后待初始化，3 秒后执行；项目目录=' + (projectDir || '(无)'));
   setTimeout(() => {
     try {
-      (window as any).electronAPI.initProject(projectDir || null, true);
+      window.electronAPI.initProject(projectDir || null, true);
     } catch (err) {
       console.error('[Cuckoo Compact] 压缩后初始化失败:', err);
     }

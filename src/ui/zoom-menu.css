@@ -1,0 +1,88 @@
+/**
+ * 缩放 mini 菜单（原生子窗口）——CherryStudio 式设计语言。
+ * 窗口本身非 transparent：圆角与阴影由系统绘制（macOS 原生观感），
+ * 本页只是满铺的卡片内容，无任何透明合成 hack。
+ */
+:root {
+  --ck-text: oklch(0.25 0.012 265);
+  --ck-text-dim: oklch(0.52 0.012 265);
+  --ck-hover: oklch(0.35 0.02 265 / 0.07);
+  --ck-active: oklch(0.35 0.02 265 / 0.11);
+  --ck-border-soft: oklch(0.5 0.02 265 / 0.08);
+  --ck-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0;
+  width: 100%; height: 100%;
+  background: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+.zoom-menu {
+  width: 100%; height: 100%;
+  padding: 7px;
+  display: flex; flex-direction: column; gap: 5px;
+  background: #ffffff;
+  color: var(--ck-text);
+}
+
+/* ===== 分段控件：− 倍率 ＋ ===== */
+.zoom-segment {
+  display: flex; align-items: stretch;
+  flex: 1;
+  min-height: 36px;
+  background: oklch(0.35 0.02 265 / 0.05);
+  border-radius: 9px;
+  padding: 3px;
+  gap: 3px;
+}
+.zoom-seg-btn {
+  width: 44px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 7px; cursor: pointer;
+  background: transparent; color: var(--ck-text-dim);
+  transition: background 0.14s var(--ck-ease-out), color 0.14s var(--ck-ease-out), transform 0.1s var(--ck-ease-out);
+}
+.zoom-seg-btn:hover { background: #ffffff; color: var(--ck-text); box-shadow: 0 1px 3px oklch(0 0 0 / 0.1); }
+.zoom-seg-btn:active { transform: scale(0.92); }
+.zoom-seg-btn svg { width: 15px; height: 15px; }
+.zoom-seg-value {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ck-text);
+  letter-spacing: -0.01em;
+}
+
+/* ===== 重置行 ===== */
+.zoom-reset {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; height: 32px; padding: 0 9px;
+  border: none; border-radius: 8px; cursor: pointer;
+  background: transparent; color: var(--ck-text);
+  font-size: 12.5px; font-family: inherit;
+  transition: background 0.14s var(--ck-ease-out);
+}
+.zoom-reset:hover { background: var(--ck-hover); }
+.zoom-reset:active { background: var(--ck-active); }
+.zoom-reset svg { width: 13px; height: 13px; color: var(--ck-text-dim); flex-shrink: 0; }
+.zoom-reset-label { flex: 1; min-width: 0; text-align: left; }
+
+/* kbd 胶囊：快捷键提示 */
+.zoom-kbd {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: 11px; font-weight: 500;
+  color: var(--ck-text-dim);
+  background: oklch(0.35 0.02 265 / 0.06);
+  border: 0.5px solid var(--ck-border-soft);
+  border-bottom-width: 1.5px;
+  border-radius: 5px;
+  line-height: 1.2;
+}

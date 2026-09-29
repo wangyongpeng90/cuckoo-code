@@ -2,11 +2,15 @@
 import { test } from 'vitest';
 import assert from 'node:assert';
 
-// 只测纯函数：generateId、formatTime、truncate
-// escapeHtml 等需要 DOM 的函数单独 mock
+// Task 8 之后 panel.ts 只剩瞬态 UI：注入（CSS/HTML）、toast、工具遮罩。
+// 面板/历史/首页模式/确认弹窗等已迁往 shell 或删除，对应断言一并移除。
 
-// 用简单 DOM stub
-const mkEl = () => ({ textContent: '', innerHTML: '', style: {}, classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } } });
+const mkEl = () => ({
+  textContent: '',
+  innerHTML: '',
+  style: {},
+  classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+});
 global.document = {
   createElement: () => mkEl(),
   getElementById: () => null,
@@ -14,83 +18,36 @@ global.document = {
   body: { appendChild: () => {} },
 };
 global.requestAnimationFrame = (fn) => fn();
-global.window = { location: { href: 'https://chat.deepseek.com/' } };
-global.setInterval = () => 0;
-global.clearInterval = () => {};
 global.setTimeout = (_fn, _ms) => 0;
 global.clearTimeout = () => {};
 
 const ui = await import('../../src/overlay/panel.js');
 
-test('generateId 格式', () => {
-  const id1 = ui.generateId();
-  const id2 = ui.generateId();
-  assert.match(id1, /^cmd_\d+_\d+$/);
-  assert.notStrictEqual(id1, id2);
-});
-
-test('formatTime 格式 HH:mm:ss', () => {
-  const s = ui.formatTime(new Date(2026, 0, 1, 9, 5, 3).getTime());
-  assert.strictEqual(s, '09:05:03');
-});
-
-test('truncate 基本与默认长度', () => {
-  assert.strictEqual(ui.truncate('hello'), 'hello');
-  assert.strictEqual(ui.truncate('abcdefghij', 5), 'abcde...');
-  assert.strictEqual(ui.truncate(''), '');
-  assert.strictEqual(ui.truncate(null), '');
-  const long = 'x'.repeat(60);
-  assert.strictEqual(ui.truncate(long).length, 53);
-});
-
-test('escapeHtml 返回字符串', () => {
-  assert.strictEqual(typeof ui.escapeHtml('<script>'), 'string');
-});
-
-test('updateHomeMode 首页模式', () => {
-  assert.doesNotThrow(() => ui.updateHomeMode());
+test('injectCSS/injectOverlay 不抛错', () => {
+  assert.doesNotThrow(() => ui.injectCSS());
+  assert.doesNotThrow(() => ui.injectOverlay());
 });
 
 test('showToast 不抛错', () => {
   assert.doesNotThrow(() => ui.showToast('test'));
 });
 
-test('setTaskStatus 不抛错', () => {
-  assert.doesNotThrow(() => ui.setTaskStatus(true));
+test('showToolMask/hideToolMask 不抛错（含取消回调形态）', () => {
+  assert.doesNotThrow(() => ui.showToolMask());
+  assert.doesNotThrow(() => ui.showToolMask(() => {}));
+  assert.doesNotThrow(() => ui.hideToolMask());
 });
 
-test('showOverlay/hideOverlay/forceShowOverlay 不抛错', () => {
-  assert.doesNotThrow(() => ui.showOverlay());
-  assert.doesNotThrow(() => ui.hideOverlay());
-  assert.doesNotThrow(() => ui.forceShowOverlay());
+test('已删除的面板 API 不再导出', () => {
+  const removed = [
+    'showConfirmDialog', 'setTaskStatus', 'showOverlay', 'hideOverlay',
+    'displayCommand', 'displayResult', 'handleExecute', 'handleIgnore',
+    'addHistory', 'renderHistory', 'commandHistory', 'flashBadge',
+    'updateHomeMode', 'setSuppressHomeMode', 'forceShowOverlay',
+    'startOverlayWatcher', 'showFirstTimeDialog', 'hideFirstTimeDialog',
+    'generateId', 'formatTime', 'truncate',
+  ];
+  for (const name of removed) {
+    assert.strictEqual(ui[name], undefined, 'panel.js 不应再导出 ' + name);
+  }
 });
-
-test('displayCommand 更新预览', () => {
-  assert.doesNotThrow(() => ui.displayCommand({ command: 'echo hi' }));
-});
-
-test('handleExecute/handleIgnore 不抛错', async () => {
-  await ui.handleExecute();
-  ui.handleIgnore();
-});
-
-test('addHistory 添加记录', () => {
-  ui.commandHistory.length = 0;
-  ui.addHistory({ id: '1', command: 'echo', success: true, canceled: false, output: 'x', timestamp: Date.now() });
-  assert.strictEqual(ui.commandHistory.length, 1);
-  assert.strictEqual(ui.commandHistory[0].id, '1');
-});
-
-test('renderHistory 空列表', () => {
-  ui.commandHistory.length = 0;
-  assert.doesNotThrow(() => ui.renderHistory());
-});
-
-test('flashBadge 不抛错', () => {
-  assert.doesNotThrow(() => ui.flashBadge('test'));
-});
-
-test('startOverlayWatcher 不抛错', () => {
-  assert.doesNotThrow(() => ui.startOverlayWatcher());
-});
-

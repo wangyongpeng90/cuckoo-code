@@ -4,293 +4,37 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>选择平台 - Cuckoo Code</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-      background: radial-gradient(ellipse at center, #1a1c2e 0%, #0d0f1a 100%);
-      color: #dde1ff;
-      height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      user-select: none;
-    }
-
-    .container {
-      text-align: center;
-      padding: 40px;
-    }
-
-    .title {
-      font-size: 28px;
-      font-weight: 700;
-      letter-spacing: 1px;
-      margin-bottom: 8px;
-      color: #c8ccff;
-    }
-
-    .subtitle {
-      font-size: 14px;
-      color: #8a90b8;
-      margin-bottom: 40px;
-    }
-
-    .platform-list {
-      display: flex;
-      gap: 24px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    .platform-card {
-      position: relative;
-      width: 200px;
-      padding: 28px 20px;
-      background: rgba(255, 255, 255, 0.04);
-      border: 1px solid rgba(139, 147, 255, 0.2);
-      border-radius: 16px;
-      cursor: pointer;
-      transition: all 0.25s ease;
-      text-align: center;
-    }
-
-    .platform-delete {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 20px;
-      height: 20px;
-      line-height: 18px;
-      text-align: center;
-      background: rgba(255, 107, 122, 0.2);
-      color: #ff6b7a;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 12px;
-      display: none;
-    }
-
-    .platform-card:hover .platform-delete {
-      display: block;
-    }
-
-    .platform-delete:hover {
-      background: rgba(255, 107, 122, 0.4);
-      color: #fff;
-    }
-
-    .platform-replace {
-      position: absolute;
-      top: 8px;
-      right: 32px;
-      width: 20px;
-      height: 20px;
-      line-height: 18px;
-      text-align: center;
-      background: rgba(139, 147, 255, 0.2);
-      color: #8b93ff;
-      border: none;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 12px;
-      display: none;
-    }
-
-    .platform-card:hover .platform-replace {
-      display: block;
-    }
-
-    .platform-replace:hover {
-      background: rgba(139, 147, 255, 0.4);
-      color: #fff;
-    }
-
-    .platform-card:hover {
-      background: rgba(139, 147, 255, 0.15);
-      border-color: rgba(139, 147, 255, 0.5);
-      transform: translateY(-4px);
-      box-shadow: 0 12px 30px rgba(109, 118, 255, 0.25);
-    }
-
-    .platform-logo {
-      width: 56px;
-      height: 56px;
-      margin: 0 auto 16px;
-      background: #fff;
-      border-radius: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      padding: 12px;
-    }
-
-    .platform-logo img {
-      width: 100%;
-      height: 100%;
-      object-fit: contain;
-      display: block;
-    }
-
-    .platform-logo .logo-fallback {
-      font-size: 28px;
-      font-weight: 800;
-      color: #6d76ff;
-    }
-
-    .platform-name {
-      font-size: 16px;
-      font-weight: 600;
-      color: #c8ccff;
-    }
-
-    .platform-desc {
-      font-size: 12px;
-      color: #8a90b8;
-      margin-top: 6px;
-    }
-  </style>
+  <link rel="stylesheet" href="./platform-select.css">
 </head>
 <body>
   <div class="container">
     <div class="title">Cuckoo Code</div>
     <div class="subtitle">选择要使用的 AI 平台</div>
+    <div class="quick-actions">
+      <div class="quick-actions-title">快速操作</div>
+      <div class="quick-actions-row">
+        <button id="ps-btn-init-project" class="quick-btn primary">初始化项目</button>
+        <button id="ps-btn-change-dir" class="quick-btn" title="修改项目目录（不重新发送初始提示）">修改项目目录</button>
+      </div>
+      <div class="quick-dir">
+        <span class="quick-dir-label">当前项目目录</span>
+        <span id="ps-project-dir" class="quick-dir-path">未选择</span>
+      </div>
+      <div id="ps-dir-hint" class="quick-dir-hint">尚未选择项目目录，点击「初始化项目」选择目录并开始</div>
+    </div>
     <div id="platform-list" class="platform-list">
-      <div class="cuckoo-empty" style="color:#8a90b8;font-size:14px;">加载中...</div>
+      <div class="cuckoo-empty">加载中...</div>
     </div>
   </div>
-  <script>
-    // 等待 preload 注入的 API
-    async function loadPlatforms() {
-      try {
-        const res = await window.electronAPI.listProviders();
-        const providers = (res && res.success && res.providers) || [];
-        const listEl = document.getElementById('platform-list');
-        if (!providers.length) {
-          listEl.innerHTML = '<div style="color:#8a90b8;font-size:14px;">暂无可用平台</div>';
-          return;
-        }
-        listEl.innerHTML = providers.map(function (p) {
-          const actions = p.custom
-            ? '<button class="platform-replace" data-id="' + p.id + '" title="替换">↻</button>' +
-              '<button class="platform-delete" data-id="' + p.id + '" data-path="' + (p.path || '') + '" title="删除">×</button>'
-            : '';
-          return '<div class="platform-card" data-id="' + p.id + '">' +
-            actions +
-            '<div class="platform-logo" data-name="' + p.name + '">' +
-              '<img src="logos/' + encodeURIComponent(p.id) + '.svg" alt="' + p.name + ' logo" />' +
-            '</div>' +
-            '<div class="platform-name">' + p.name + '</div>' +
-            '<div class="platform-desc">点击进入</div>' +
-          '</div>';
-        }).join('') +
-        '<div class="platform-card" id="platform-import-card">' +
-          '<div class="platform-logo">' +
-            '<span style="font-size:28px;color:#6d76ff;line-height:1;">+</span>' +
-          '</div>' +
-          '<div class="platform-name">导入 Provider</div>' +
-          '<div class="platform-desc">选择 JS 文件</div>' +
-        '</div>';
-
-        listEl.querySelectorAll('.platform-logo img').forEach(function (img) {
-          img.addEventListener('error', function () {
-            const container = img.parentElement;
-            const name = container.getAttribute('data-name') || '?';
-            container.innerHTML = '<span class="logo-fallback">' + name.charAt(0).toUpperCase() + '</span>';
-          });
-        });
-
-        listEl.querySelectorAll('.platform-card[data-id]').forEach(function (card) {
-          card.addEventListener('click', async function () {
-            const providerId = card.dataset.id;
-            try {
-              await window.electronAPI.selectPlatform(providerId);
-            } catch (err) {
-              // 失败提示
-              alert('进入平台失败: ' + (err && err.message ? err.message : err));
-            }
-          });
-        });
-
-        listEl.querySelectorAll('.platform-delete').forEach(function (btn) {
-          btn.addEventListener('click', async function (e) {
-            e.stopPropagation();
-            const filePath = btn.dataset.path;
-            const providerId = btn.dataset.id;
-            if (!filePath) return;
-            if (!confirm('确定删除这个自定义 Provider 吗？')) return;
-            try {
-              const res = await window.electronAPI.removeProvider(filePath, providerId);
-              if (res && res.success) {
-                await loadPlatforms();
-              } else {
-                alert('删除失败: ' + ((res && res.error) || '未知错误'));
-              }
-            } catch (err) {
-              alert('删除失败: ' + (err.message || err));
-            }
-          });
-        });
-
-        listEl.querySelectorAll('.platform-replace').forEach(function (btn) {
-          btn.addEventListener('click', async function (e) {
-            e.stopPropagation();
-            const providerId = btn.dataset.id;
-            try {
-              const res = await window.electronAPI.replaceProvider(providerId);
-              if (res && res.success) {
-                alert('替换成功');
-                await loadPlatforms();
-              } else if (res && res.canceled) {
-                // 用户取消，不处理
-              } else {
-                alert('替换失败: ' + ((res && res.error) || '未知错误'));
-              }
-            } catch (err) {
-              alert('替换失败: ' + (err.message || err));
-            }
-          });
-        });
-
-        const importCard = document.getElementById('platform-import-card');
-        if (importCard) {
-          importCard.addEventListener('click', async function () {
-            try {
-              const res = await window.electronAPI.importProvider();
-              if (res && res.success) {
-                // 导入成功后刷新平台列表
-                await loadPlatforms();
-              } else if (res && res.canceled) {
-                // 用户取消，不处理
-              } else {
-                alert('导入失败: ' + ((res && res.error) || '未知错误'));
-              }
-            } catch (err) {
-              alert('导入失败: ' + (err.message || err));
-            }
-          });
-        }
-      } catch (err) {
-        document.getElementById('platform-list').innerHTML =
-          '<div style="color:#ff6b7a;font-size:14px;">加载失败: ' + (err && err.message ? err.message : err) + '</div>';
-      }
-    }
-
-    // 等 API 就绪
+  <div id="ps-toast" class="ps-toast" hidden></div>
+  <script type="module">
+    import { initPlatformSelect } from './platform-select.js';
     if (window.electronAPI && window.electronAPI.listProviders) {
-      loadPlatforms();
+      initPlatformSelect(window.electronAPI, document);
     } else {
       // preload 可能还没注入完成，稍等再试
       setTimeout(function () {
-        if (window.electronAPI && window.electronAPI.listProviders) {
-          loadPlatforms();
-        } else {
-          document.getElementById('platform-list').innerHTML =
-            '<div style="color:#ff6b7a;font-size:14px;">API 未就绪，请重启应用</div>';
-        }
+        initPlatformSelect(window.electronAPI || {}, document);
       }, 500);
     }
   </script>

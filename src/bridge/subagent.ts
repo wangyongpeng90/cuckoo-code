@@ -85,7 +85,7 @@ export function initSubagentIfNeeded(): SubagentConfig | null {
   const extraPrompt = buildSubagentPrompt(cfg);
   setTimeout(async () => {
     try {
-      await (window as any).electronAPI.initProject(cfg.projectDir || null, false, extraPrompt, true);
+      await window.electronAPI.initProject(cfg.projectDir || null, false, extraPrompt, true);
       console.log('[Cuckoo Code][子代理] 已调 initProject（复用初始化流程）');
     } catch (e: any) {
       console.error('[Cuckoo Code][子代理] initProject 失败: ' + (e && e.message));

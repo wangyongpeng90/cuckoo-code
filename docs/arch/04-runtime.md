@@ -135,7 +135,7 @@ AI 看到结果 → 继续下一步（回到顶部）
 - 主进程 `mcp/client.ts` 维护与各 server 的连接（stdio / http）
 - 工具 `mcpListServers` / `mcpGetTools` / `mcpCall` 通过 `__hostBridge` 调用
 - 提示词组装时（`prompt-builder.ts`）注入已启用 server 列表
-- 配置面板在 `overlay/panels/mcp-manager.ts`
+- 配置面板在 shell 侧栏（`src/ui/shell.html` + `src/ui/panels.js`）
 
 ## 8. 会话与项目
 

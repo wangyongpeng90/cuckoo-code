@@ -11,7 +11,7 @@
 Cuckoo Code 是一个**零 Token 成本**的 AI Agent 桌面应用：
 
 - 用 Electron 把 AI 网页版（DeepSeek / Claude / ChatGPT）嵌入本地窗口
-- 注入覆盖层 UI 与"网络拦截 hook"，捕获 AI 的完整回复
+- 常驻界面由壳页面承担（左侧图标栏 + 侧面板 + 顶部地址栏）；AI 页面内只注入瞬态 UI（工具遮罩 / toast / 重试倒计时）与"网络拦截 hook"，捕获 AI 的完整回复
 - 引导 AI 输出 `cuckoo` 代码块（JavaScript 工具调用）
 - 在受限 vm 沙箱执行，结果回传 AI，形成 Agent 循环
 - **不需要 API Key**，复用网页版账号
@@ -52,16 +52,18 @@ Cuckoo Code 是一个**零 Token 成本**的 AI Agent 桌面应用：
 │ Electron BrowserWindow（每个 profile 一个）              │
 │                                                          │
 │  ┌──────────────────────────────────────────────────┐   │
-│  │ webContents = 地址栏壳页面（src/ui/shell.html）    │   │
+│  │ webContents = 壳页面（src/ui/shell.html）          │   │
+│  │   左侧图标栏 + 侧面板 + 顶部地址栏（浅色主题）       │   │
 │  │   preload: src/app/shell-preload.ts               │   │
 │  │   ↑ shellAPI: navigate/back/forward/reload/home   │   │
+│  │   ↑ 面板状态：setPanelOpen / onPanelRestore        │   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                          │
 │  ┌──────────────────────────────────────────────────┐   │
 │  │ WebContentsView = AI 网页（deepseek.com 等）       │   │
 │  │   preload: src/bridge/entry.ts                    │   │
 │  │   ↑ 注入 hook（拦截 fetch/XHR 抓回复）             │   │
-│  │   ↑ 注入覆盖层 UI（overlay/）                      │   │
+│  │   ↑ 注入瞬态 UI（overlay/：工具遮罩/toast/倒计时）  │   │
 │  └──────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
          │ IPC（contextBridge electronAPI）
@@ -75,7 +77,7 @@ Cuckoo Code 是一个**零 Token 成本**的 AI Agent 桌面应用：
 └─────────────────────────────────────────────────────────┘
 ```
 
-**关键点**：AI 网页在一个 **WebContentsView** 里，窗口自身的 `webContents` 是地址栏壳页面。因此**任何"对当前 AI 页面操作"的代码，都要通过 `windowState.getContextByWebContents(...)` 拿到 `ctx.view`，而不是 `ctx.win.webContents`**。
+**关键点**：AI 网页在一个 **WebContentsView** 里，窗口自身的 `webContents` 是壳页面（图标栏 / 顶栏 / 侧面板，浅色主题）。因此**任何"对当前 AI 页面操作"的代码，都要通过 `windowState.getContextByWebContents(...)` 拿到 `ctx.view`，而不是 `ctx.win.webContents`**。原覆盖层的面板/悬浮球/快捷键已删除或迁入 shell：面板状态存 `ctx.panelId`（主进程），`setPanelOpen` IPC 驱动布局重排；设置改由主进程 `settings-store.ts`（`userData/settings.json`）全局共享，工具活动历史在 `tool-activity.ts`（内存，按窗口隔离）。
 
 ---
 

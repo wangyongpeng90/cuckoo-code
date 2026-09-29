@@ -7,17 +7,16 @@
  * 检测方式：hook（主世界）在流静默超过阈值时派发 'cuckoo-stream-idle' 事件，
  * 本模块（隔离世界）订阅后按次数发提示词。
  *
- * 配置（localStorage，每窗口独立）：
- *  - cuckoo-xhr-idle-timeout   静默阈值（毫秒，默认 300000，<=0 禁用；hook 侧读取）
- *  - cuckoo-watchdog-prompt    超时提示词（默认"请继续"）
- *  - cuckoo-watchdog-count     最大催次数（默认 3，负数=无限）
+ * 配置来源：主进程设置（settings.json），经 overlay/settings.ts 的内存缓存同步读取：
+ *  - xhrIdleTimeout   静默阈值（毫秒，<=0 禁用；由 overlay/settings.ts 镜像到
+ *                     localStorage['cuckoo-xhr-idle-timeout'] 供主世界 hook 读取）
+ *  - watchdogPrompt   超时提示词（默认"请继续"）
+ *  - watchdogCount    最大催次数（默认 3，负数=无限）
  */
 import { showToast } from '../../overlay/panel.js';
 import { getProviderByUrl } from '../../providers/registry.js';
 import { sendToChat } from '../../overlay/chat-input.js';
-
-const DEFAULT_PROMPT = '请继续';
-const DEFAULT_COUNT = 3;
+import { getCachedSettings } from '../../overlay/settings.js';
 
 let idleCount = 0;
 // 暂停开关：压缩等流程进行中时置 true，完全停摆
@@ -35,15 +34,8 @@ function getCurrentSessionId(): string | null {
 }
 
 function readConfig(): { prompt: string; count: number } {
-  let prompt = DEFAULT_PROMPT;
-  let count = DEFAULT_COUNT;
-  try {
-    const p = localStorage.getItem('cuckoo-watchdog-prompt');
-    if (p) prompt = p;
-    const c = parseInt(localStorage.getItem('cuckoo-watchdog-count') as string, 10);
-    if (Number.isFinite(c)) count = c;
-  } catch (_) {}
-  return { prompt, count };
+  const s = getCachedSettings();
+  return { prompt: s.watchdogPrompt, count: s.watchdogCount };
 }
 
 /** 测试用：当前静默催继续计数 */

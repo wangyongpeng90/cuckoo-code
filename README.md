@@ -20,7 +20,7 @@
 
 > 📐 **要改代码 / 做新需求？先读 [架构与开发指南](docs/architecture.md)**（目录结构、依赖规则、构建流程、任务手册）。
 
-它通过 Electron 将 AI 网页版（DeepSeek、Claude 等）嵌入本地窗口，并注入侧边覆盖层。AI 被系统提示词引导生成工具调用（JavaScript 代码块），经用户确认后在本地沙箱中执行，再把结果回传给 AI。整个过程不需要 API Key，不产生 API 调用费用——你用的是网页版账号，而不是按 Token 计费的接口。
+它通过 Electron 将 AI 网页版（DeepSeek、Claude 等）嵌入本地窗口，窗口采用壳式布局：左侧图标栏 + 可展开侧面板，顶部为地址栏。AI 被系统提示词引导生成工具调用（JavaScript 代码块），经用户确认后在本地沙箱中执行，再把结果回传给 AI。整个过程不需要 API Key，不产生 API 调用费用——你用的是网页版账号，而不是按 Token 计费的接口。
 
 ---
 
@@ -45,7 +45,7 @@
 ## 主要功能
 
 - **多窗口管理**：每个窗口独立 Profile 上下文，互不干扰；可勾选「默认」在启动时自动打开
-- **地址栏**：顶部地址栏显示/复制 URL、前进后退刷新、快速跳转；下方状态条显示 token 用量
+- **地址栏**：顶部地址栏显示/复制 URL、前进后退刷新、快速跳转；顶栏 token 徽章显示当前会话上下文用量（点击展开「项目」面板的用量区）
 - **项目初始化**：选择项目目录后，AI 获得目录树和系统提示词，操作基于真实项目上下文
 - **Skill 支持**：对齐 Claude Code 的技能机制（项目级 `.cuckoo/skills/` + 用户级 `~/.cuckoo/skills/`），渐进式披露——教 AI 掌握特定领域的流程/规范/脚本。**→ [配置与使用说明](docs/skills.md)**
 - **Agent 支持**：对齐 Claude Code 的子代理机制（项目级 `.cuckoo/agents/` + 用户级 `~/.cuckoo/agents/`），主对话可把任务委派给独立上下文的子代理，只回摘要——既隔离上下文又支持专门化。**→ [配置与使用说明](docs/agents.md)**
@@ -53,7 +53,7 @@
 - **工具调用系统**：AI 可调用读写文件、搜索代码、执行命令、查询数据库等工具
 - **工具执行遮罩**：执行期间在 AI 页面显示遮罩，可点击「停止」取消回传
 - **MCP 支持**：采用 Claude Desktop 兼容格式配置，支持 stdio / http 类型 server
-- **覆盖层面板**：显示命令预览、执行结果和历史记录，支持 Ctrl+Shift+C 或 Esc 切换
+- **任务面板**：左侧栏「任务」面板显示命令预览、执行结果和历史记录；Ctrl+Shift+C 或 Esc 折叠/展开侧面板
 - **上下文压缩**：长会话自动压缩（清 IDB + 刷新 + 建分享链接），避免超上下文上限
 - **自动重试**：两类机制——① 回复被服务端截断/失败时按退避重试；② 看门狗检测 SSE 流静默时催「请继续」
 - **会话持久化**：登录状态和设置保存到 %APPDATA%/cuckoo-ai-pro-session
@@ -157,7 +157,7 @@ MCP 配置采用 **Claude Desktop 兼容格式**（可直接分享/导入）：
 }
 ```
 
-支持 stdio（command + args）和 http（url + headers）两种类型。启用/禁用状态单独存储，不污染主配置。通过覆盖层的「MCP」按钮打开管理面板。
+支持 stdio（command + args）和 http（url + headers）两种类型。启用/禁用状态单独存储，不污染主配置。通过左侧栏的「MCP」面板打开管理界面。
 
 ---
 
@@ -269,9 +269,12 @@ cuckoo-code/
 ├── src/
 │   ├── app/                 # 应用外壳（主进程）
 │   │   ├── entry.ts         # 应用入口、窗口创建、应用菜单
-│   │   ├── shell-preload.ts # 地址栏壳页面 preload
+│   │   ├── shell-preload.ts # 壳页面 preload（window.shellAPI）
 │   │   ├── window.ts        # 多窗口管理（WebContentsView 架构）
+│   │   ├── layout.ts        # 壳布局纯函数（图标栏/面板/圆角卡片 bounds）
 │   │   ├── profile.ts       # 窗口 Profile 管理
+│   │   ├── settings-store.ts # 设置主进程持久化（settings.json，全局共享）
+│   │   ├── tool-activity.ts # 工具活动历史（主进程内存，按窗口隔离）
 │   │   ├── token-stats.ts   # 系统总累计 token（跨窗口持久化）
 │   │   └── ipc/             # IPC 处理器（project/session/command/tool/renderer/shell）
 │   ├── session/             # 会话与项目上下文
@@ -285,11 +288,9 @@ cuckoo-code/
 │   │   ├── intercept/       # 网络拦截响应处理
 │   │   ├── parser/          # JS/JSON 工具调用解析
 │   │   └── loop/            # 执行器、看门狗、重试引擎
-│   ├── overlay/             # 覆盖层 UI
-│   │   ├── panel.ts         # 面板基础能力（注入、提示、历史）
-│   │   ├── events.ts        # 事件绑定（编排）
-│   │   ├── panels/          # 各面板（窗口管理 / MCP / 设置）
-│   │   ├── fab.ts           # 悬浮球拖动
+│   ├── overlay/             # AI 页面内瞬态 UI（工具遮罩 / toast / 重试倒计时）
+│   │   ├── panel.ts         # 瞬态 UI 基础（注入、提示、遮罩显隐）
+│   │   ├── events.ts        # 事件绑定（token 统计 / 自动压缩 / 压缩 relay）
 │   │   └── template/        # HTML/CSS 模板（构建期生成 TS）
 │   ├── tools/               # 工具系统
 │   │   ├── api.d.ts         # AI 工具契约（构建期生成）
@@ -305,7 +306,10 @@ cuckoo-code/
 │   ├── mcp/                 # MCP 客户端与配置
 │   ├── infra/               # 基础设施（路径 / 换行符 / 日志 / 危险命令）
 │   ├── prompt/              # 各平台提示词模板
-│   └── ui/                  # 壳页面（shell.html / platform-select.html）
+│   └── ui/                  # 壳页面与平台选择页（浅色主题）
+│       ├── shell.html/css/js # 壳骨架：左侧图标栏 / 顶栏 / 侧面板状态机
+│       ├── panels.js        # 侧面板内容（主页/会话/窗口/MCP/任务/设置/项目）
+│       └── platform-select.* # 首次选择平台页面（导入/删除自定义 Provider）
 ├── scripts/                 # 构建脚本（hook 打包、工具 API 生成）
 ├── test/                    # 单元测试
 └── out/                     # TypeScript 编译产物

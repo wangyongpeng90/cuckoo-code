@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>缩放</title>
+<link rel="stylesheet" href="./zoom-menu.css">
+</head>
+<body>
+  <!-- 缩放 mini 菜单（原生子窗口）：macOS 式分段控件 − % ＋ + 重置行。
+       点击 +/- 不关闭窗口（支持连续缩放），点击外部或重置后失焦即关。 -->
+  <div class="zoom-menu">
+    <div class="zoom-segment">
+      <button class="zoom-seg-btn" data-zoom="out" title="缩小" aria-label="缩小">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+      </button>
+      <div class="zoom-seg-value" id="zoom-value">100%</div>
+      <button class="zoom-seg-btn" data-zoom="in" title="放大" aria-label="放大">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+      </button>
+    </div>
+    <button class="zoom-reset" data-zoom="reset">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      <span class="zoom-reset-label">重置缩放</span>
+      <kbd class="zoom-kbd" id="zoom-reset-kbd">⌘0</kbd>
+    </button>
+  </div>
+<script type="module">
+  import { initZoomMenu } from './zoom-menu.js';
+  initZoomMenu(window.zoomMenuAPI || {}, document);
+</script>
+</body>
+</html>

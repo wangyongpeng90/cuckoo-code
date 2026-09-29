@@ -13,6 +13,8 @@ import * as updater from '../updater/index.js';
 import * as mcpConfig from '../mcp/config.js';
 import * as mcpClient from '../mcp/client.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
+import { computeViewBounds, SHELL_LAYOUT } from './layout.js';
+import { decideViewKeyAction } from './shortcuts.js';
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, ipcMain: ipcMainForProfile } = require('electron');
@@ -49,7 +51,7 @@ if (RENDERER_LOG_DIR) {
 import { registerIpcHandlers } from './ipc/index.js';
 import { injectSubagentDeps, runAgent as runAgentImpl } from './subagent.js';
 import { injectAgentRunner } from '../tools/impl/run-agent.js';
-import { pushUrlState } from './ipc/shell.js';
+import { pushUrlState, applyZoom } from './ipc/shell.js';
 
 // 退出前需要 flush 的 sessions
 const sessionsToFlush = new Set<any>();
@@ -93,6 +95,13 @@ function createWindow(profile: any) {
     ...(defaultBounds.x !== undefined ? { x: defaultBounds.x + cascadeOffset, y: (defaultBounds.y || 0) + cascadeOffset } : {}),
     icon: resolveAsset('assets/icon.png'),
     title: 'Cuckoo Code Pro - ' + (provider ? provider.name : '未选择平台') + ' - ' + profileData.name,
+    // 无边框窗口（CherryStudio 式）：macOS 隐藏原生标题栏、红绿灯内嵌常驻标题栏。
+    // trafficLightPosition.y 是红绿灯容器顶边相对窗口顶部的偏移；42px 标题栏下
+    // 取 15 是实测最佳值（视觉居中，14 略偏上、16 明显偏下）。
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hidden', trafficLightPosition: { x: 13, y: 15 } }
+      : { frame: false }),
+    autoHideMenuBar: true,
     webPreferences: {
       // 壳页面 preload（只负责地址栏导航，与 AI 页面 preload 分离）
       preload: path.join(import.meta.dirname, 'shell-preload.js'),
@@ -125,12 +134,16 @@ function createWindow(profile: any) {
   });
   mainWindow.contentView.addChildView(view);
 
-  // 布局：AI 页面占地址栏下方区域，随窗口尺寸变化
-  const TOOLBAR_HEIGHT = 44 + 26; // 地址栏 44 + 状态条 26
+  // 布局：常驻标题栏 42 + 左图标栏 52 + 面板 280×开关 + 圆角卡片边距 10（见 src/app/layout.ts）；
+  // 导航条为浮层，默认不占高，滑出时临时下移 view（ctx.topbarVisible）
+  view.setBorderRadius(SHELL_LAYOUT.CARD_RADIUS);
   const layoutView = () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const [w, h] = mainWindow.getContentSize();
-    view.setBounds({ x: 0, y: TOOLBAR_HEIGHT, width: w, height: Math.max(0, h - TOOLBAR_HEIGHT) });
+    const ctx = windowState.getWindowContext(mainWindow.id);
+    const panelOpen = !!(ctx && ctx.panelId);
+    const topbarVisible = !!(ctx && ctx.topbarVisible);
+    view.setBounds(computeViewBounds(w, h, panelOpen, topbarVisible));
   };
   layoutView();
   mainWindow.on('resize', layoutView);
@@ -139,6 +152,17 @@ function createWindow(profile: any) {
   mainWindow.loadFile(resolveSrc('ui/shell.html'));
   mainWindow.webContents.on('did-finish-load', () => {
     pushUrlState(view);
+    // 回放面板状态 + 项目目录：壳页面重载后其 UI 状态丢失，需与主进程 ctx.panelId 重新对齐
+    try {
+      const ctx = windowState.getWindowContext(mainWindow.id);
+      mainWindow.webContents.send('shell-panel-restore', {
+        panelId: (ctx && ctx.panelId) || null,
+        // 导航条滑出期间壳重载会丢 .visible 类但主进程仍留着 view 下移的 44px 死区，一并回放
+        topbarVisible: !!(ctx && ctx.topbarVisible),
+      });
+      const dir = (ctx && ctx.sessionStore && ctx.sessionStore.state.selectedProjectDir) || null;
+      mainWindow.webContents.send('shell-project-dir-updated', dir);
+    } catch (_) {}
   });
 
   // 保存 session 引用（窗口销毁后 webContents 不可访问）
@@ -146,6 +170,12 @@ function createWindow(profile: any) {
 
   // 注册窗口上下文（记录 providerId，未确定时为空字符串）
   windowState.addWindow(mainWindow, profileData.id, profileData.providerId || '', sessionStore, view);
+  // 面板开关变化时由 shell-panel-state IPC 触发重排
+  const selfCtx = windowState.getWindowContext(mainWindow.id);
+  if (selfCtx) {
+    selfCtx.panelId = null;
+    selfCtx.relayout = layoutView;
+  }
   sessionsToFlush.add(winSession);
 
   // 更新主窗口引用
@@ -241,10 +271,29 @@ function createWindow(profile: any) {
     autoConnectMcp();
   });
 
-  view.webContents.on('before-input-event', (_event: any, input: any) => {
+  view.webContents.on('before-input-event', (event: any, input: any) => {
     if (input.key === 'F12') {
       view.webContents.toggleDevTools();
+      return;
     }
+    if (input.type !== 'keyDown') return;
+    // 原 overlay 快捷键迁入 shell（Task 10）：AI 页面聚焦时按键落在 view，
+    // 判定为壳动作（面板切换/收起、Ctrl+L 唤出导航条聚焦 URL）则 relay 给壳页面
+    // 并 preventDefault——否则会与菜单「停止加载」（曾占 Esc 加速器）或页面自身行为叠加触发。
+    const ctx = windowState.getContextByWebContents(view.webContents);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+    const action = decideViewKeyAction(input, ctx.panelId || null);
+    if (!action) return;
+    event.preventDefault();
+    // 缩放快捷键：主进程直接应用（view 是 AI 页面本体，无需经壳页面中转）
+    if (action === 'zoom-in' || action === 'zoom-out' || action === 'zoom-reset') {
+      applyZoom(ctx, action === 'zoom-in' ? 'in' : action === 'zoom-out' ? 'out' : 'reset');
+      return;
+    }
+    const channel = action === 'toggle-panel' ? 'shell-toggle-panel'
+      : action === 'close-panel' ? 'shell-close-panel'
+      : 'shell-focus-url';
+    ctx.win.webContents.send(channel);
   });
 
   // 关闭前记录窗口大小/位置（用 getNormalBounds 取"还原后"尺寸；closed 时窗口已销毁取不到）
@@ -293,6 +342,14 @@ function createSubagentWindow(parentProfileId: string, agentName: string): numbe
 }
 
 // ========== 应用菜单 ==========
+// 菜单「查看 → 缩放」作用于 AI 页面 view（而不是聚焦的壳页面 webContents，缩放壳 UI 无意义）。
+// 快捷键不走菜单加速器：AI 页面聚焦时由 before-input-event 直接应用，壳页面聚焦时由 shell.js 处理。
+function zoomFocusedWindow(focusedWindow: any, action: 'in' | 'out' | 'reset') {
+  if (!focusedWindow) return;
+  const ctx = windowState.getContextByWebContents(focusedWindow.webContents);
+  if (ctx) applyZoom(ctx, action);
+}
+
 function setupAppMenu() {
   const template = [
     {
@@ -363,7 +420,9 @@ function setupAppMenu() {
         },
         {
           label: '停止加载',
-          accelerator: 'Esc',
+          // 不配 Esc 加速器：Esc 已用于收起侧面板（view 侧 before-input-event 拦截，
+          // 壳聚焦时走页面 keydown）。加速器会在面板收起的同时误触发 stop()，
+          // 且壳页面聚焦时先消费 Esc 导致收起失效。停止加载仍可点此菜单项。
           click: (_item: any, focusedWindow: any) => {
             const ctx = focusedWindow ? windowState.getContextByWebContents(focusedWindow.webContents) : null;
             const view = ctx ? ctx.view : null;
@@ -390,9 +449,18 @@ function setupAppMenu() {
     {
       label: '查看',
       submenu: [
-        { role: 'resetZoom', label: '重置缩放' },
-        { role: 'zoomIn', label: '放大' },
-        { role: 'zoomOut', label: '缩小' },
+        {
+          label: '重置缩放',
+          click: (_item: any, focusedWindow: any) => zoomFocusedWindow(focusedWindow, 'reset'),
+        },
+        {
+          label: '放大',
+          click: (_item: any, focusedWindow: any) => zoomFocusedWindow(focusedWindow, 'in'),
+        },
+        {
+          label: '缩小',
+          click: (_item: any, focusedWindow: any) => zoomFocusedWindow(focusedWindow, 'out'),
+        },
         { type: 'separator' },
         { role: 'togglefullscreen', label: '切换全屏' },
         { type: 'separator' },
