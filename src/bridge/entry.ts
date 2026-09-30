@@ -22,6 +22,7 @@ import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/w
 import { initSubagentIfNeeded } from './subagent.js';
 import { initHarnessBridge } from './harness-bridge.js';
 import { initFeishuBridge } from './feishu-bridge.js';
+import { initMessageFold } from '../overlay/message-fold.js';
 
 const require = createRequire(import.meta.url);
 const { webFrame, ipcRenderer } = require('electron');
@@ -224,6 +225,9 @@ function init(): void {
       checkSessionChange();
     } catch (_) {}
   }, 15000);
+
+  // 消息折叠：把「【JS 执行结果汇总】」等渲染成工具卡片
+  try { initMessageFold(); } catch (err) { console.error('[Cuckoo Code] initMessageFold 失败:', err); }
 }
 
 if (document.readyState === 'loading') {

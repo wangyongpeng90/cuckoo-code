@@ -6,23 +6,28 @@
 <title>Cuckoo Harness</title>
 <style>
   :root {
-    --bg: #1a1a1a;
-    --bg-elev: #212121;
-    --surface: #262626;
-    --surface-hover: #2e2e2e;
-    --border: #333333;
-    --border-soft: #2a2a2a;
-    --text: #ececec;
-    --text-2: #b4b4b4;
-    --text-dim: #7a7a7a;
-    --accent: #d97757;
-    --accent-soft: rgba(217,119,87,0.14);
-    --green: #7fb069;
-    --red: #e06c75;
-    --amber: #d9a05b;
-    --user-bg: #2b2b2b;
+    /* 苹果风深灰：带一点冷调，层次分明 */
+    --bg: #1c1c1e;
+    --bg-elev: #232326;
+    --surface: #2a2a2e;
+    --surface-hover: #333338;
+    --border: #3a3a40;
+    --border-soft: #2e2e33;
+    --border-strong: #48484f;
+    --text: #f2f2f7;
+    --text-2: #b8b8c0;
+    --text-dim: #83838c;
+    --accent: #0a84ff;
+    --accent-soft: rgba(10,132,255,0.16);
+    --green: #30d158;
+    --red: #ff453a;
+    --amber: #ff9f0a;
+    --user-bg: #2c2c30;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,.28), 0 6px 20px rgba(0,0,0,.22);
     --mono: "SFMono-Regular", "SF Mono", "Cascadia Code", "Consolas", "Liberation Mono", monospace;
-    --sans: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+    --sans: -apple-system, "SF Pro Text", "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -31,40 +36,45 @@
     background: var(--bg); color: var(--text);
     overflow: hidden; font-size: 14px;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
   .app { display: flex; flex-direction: column; height: 100vh; }
 
-  /* ===== 顶栏 ===== */
+  /* ===== 顶栏（苹果风：毛玻璃质感 + 细分隔线） ===== */
   .topbar {
     display: flex; align-items: center; gap: 10px;
-    height: 40px; padding: 0 16px;
-    background: var(--bg); border-bottom: 1px solid var(--border-soft);
+    height: 46px; padding: 0 18px;
+    background: rgba(28,28,30,.72);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid rgba(255,255,255,.06);
     flex-shrink: 0; user-select: none; -webkit-app-region: drag;
   }
-  .brand { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--text-2); letter-spacing: .2px; }
-  .brand svg { width: 15px; height: 15px; color: var(--accent); }
+  .brand { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--text); letter-spacing: .1px; }
+  .brand svg { width: 16px; height: 16px; color: var(--accent); }
   .topbar .spacer { flex: 1; }
-  .status { font-size: 11.5px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
-  .status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); }
+  .status { font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); }
   .status.busy { color: var(--amber); }
   .status.busy .dot { background: var(--amber); animation: pulse 1.2s ease-in-out infinite; }
   .status.ready .dot { background: var(--green); }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
   .tb-btn {
     -webkit-app-region: no-drag;
-    height: 26px; padding: 0 11px; border-radius: 6px;
-    border: 1px solid var(--border); background: transparent;
-    color: var(--text-2); font-size: 11.5px; cursor: pointer;
-    font-family: inherit; transition: all .14s;
+    height: 30px; padding: 0 14px; border-radius: 9px;
+    border: none; background: rgba(255,255,255,.07);
+    color: var(--text-2); font-size: 12.5px; cursor: pointer;
+    font-family: inherit; transition: all .16s cubic-bezier(.4,0,.2,1);
   }
-  .tb-btn:hover { background: var(--surface); color: var(--text); border-color: var(--border); }
+  .tb-btn:hover { background: rgba(255,255,255,.13); color: var(--text); }
+  .tb-btn:active { transform: scale(.96); }
 
   /* ===== 消息流 ===== */
-  .stream { flex: 1; overflow-y: auto; padding: 20px 0 8px; position: relative; }
-  .stream::-webkit-scrollbar { width: 9px; }
-  .stream::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 5px; border: 2px solid var(--bg); background-clip: padding-box; }
-  .stream::-webkit-scrollbar-thumb:hover { background: #4a4a4a; background-clip: padding-box; border: 2px solid var(--bg); }
-  .wrap { max-width: 780px; margin: 0 auto; padding: 0 24px; }
+  .stream { flex: 1; overflow-y: auto; padding: 28px 0 12px; position: relative; }
+  .stream::-webkit-scrollbar { width: 10px; }
+  .stream::-webkit-scrollbar-thumb { background: rgba(255,255,255,.14); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+  .stream::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.24); background-clip: padding-box; }
+  .wrap { width: min(780px, calc(100% - 48px)); margin: 0 auto; }
 
   .empty { text-align: center; color: var(--text-dim); padding: 22vh 20px 0; font-size: 13px; line-height: 1.9; }
   .empty .glyph { margin-bottom: 16px; color: var(--accent); }
@@ -76,8 +86,8 @@
     border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--text-2);
   }
 
-  .msg { margin-bottom: 18px; animation: fade .16s ease; position: relative; }
-  @keyframes fade { from{opacity:0; transform:translateY(3px)} to{opacity:1; transform:none} }
+  .msg { margin-bottom: 24px; animation: fade .2s ease; position: relative; }
+  @keyframes fade { from{opacity:0; transform:translateY(4px)} to{opacity:1; transform:none} }
 
   /* 悬停显示复制按钮（右上角浮出） */
   .msg .msg-copy {
@@ -93,24 +103,25 @@
   .msg .msg-copy svg { width: 12px; height: 12px; }
   .msg .msg-copy.copied { color: var(--green); border-color: var(--green); }
 
-  /* 用户消息：右对齐 */
+  /* 用户消息：右对齐，苹果蓝气泡 */
   .msg.user { display: flex; justify-content: flex-end; }
   .msg.user .bubble {
-    max-width: 80%; background: var(--user-bg); color: var(--text);
-    padding: 9px 13px; border-radius: 10px;
-    white-space: pre-wrap; word-break: break-word; line-height: 1.6;
-    border: 1px solid var(--border-soft);
+    max-width: 78%; background: var(--accent); color: #fff;
+    padding: 10px 15px; border-radius: 18px 18px 4px 18px;
+    white-space: pre-wrap; word-break: break-word; line-height: 1.55;
+    box-shadow: 0 1px 2px rgba(10,132,255,.3);
+    font-size: 14px;
   }
 
   /* 助手消息：左对齐，无气泡，前缀标记 */
   .msg.assistant { position: relative; }
   .msg.assistant .prefix {
     display: flex; align-items: center; gap: 7px;
-    font-size: 11px; font-weight: 600; color: var(--accent);
-    letter-spacing: .4px; margin-bottom: 7px;
+    font-size: 11.5px; font-weight: 600; color: var(--text-dim);
+    letter-spacing: .4px; margin-bottom: 9px; text-transform: uppercase;
   }
-  .msg.assistant .prefix svg { width: 12px; height: 12px; }
-  .msg.assistant .body { line-height: 1.72; color: var(--text); word-break: break-word; }
+  .msg.assistant .prefix svg { width: 12px; height: 12px; color: var(--accent); }
+  .msg.assistant .body { line-height: 1.7; color: var(--text); word-break: break-word; font-size: 14px; }
   .msg.assistant .body p { margin: 0 0 10px; }
   .msg.assistant .body p:last-child { margin-bottom: 0; }
   .msg.assistant .body code {
@@ -161,14 +172,15 @@
   }
   .think.open .think-body { display: block; }
 
-  /* 工具调用卡片 */
-  .tool { margin-bottom: 12px; animation: fade .16s ease; }
-  .tool-card { border: 1px solid var(--border-soft); border-radius: 8px; background: var(--bg-elev); overflow: hidden; }
+  /* 工具调用卡片（苹果风：柔阴影 + 大圆角） */
+  .tool { margin-bottom: 16px; animation: fade .2s ease; }
+  .tool-card { border: 1px solid rgba(255,255,255,.07); border-radius: var(--radius); background: var(--bg-elev); overflow: hidden; box-shadow: var(--shadow); }
   .tool-head {
-    display: flex; align-items: center; gap: 9px;
-    padding: 8px 12px; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 15px; cursor: pointer; user-select: none;
+    transition: background .16s;
   }
-  .tool-head:hover { background: var(--surface); }
+  .tool-head:hover { background: rgba(255,255,255,.03); }
   .tool-icon { width: 14px; height: 14px; flex-shrink: 0; color: var(--text-dim); display: flex; }
   .tool-icon svg { width: 14px; height: 14px; }
   .tool-name { font-size: 12px; font-weight: 600; color: var(--text-2); font-family: var(--mono); flex-shrink: 0; }
@@ -194,9 +206,9 @@
   .tool-pre.err { color: #e8a0a6; }
 
   /* ===== 输入区 ===== */
-  .composer { flex-shrink: 0; padding: 10px 24px 20px; }
+  .composer { flex-shrink: 0; padding: 10px 0 20px; }
   .composer-inner {
-    max-width: 780px; margin: 0 auto;
+    width: min(780px, calc(100% - 48px)); margin: 0 auto;
     display: flex; align-items: flex-end; gap: 8px;
     background: var(--bg-elev); border: 1px solid var(--border);
     border-radius: 12px; padding: 10px 10px 10px 14px;
@@ -226,10 +238,10 @@
   #send:disabled { opacity: .35; cursor: default; }
   #send.stop { background: var(--red); }
   #send.stop:hover { opacity: 1; }
-  .composer-hint { max-width: 780px; margin: 7px auto 0; font-size: 10.5px; color: var(--text-dim); text-align: center; }
+  .composer-hint { width: min(780px, calc(100% - 48px)); margin: 7px auto 0; font-size: 10.5px; color: var(--text-dim); text-align: center; }
 
   /* 待发指令 chips（技能/工具/计划等，不进对话气泡） */
-  .hint-row { max-width: 780px; margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 7px; }
+  .hint-row { width: min(780px, calc(100% - 48px)); margin: 0 auto 6px; display: flex; flex-wrap: wrap; gap: 7px; }
   .hint-chip {
     display: flex; align-items: center; gap: 6px;
     background: var(--accent-soft, rgba(217,119,87,.14)); border: 1px solid var(--border);
@@ -241,7 +253,7 @@
   .hint-chip .hc-del svg { width: 9px; height: 9px; }
 
   /* 附件区 */
-  .attach-row { max-width: 780px; margin: 0 auto 8px; display: flex; flex-wrap: wrap; gap: 7px; }
+  .attach-row { width: min(780px, calc(100% - 48px)); margin: 0 auto 8px; display: flex; flex-wrap: wrap; gap: 7px; }
   .attach-chip {
     display: flex; align-items: center; gap: 7px;
     background: var(--surface); border: 1px solid var(--border);
@@ -296,6 +308,9 @@
   }
   .slash-menu.show { display: block; }
   .slash-sec { font-size: 9.5px; font-weight: 600; color: var(--text-dim); letter-spacing: .6px; text-transform: uppercase; padding: 7px 9px 4px; }
+  .slash-sec-toggle { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 5px; border-radius: 6px; }
+  .slash-sec-toggle:hover { color: var(--text-2); background: var(--surface); }
+  .slash-sec-toggle .ss-caret { font-size: 9px; }
   .slash-item {
     display: flex; align-items: baseline; gap: 9px; padding: 7px 9px; border-radius: 7px;
     cursor: pointer; font-size: 12.5px;
@@ -1312,6 +1327,7 @@
 
   var slashQuery = '';
   var slashIndex = 0;
+  var slashSkillsOpen = false; // 技能段是否展开（默认折叠）
 
   function slashMatches(keys, q) {
     if (!q) return true;
@@ -1374,10 +1390,16 @@
       if (slashMatches(tools[j].name + ' ' + (tools[j].description || ''), q)) tl.push(tools[j]);
     }
     if (sk.length) {
-      html += '<div class="slash-sec">技能</div>';
-      for (var k = 0; k < sk.length; k++) {
-        html += '<div class="slash-item" data-kind="skill" data-name="' + esc(sk[k].name) + '"><span class="si-name">' + esc(sk[k].name) + '</span><span class="si-desc">' + esc(sk[k].description || '') + '</span></div>';
-        shown++;
+      // 技能段默认折叠：标题可点开；折叠时技能不作为可选项（不占键盘导航）
+      var skOpen = slashSkillsOpen || !!q; // 有过滤词时自动展开
+      html += '<div class="slash-sec slash-sec-toggle" id="slash-skills-toggle" data-open="' + (skOpen ? '1' : '0') + '">' +
+        '<span class="ss-caret">' + (skOpen ? '▾' : '▸') + '</span>技能 (' + sk.length + ')' +
+      '</div>';
+      if (skOpen) {
+        for (var k = 0; k < sk.length; k++) {
+          html += '<div class="slash-item" data-kind="skill" data-name="' + esc(sk[k].name) + '"><span class="si-name">' + esc(sk[k].name) + '</span><span class="si-desc">' + esc(sk[k].description || '') + '</span></div>';
+          shown++;
+        }
       }
     }
     if (tl.length) {
@@ -1439,6 +1461,13 @@
       })(m);
     }
     updateSlashActive();
+    // 技能折叠头：点击展开/收起
+    var skToggle = document.getElementById('slash-skills-toggle');
+    if (skToggle) skToggle.addEventListener('click', function (e) {
+      e.stopPropagation();
+      slashSkillsOpen = !slashSkillsOpen;
+      renderSlashMenu(slashData || { skills: [], tools: [] });
+    });
   }
   // 用户手动点过思考块后，不再自动折叠
   document.addEventListener('click', function (e) {

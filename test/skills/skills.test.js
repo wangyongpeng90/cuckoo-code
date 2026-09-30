@@ -2,7 +2,7 @@
 import { test } from 'vitest';
 import assert from 'node:assert';
 import { parseFrontmatter } from '../../src/skills/frontmatter.js';
-import { mergeSkills } from '../../src/skills/scanner.js';
+import { mergeSkills, scanAppSkillsDir } from '../../src/skills/scanner.js';
 import { buildSkillsSection } from '../../src/skills/prompt.js';
 
 // ===== frontmatter =====
@@ -46,10 +46,52 @@ function mk(name, source) {
 test('mergeSkills: 同名项目级优先', () => {
   const p = [mk('a', 'project'), mk('b', 'project')];
   const u = [mk('a', 'user'), mk('c', 'user')];
-  const merged = mergeSkills(p, u);
+  const merged = mergeSkills(p, [], u);
   const a = merged.find((s) => s.name === 'a');
   assert.strictEqual(a.source, 'project');
   assert.strictEqual(merged.length, 3);
+});
+
+test('mergeSkills: 优先级 项目级 > 应用级 > 用户级', () => {
+  const p = [mk('a', 'project')];
+  const app = [mk('a', 'app'), mk('b', 'app')];
+  const u = [mk('a', 'user'), mk('b', 'user'), mk('c', 'user')];
+  const merged = mergeSkills(p, app, u);
+  assert.strictEqual(merged.find((s) => s.name === 'a').source, 'project');
+  assert.strictEqual(merged.find((s) => s.name === 'b').source, 'app');
+  assert.strictEqual(merged.find((s) => s.name === 'c').source, 'user');
+  assert.strictEqual(merged.length, 3);
+});
+
+test('mergeSkills: 空列表', () => {
+  assert.deepStrictEqual(mergeSkills([], [], []), []);
+});
+
+// ===== scanAppSkillsDir（应用级单文件布局） =====
+
+test('scanAppSkillsDir: 解析 <id>/SKILL.md 目录式技能', async () => {
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const fs = await import('node:fs');
+  const dir = path.join(os.tmpdir(), 'cuckoo-skills-scan-test');
+  fs.rmSync(dir, { recursive: true, force: true });
+  fs.mkdirSync(path.join(dir, 'demo'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, 'demo', 'SKILL.md'),
+    '---\nname: 演示技能\ndescription: 演示用\nallowed-tools: read bash\n---\n正文内容',
+    'utf-8'
+  );
+  const list = scanAppSkillsDir(dir, 'app');
+  assert.strictEqual(list.length, 1);
+  assert.strictEqual(list[0].name, '演示技能');
+  assert.strictEqual(list[0].description, '演示用');
+  assert.deepStrictEqual(list[0].allowedTools, ['read', 'bash']);
+  assert.strictEqual(list[0].source, 'app');
+  assert.ok(list[0].skillPath.endsWith('SKILL.md'));
+});
+
+test('scanAppSkillsDir: 目录不存在返回空', () => {
+  assert.deepStrictEqual(scanAppSkillsDir('/no/such/dir/xyz', 'app'), []);
 });
 
 // ===== buildSkillsSection =====

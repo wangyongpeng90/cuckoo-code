@@ -6,7 +6,7 @@
  */
 
 /** 技能的来源作用域 */
-export type SkillSource = 'project' | 'user';
+export type SkillSource = 'project' | 'user' | 'app';
 
 /** 扫描出的技能元数据 */
 export interface SkillMeta {

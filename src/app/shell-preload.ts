@@ -23,6 +23,7 @@ const shellAPI = {
     ipcRenderer.on('shell-total-updated', (_e: any, data: any) => cb(data));
   },
   getSystemTotal: () => ipcRenderer.invoke('get-system-total'),
+  toggleHarness: () => ipcRenderer.invoke('harness-toggle'),
   getProjectDir: () => ipcRenderer.invoke('get-project-dir'),
   // 点击"项目目录" → 弹目录选择框 + 重新初始化（复用 init-project 通道）
   initProject: () => ipcRenderer.invoke('init-project', {}),
@@ -49,6 +50,13 @@ const shellAPI = {
   },
   // ========== 技能 ==========
   listSkills: () => ipcRenderer.invoke('list-skills'),
+  listAppSkills: () => ipcRenderer.invoke('list-app-skills'),
+  upsertSkill: (skill: any) => ipcRenderer.invoke('upsert-skill', { skill }),
+  removeSkill: (id: any) => ipcRenderer.invoke('remove-skill', { id }),
+  setSkillEnabled: (id: any, enabled: any) => ipcRenderer.invoke('set-skill-enabled', { id, enabled }),
+  searchSkills: (keyword: any, page: any, pageSize: any) => ipcRenderer.invoke('search-skills', { keyword, page, pageSize }),
+  getSkillDetail: (slug: any, namespace: any) => ipcRenderer.invoke('get-skill-detail', { slug, namespace }),
+  installSkill: (slug: any, namespace: any) => ipcRenderer.invoke('install-skill', { slug, namespace }),
   // ========== MCP ==========
   listMcpServers: () => ipcRenderer.invoke('list-mcp-servers', {}),
   enableMcpServer: (name: string) => ipcRenderer.invoke('enable-mcp-server', { name }),

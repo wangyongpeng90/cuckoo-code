@@ -208,6 +208,20 @@ function registerShellIpc(): void {
     return { success: true, dir };
   });
 
+  // 切换纯净对话模式（harness）：壳页面「简」按钮调用
+  ipcMain.handle('harness-toggle', async (event: any) => {
+    let win: any = null;
+    try {
+      const bw = BrowserWindow.fromWebContents(event.sender);
+      if (bw && !bw.isDestroyed()) win = bw;
+    } catch (_) {}
+    if (!win) win = windowState.getMainWindow();
+    if (win && typeof win.__ckToggleHarness === 'function') {
+      try { win.__ckToggleHarness(); } catch (_) {}
+    }
+    return { success: true };
+  });
+
   // 设置左侧 Cuckoo 侧边栏宽度（收起=46，展开=320）→ 重新布局 AI 页面
   ipcMain.handle('shell-toggle-sidebar', async (event: any, { width }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
