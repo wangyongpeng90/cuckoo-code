@@ -18,6 +18,8 @@ import { loadFeishu } from './pages/feishu.js';
 import { renderWindowList } from './pages/windows.js';
 import { loadSettings } from './pages/settings.js';
 import { renderRecent } from './recent.js';
+import { loadConversations } from './pages/conversations.js';
+import { loadPlugins } from './pages/plugins.js';
 
 // 注册 tab → 加载函数（sidebar 点击时调用）
 registerTab('workspaces', loadWorkspaces);
@@ -30,6 +32,8 @@ registerTab('about', loadAbout);
 registerTab('feishu', loadFeishu);
 registerTab('windows', renderWindowList);
 registerTab('settings', loadSettings);
+registerTab('conversations', loadConversations);
+registerTab('plugins', loadPlugins);
 
 // 预加载：工作区（默认页）+ 提示词 + 自动压缩配置
 try { loadWorkspaces(); } catch (_) { /* ignore */ }

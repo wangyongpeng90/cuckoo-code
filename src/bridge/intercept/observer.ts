@@ -18,6 +18,10 @@ const FORMAT_HINT_MAX = 10;
 let lastProcessedText = '';
 // 最近一次拦截到的完整回复文本（供手动解析复用，不依赖 DOM）
 let lastInterceptedText = '';
+// 用户请求中止：停止工具循环的回传（停止按钮触发）
+let abortRequested = false;
+function requestAbort(): void { abortRequested = true; }
+function clearAbort(): void { abortRequested = false; }
 
 function looksLikeIncompleteCodeError(error: any): boolean {
   if (!error || typeof error !== 'string') return false;
@@ -67,6 +71,7 @@ async function executeJsBlocksWithRetry(blocks: string[]): Promise<any[]> {
  * @param force 为 true 时跳过去重（手动解析重新执行同一条时使用）
  */
 async function processInterceptedResponse(text: string, force?: boolean): Promise<void> {
+  if (abortRequested) { abortRequested = false; console.log('[Cuckoo Code][拦截] 已请求中止，跳过本次处理'); return; }
   const raw = (text || '').trim();
   if (!raw) return;
   if (!force && raw === lastProcessedText) return;
@@ -99,6 +104,7 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
       cancelPendingSend();
       hideToolMask();
     });
+    if (abortRequested) { abortRequested = false; hideToolMask(); console.log('[Cuckoo Code][拦截] 已请求中止，不回传工具结果'); return; }
     // afterSent 在"结果已发出"时触发隐藏；发送失败（找不到输入框等）则立即隐藏兜底
     const sent = await sendCombinedJsResultsToChat(results, hideToolMask);
     if (cancelled) return; // 用户已取消，不再处理
@@ -286,4 +292,4 @@ function getLastInterceptedText(): string {
   return lastInterceptedText;
 }
 
-export { startInterceptObserver, processInterceptedResponse, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle };
+export { startInterceptObserver, processInterceptedResponse, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, requestAbort, clearAbort };

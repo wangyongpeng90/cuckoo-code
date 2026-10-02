@@ -10,6 +10,8 @@ import { getProvider } from '../../providers/registry.js';
 import { setWindowCumulative, getTotal, cleanupSubagentKeys } from '../token-stats.js';
 import { resolveAsset, resolveSrc } from '../../infra/paths.js';
 import * as updater from '../../updater/index.js';
+// 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
+import { prepareNewConversation } from './harness.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain, app, shell, BrowserWindow } = require('electron');
@@ -17,6 +19,33 @@ const { ipcMain, app, shell, BrowserWindow } = require('electron');
 /** 取事件来源对应的 AI 页面 view */
 function viewOf(event: any): any {
   return windowState.getViewByWebContents(event.sender);
+}
+
+/**
+ * 默认的网页会话列表抓取：扫 a[href]，按 sessionUrlBase 的 pathname 前缀过滤。
+ * 必须自包含（会被 toString 序列化后注入 AI 页面主世界执行），
+ * 只使用 doc / win / base 三个入参与浏览器全局。
+ */
+function defaultSessionListFn(doc: any, win: any, base: any) {
+  try {
+    var basePath = '';
+    try { basePath = new win.URL(base).pathname; } catch (e) { basePath = ''; }
+    var anchors = doc.querySelectorAll('a[href]');
+    var seen: any = {}, out: any[] = [];
+    for (var i = 0; i < anchors.length; i++) {
+      var a = anchors[i];
+      var href = a.href || '';
+      if (!href) continue;
+      if (basePath && href.indexOf(basePath) === -1) continue;
+      var title = String(a.innerText || a.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+      if (!title) continue;
+      if (seen[href]) continue;
+      seen[href] = 1;
+      var cls = (typeof a.className === 'string') ? a.className : '';
+      out.push({ title: title, href: href, active: cls.indexOf('active') !== -1 || a.getAttribute('aria-current') === 'page' });
+    }
+    return out.slice(0, 100);
+  } catch (e) { return []; }
 }
 
 /** 把当前 URL 与前进/后退可用状态推送给壳页面 */
@@ -94,6 +123,50 @@ function registerShellIpc(): void {
     return { success: true, systemTotal: getTotal() };
   });
 
+
+  // ===== 侧栏「对话」分页：读网页端会话列表（DOM 实时读取，天然同步）+ 导航 =====
+  ipcMain.handle('web-list-sessions', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const view = ctx ? ctx.view : null;
+    if (!view || !view.webContents || view.webContents.isDestroyed()) return { success: false, sessions: [] };
+    const provider = (ctx && ctx.providerId) ? getProvider(ctx.providerId) : null;
+    const base = (provider && provider.sessionUrlBase) || '';
+    try {
+      // 平台可提供自定义抓取实现（侧栏非 a[href] 结构时必需），否则用默认实现
+      const fn = (provider && typeof provider.getSessionListFn === 'function')
+        ? provider.getSessionListFn()
+        : defaultSessionListFn;
+      if (typeof fn !== 'function') return { success: false, error: 'getSessionListFn 未返回函数', sessions: [] };
+      const list = await view.webContents.executeJavaScript('(' + fn.toString() + ')(document, window, ' + JSON.stringify(base) + ')');
+      return { success: true, sessions: list || [], currentUrl: view.webContents.getURL() };
+    } catch (err: any) {
+      return { success: false, error: err.message, sessions: [] };
+    }
+  });
+  ipcMain.handle('web-navigate-session', async (event: any, { url }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const view = ctx ? ctx.view : null;
+    if (!view || !url) return { success: false };
+    try { await view.webContents.loadURL(url); return { success: true }; }
+    catch (err: any) { return { success: false, error: err.message }; }
+  });
+  // 新对话：导航到平台首页（开新会话）
+  ipcMain.handle('web-new-conversation', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const view = ctx ? ctx.view : null;
+    if (!view) return { success: false };
+    const provider = (ctx && ctx.providerId) ? getProvider(ctx.providerId) : null;
+    const url = provider && provider.homeUrl ? provider.homeUrl : '';
+    if (!url) return { success: false, error: 'no-home-url' };
+    try {
+      // 这里曾只做 loadURL —— AI 网页换了新会话，但 harness 视图完全不知道，
+      // 于是消息流/计划/目标/附件全留在屏幕上（"新对话"后满屏残留）。
+      prepareNewConversation(ctx);
+      await view.webContents.loadURL(url);
+      return { success: true };
+    }
+    catch (err: any) { return { success: false, error: err.message }; }
+  });
 
   ipcMain.handle('shell-navigate', async (event: any, { url }: any) => {
     const view = viewOf(event);

@@ -35,6 +35,8 @@ const harnessAPI = {
   onEvent: (cb: (payload: any) => void) => {
     ipcRenderer.on('harness-event', (_e: any, payload: any) => cb(payload));
   },
+  /** 忙状态通知（生成中= true，用于禁用侧栏对话切换） */
+  setBusy: (busy: boolean) => ipcRenderer.send('harness-set-busy', { busy: !!busy }),
   /** 页面就绪通知（可选，用于同步初始状态） */
   ready: () => ipcRenderer.send('harness-ready'),
 };

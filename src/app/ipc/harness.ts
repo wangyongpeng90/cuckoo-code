@@ -9,10 +9,16 @@
  * 依赖：仅 window.js（窗口上下文）。与官方 IPC 解耦，独立注册。
  */
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import * as windowState from '../window.js';
 import { scanSkills } from '../../skills/index.js';
+import { getPluginScanRoots } from '../../plugins/roots.js';
 import { registry } from '../../tools/index.js';
 import { getProvider } from '../../providers/registry.js';
+import { resetTodosCache } from './tool.js';
+import { cdpAttach } from './cdp-attach.js';
 import { initProject } from '../../session/project-context.js';
 
 const require = createRequire(import.meta.url);
@@ -107,6 +113,35 @@ function findContext(sender: any): any {
   return null;
 }
 
+/**
+ * 通知 harness 视图：当前对话已作废，请完整重置。
+ *
+ * 为什么必须是一个**独立事件**，而不是靠 URL 变化触发的 `session-changed`：
+ * "新对话"落在平台首页，URL 里没有会话 id，`session-changed` 拿到的是空串；
+ * 而空串既可能是"新会话"的 key、也可能是当前会话的 key ——
+ * 复用按 session 存取那套逻辑会命中 harness 侧首行的 `sid === currentSessionId` 早退，
+ * 结果**什么都清不掉**（表现就是"新对话"后满屏残留）。
+ *
+ * 新对话是"丢弃"，切换会话是"存取"，语义不同就必须有不同的事件。
+ *
+ * 两条入口都要调它：
+ *  - harness 页面自己的清空按钮（harness-new-conversation）
+ *  - 壳页面侧栏的「新对话」按钮（web-new-conversation）
+ */
+function notifyHarnessReset(ctx: any): void {
+  try {
+    const hv = ctx && ctx.harnessView;
+    if (!hv || !hv.webContents || hv.webContents.isDestroyed()) return;
+    hv.webContents.send('harness-event', { type: 'reset' });
+  } catch (_) { /* ignore */ }
+}
+
+/** 新对话的公共前置：清主进程侧 todo 缓存 + 让 harness 视图完整重置 */
+function prepareNewConversation(ctx: any): void {
+  try { resetTodosCache(); } catch (_) { /* ignore */ }
+  notifyHarnessReset(ctx);
+}
+
 function registerHarnessIpc(): void {
   // 用户在 harness 输入 → 转给 AI 页面（bridge 会调 sendToChat）
   ipcMain.handle('harness-send', (event: any, payload: any) => {
@@ -116,11 +151,18 @@ function registerHarnessIpc(): void {
     if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: 'no-ai-view' };
     }
+    // 新用户消息 = 新任务：清空旧计划（否则旧 todoWrite 结果一直挂着）
+    try {
+      resetTodosCache();
+      const hv = (ctx as any).harnessView;
+      if (hv && !hv.webContents.isDestroyed()) hv.webContents.send('harness-event', { type: 'plan', todos: [] });
+    } catch (_) { /* ignore */ }
     ctx.view.webContents.send('harness-user-message', { text: text });
     return { success: true };
   });
 
   // AI 页面的 bridge 上报事件 → 转给 harness 页面
+  //（bridge 侧不设门控，一律上报；此处没有 harness 视图时自然丢弃）
   ipcMain.handle('harness-event-report', (event: any, payload: any) => {
     const ctx = findContext(event.sender);
     if (!ctx) return { success: false };
@@ -137,8 +179,19 @@ function registerHarnessIpc(): void {
     if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) return { success: false };
     const wc = ctx.view.webContents;
     try {
+      // 先给 bridge 发停止信号：取消延时发送 + 中止工具回传（关键：否则停止后仍会自动发送）
+      try { wc.send('harness-stop-signal'); } catch (_) { /* ignore */ }
       try { wc.focus(); } catch (e) { /* ignore */ }
-      const code = '(' + attachStopFn.toString() + ')(document, window)';
+      // 平台可提供自定义停止按钮定位；内置启发式只覆盖部分站点（如 DeepSeek 设计系统类名）
+      let locateFn = attachStopFn;
+      try {
+        const provider = ctx.providerId ? getProvider(ctx.providerId) : null;
+        if (provider && typeof provider.getStopFn === 'function') {
+          const f = provider.getStopFn();
+          if (typeof f === 'function') locateFn = f;
+        }
+      } catch (_) { /* 回退内置定位 */ }
+      const code = '(' + locateFn.toString() + ')(document, window)';
       const r = await wc.executeJavaScript(code);
       console.log('[Cuckoo Harness] harness-stop 定位结果: ' + JSON.stringify(r));
       if (r && r.found && typeof r.x === 'number') {
@@ -174,7 +227,8 @@ function registerHarnessIpc(): void {
     try {
       const ctx = findContext(event.sender);
       const projectDir = ctx && ctx.sessionStore ? ctx.sessionStore.state.selectedProjectDir : null;
-      const skills = scanSkills(projectDir || null).map((s: any) => ({ name: s.name, description: s.description }));
+      const skills = scanSkills(projectDir || null, getPluginScanRoots().skillDirs)
+        .map((s: any) => ({ name: s.name, description: s.description }));
       const tools = registry.getDescriptions().map((t: any) => ({ name: t.name, description: t.description }));
       return { success: true, skills, tools };
     } catch (err: any) {
@@ -195,6 +249,14 @@ function registerHarnessIpc(): void {
     const results: any[] = [];
     for (const f of files) {
       console.log('[Cuckoo Harness] 上传文件: ' + f.name + ' b64len=' + ((f.data || '').length));
+      // CDP 真实点击优先：合成事件免疫站点（如智谱）走原生文件选择通道
+      try {
+        const cr = await cdpAttach(ctx as any, { name: f.name, data: f.data, mime: f.mime });
+        console.log('[Cuckoo Harness] CDP 上传结果: ' + JSON.stringify(cr));
+        if (cr && cr.success) { results.push({ success: true, name: f.name }); continue; }
+      } catch (cdpErr: any) {
+        console.log('[Cuckoo Harness] CDP 通道异常，转合成事件兜底: ' + (cdpErr && cdpErr.message));
+      }
       try {
         const code = '(' + attachFn.toString() + ')(document, window, ' +
           JSON.stringify(f.data || '') + ', ' +
@@ -237,6 +299,8 @@ function registerHarnessIpc(): void {
       const url = provider && provider.homeUrl ? provider.homeUrl : null;
       if (!url) return { success: false, error: 'no-home-url' };
       console.log('[Cuckoo Harness] 新对话 → 导航到 ' + url);
+      // 清主进程 todo 缓存 + 让 harness 视图完整重置（后者是"残留"的根治点）
+      prepareNewConversation(ctx);
       ctx.view.webContents.loadURL(url);
       return { success: true, url: url };
     } catch (err: any) {
@@ -251,6 +315,15 @@ function registerHarnessIpc(): void {
     if (!ctx || !ctx.win) return { success: false };
     try { (ctx.win as any).__ckToggleHarness?.(false); } catch (_) {}
     return { success: true };
+  });
+
+  // harness 忙状态（生成中）→ 通知壳页面禁用对话切换
+  ipcMain.on('harness-set-busy', (event: any, payload: any) => {
+    const busy = !!(payload && payload.busy);
+    const ctx = findContext(event.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
+    (ctx.win as any).__ckHarnessBusy = busy;
+    try { ctx.win.webContents.send('shell-harness-busy', { busy: busy }); } catch (_) { /* ignore */ }
   });
 
   // 查询当前状态（首页且未选项目目录 → 需初始化）
@@ -403,10 +476,6 @@ function attachStopFn(doc: any, win: any) {
   }
 }
 
-export { registerHarnessIpc, pushHarnessState };
-
-
-
-
+export { registerHarnessIpc, prepareNewConversation, pushHarnessState };
 
 

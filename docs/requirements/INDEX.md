@@ -21,7 +21,8 @@
 | 015 | feat | [token 按会话缓存 + 去掉高频轮询（改主进程推送）](./015-token-cache-no-poll.md) | done | feat/015-token-cache-no-poll | 2026-09-26 |
 | 016 | feat | [子代理（Subagents，对齐 Claude Code）](./016-subagents.md) | done | feat/016-subagents | 2026-09-26 |
 | 017 | feat | [快捷提示词（Snippets）——「提示词」页](./017-snippets.md) | in_progress | feat/017-snippets | 2026-09-29 |
-| 018 | feature | [纯净对话模式（Harness 模式，类 Codex 体验）](./018-harness-mode.md) | doing | feat/017-harness-mode | 2026-09-30 |
+| 018 | feature | [纯净对话模式（Harness 模式，类 Codex 体验）](./018-harness-mode.md) | doing | feat/017-harness-mode | 2026-10-02 |
 | 019 | feature | [飞书同步（手机收发对话）](./019-feishu-sync.md) | doing | feat/019-feishu-sync | 2026-09-30 |
+| 020 | feature | [插件市场（GitHub topic 自动发现与安装）](./020-plugin-market.md) | review | feat/020-plugin-market | 2026-10-02 |
 
-共 18 个需求。
+共 19 个需求。

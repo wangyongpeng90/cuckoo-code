@@ -152,3 +152,36 @@ test('buildUnscopedRulesSection：有规则生成章节', () => {
   assert.ok(section.includes('## 项目规则'));
   assert.ok(section.includes('无路径规则正文'));
 });
+
+// ========== 插件扫描根 ==========
+
+test('scanRules：额外扫描根被识别且 source=plugin', () => {
+  const root = path.join(TMP, 'plugin-rules');
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(path.join(root, 'plug.md'), '---\nname: plug\n---\n插件规则正文', 'utf-8');
+
+  const all = rules.scanRules(PROJ, [root]);
+  const found = all.find((r) => r.name === 'plug');
+  assert.ok(found, '插件目录里的规则应被扫到');
+  assert.strictEqual(found.source, 'plugin');
+});
+
+test('scanRules：插件规则排在最后（优先级最低）', () => {
+  writeProjRule('proj.md', '---\nname: proj\n---\n项目规则');
+  const root = path.join(TMP, 'plugin-rules2');
+  fs.mkdirSync(root, { recursive: true });
+  fs.writeFileSync(path.join(root, 'plug.md'), '---\nname: plug\n---\n插件规则', 'utf-8');
+
+  const all = rules.scanRules(PROJ, [root]);
+  const iProj = all.findIndex((r) => r.name === 'proj');
+  const iPlug = all.findIndex((r) => r.name === 'plug');
+  assert.ok(iProj >= 0 && iPlug >= 0);
+  assert.ok(iProj < iPlug, '项目级应排在插件级之前');
+});
+
+test('scanRules：不传额外扫描根时行为不变', () => {
+  writeProjRule('only.md', '---\nname: only\n---\n正文');
+  const all = rules.scanRules(PROJ);
+  assert.ok(all.some((r) => r.name === 'only'));
+  assert.ok(!all.some((r) => r.source === 'plugin'));
+});

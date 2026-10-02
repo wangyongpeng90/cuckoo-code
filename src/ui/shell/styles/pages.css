@@ -114,3 +114,52 @@
     word-break: break-all; margin: 0;
   }
   .ck-task-status { display: inline-flex; align-items: center; gap: 5px; color: var(--ck-primary); font-weight: 600; }
+
+  /* ===== 对话（网页端会话列表） ===== */
+  .ck-conv-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: var(--ck-text-2); }
+  .ck-conv-item:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-conv-item.ck-conv-active { background: var(--ck-primary-soft); color: var(--ck-primary); }
+  .ck-conv-item.ck-conv-disabled { opacity: .4; cursor: not-allowed; pointer-events: none; }
+  .ck-conv-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ===== 插件卡片（市场 + 已安装）=====
+     不复用 .ck-snip-preview：那是单行截断的，简介会显示不全。 */
+  .ck-plugin-item { padding: 10px 12px; border-bottom: 1px solid var(--ck-border); }
+  .ck-plugin-item:last-child { border-bottom: none; }
+  .ck-plugin-item:hover { background: var(--ck-surface); }
+  .ck-plugin-head { display: flex; align-items: center; gap: 8px; }
+  .ck-plugin-name {
+    font-size: 13px; font-weight: 600; color: var(--ck-text);
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* 已安装 / 有更新 徽标 */
+  .ck-plugin-badge {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    flex-shrink: 0; white-space: nowrap;
+  }
+  .ck-plugin-badge.on { background: rgba(74, 222, 128, .15); color: var(--ck-green); }
+  .ck-plugin-badge.update { background: rgba(255, 193, 7, .16); color: #ffc107; }
+  .ck-plugin-badge.archived { background: rgba(255, 107, 122, .15); color: var(--ck-red); }
+  /* 简介：多行，允许折行 */
+  .ck-plugin-desc {
+    font-size: 12px; color: var(--ck-text-dim); margin-top: 5px;
+    line-height: 1.55; white-space: normal; word-break: break-word;
+  }
+  /* 元信息行 */
+  .ck-plugin-meta {
+    font-size: 11px; color: var(--ck-text-dim); margin-top: 7px;
+    display: flex; flex-wrap: wrap; gap: 3px 10px; align-items: center;
+  }
+  .ck-plugin-meta .sep { opacity: .4; }
+  /* 版本要求行 */
+  .ck-plugin-req { font-size: 11px; color: var(--ck-text-dim); margin-top: 5px; }
+  .ck-plugin-req.warn { color: #ffc107; }
+  .ck-plugin-req.err { color: var(--ck-text-dim); opacity: .75; }
+  /* 已安装行的开关与操作按钮 */
+  .ck-plugin-switch-row { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .ck-plugin-switch-label { font-size: 11px; color: var(--ck-text-dim); }
+  /* 插件卡片的操作按钮：**常驻可见**。
+     不要复用 .ck-snip-actions —— 它带 opacity:0 + pointer-events:none，
+     且显示规则绑定在 .ck-snip-item:hover 上；放进 .ck-plugin-item 会永远不可见也点不到。
+     插件卡片的安装/更新/卸载是主要操作，不该藏到悬停里。 */
+  .ck-plugin-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }

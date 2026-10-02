@@ -28,12 +28,11 @@ function firstParagraph(body: string): string {
 }
 
 /**
- * 扫描某个 .cuckoo/agents 目录下的所有代理。
- * @param baseDir 该作用域的基目录（项目根 或 用户主目录）
+ * 扫描一个具体的 agents 目录（`<dir>/<name>.md`，只扫一层）。
+ * @param agentsDir agents 目录绝对路径
  * @param source 作用域来源
  */
-function scanDir(baseDir: string, source: AgentSource): AgentMeta[] {
-  const agentsDir = path.join(baseDir, '.cuckoo', 'agents');
+function scanAgentsRoot(agentsDir: string, source: AgentSource): AgentMeta[] {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(agentsDir, { withFileTypes: true });
@@ -84,9 +83,15 @@ function scanDir(baseDir: string, source: AgentSource): AgentMeta[] {
   return result;
 }
 
-/** 合并代理列表：同名时项目级优先 */
-export function mergeAgents(project: AgentMeta[], user: AgentMeta[]): AgentMeta[] {
+/** 扫描某个作用域基目录下的 `.cuckoo/agents` */
+function scanDir(baseDir: string, source: AgentSource): AgentMeta[] {
+  return scanAgentsRoot(path.join(baseDir, '.cuckoo', 'agents'), source);
+}
+
+/** 合并代理列表：同名时 项目级 > 用户级 > 插件级 */
+export function mergeAgents(project: AgentMeta[], user: AgentMeta[], plugin: AgentMeta[] = []): AgentMeta[] {
   const byName = new Map<string, AgentMeta>();
+  for (const a of plugin) byName.set(a.name, a); // 最低优先级
   for (const a of user) byName.set(a.name, a);
   for (const a of project) byName.set(a.name, a); // 项目级覆盖同名用户级
   return Array.from(byName.values());
@@ -95,10 +100,17 @@ export function mergeAgents(project: AgentMeta[], user: AgentMeta[]): AgentMeta[
 /**
  * 扫描并合并代理。
  * @param projectDir 项目根目录（可为 null，表示未初始化项目）
- * @returns 合并后的代理列表（项目级优先）
+ * @param extraAgentDirs 额外的 agents 目录（绝对路径）。由上层（session）计算后传入，
+ *   本模块**不 import plugins**，避免形成依赖环。
+ * @returns 合并后的代理列表（项目级 > 用户级 > 插件级）
  */
-export function scanAgents(projectDir: string | null): AgentMeta[] {
+export function scanAgents(projectDir: string | null, extraAgentDirs: string[] = []): AgentMeta[] {
   const user = scanDir(os.homedir(), 'user');
   const project = projectDir ? scanDir(projectDir, 'project') : [];
-  return mergeAgents(project, user);
+  const plugin: AgentMeta[] = [];
+  for (const dir of extraAgentDirs) {
+    if (!dir) continue;
+    plugin.push(...scanAgentsRoot(dir, 'plugin'));
+  }
+  return mergeAgents(project, user, plugin);
 }

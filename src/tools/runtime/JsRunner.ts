@@ -14,6 +14,7 @@ import path from 'node:path';
 import { TOOL_BOOTSTRAP } from './bootstrap.generated.js';
 import { logRun, ToolFailure } from '../../infra/tool-error-log.js';
 import { scanRules, getScopedRules, getInjectedSet, markInjected } from '../../rules/index.js';
+import { getPluginScanRoots } from '../../plugins/roots.js';
 import { matchRulesForPath } from '../../rules/matcher.js';
 import { renderRuleFull, renderRulePointer } from '../../rules/prompt.js';
 
@@ -315,7 +316,8 @@ class JsRunner {
 function buildRulesInjection(readFiles: string[], projectDir: any, settings: any): string {
   if (!readFiles || readFiles.length === 0 || !projectDir) return '';
   try {
-    const scoped = getScopedRules(scanRules(projectDir));
+    // 插件贡献的规则同样参与"按路径注入"
+    const scoped = getScopedRules(scanRules(projectDir, getPluginScanRoots().ruleDirs));
     if (scoped.length === 0) return '';
     const sessionId = (settings && settings.sessionId) || '(default)';
     const injected = getInjectedSet(sessionId);

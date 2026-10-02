@@ -30,6 +30,12 @@ const shellAPI = {
     ipcRenderer.on('shell-project-dir', (_e: any, dir: any) => cb(dir));
   },
   toggleSidebar: (width: number) => ipcRenderer.invoke('shell-toggle-sidebar', { width }),
+  // ========== 侧栏「对话」分页：读网页会话列表 + 导航 ==========
+  listWebSessions: () => ipcRenderer.invoke('web-list-sessions'),
+  navigateWebSession: (url: string) => ipcRenderer.invoke('web-navigate-session', { url }),
+  newWebConversation: () => ipcRenderer.invoke('web-new-conversation'),
+  onWebUrlChanged: (cb: () => void) => { ipcRenderer.on('shell-web-url-changed', () => cb()); },
+  onHarnessBusy: (cb: (busy: boolean) => void) => { ipcRenderer.on('shell-harness-busy', (_e: any, d: any) => cb(!!(d && d.busy))); },
   // 纯净对话模式（Harness）切换 + 状态订阅
   toggleHarness: () => ipcRenderer.invoke('shell-toggle-harness'),
   onHarnessMode: (cb: (data: any) => void) => {
@@ -78,6 +84,21 @@ const shellAPI = {
   enableMcpServer: (name: string) => ipcRenderer.invoke('enable-mcp-server', { name }),
   disableMcpServer: (name: string) => ipcRenderer.invoke('disable-mcp-server', { name }),
   appendSnippet: (text: string) => ipcRenderer.invoke('append-to-input', { text }),
+  // ========== 插件 ==========
+  // 市场列表（topic:cuckoo-plugin；force=true 跳过本地缓存）。
+  // 返回 { items, installed }，installed 为 repo → 已安装摘要（用于隐藏安装按钮 / 显示更新）
+  pluginMarketList: (opts?: any) => ipcRenderer.invoke('plugin-market-list', opts || {}),
+  // 远端 plugin.json（版本 / 最低应用版本）。搜索接口不返回这些，需单独拉取
+  pluginMarketRemote: (targets: any) => ipcRenderer.invoke('plugin-market-remote', { targets }),
+  // 安装 / 更新：upgrade=true 时覆盖已安装的同 id 插件
+  pluginInstall: (repo: string, branch: string, upgrade: boolean) =>
+    ipcRenderer.invoke('plugin-install', { repo, branch, upgrade }),
+  pluginUninstall: (id: string) => ipcRenderer.invoke('plugin-uninstall', { id }),
+  listInstalledPlugins: () => ipcRenderer.invoke('plugin-list-installed'),
+  // 启用 / 禁用开关（插件总开关）：开启后技能/代理/规则/MCP/可执行内容全部生效
+  pluginSetEnabled: (id: string, enabled: boolean) =>
+    ipcRenderer.invoke('plugin-set-enabled', { id, enabled }),
+  pluginOpenDir: () => ipcRenderer.invoke('plugin-open-dir'),
   // ========== 关于 ==========
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   checkUpdate: () => ipcRenderer.invoke('check-update'),

@@ -54,3 +54,6 @@ test/coverage.lcov
 coverage/
 /wyp/
 /dist-verify/
+
+# 自定义 Provider 文件（各人私有，不进仓库）
+custom-providers/

@@ -24,6 +24,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createRequire } from 'node:module';
+// plugins 是底层模块（纯 node），此依赖向下，不违反依赖方向。
+// 只返回**已授权**插件的 mcp.json —— 未授权时等价于不存在。
+import { getEnabledPluginMcpFiles } from '../plugins/roots.js';
 
 const require = createRequire(import.meta.url);
 const { app } = require('electron');
@@ -132,7 +135,10 @@ function readStateAt(stateFile: string): Record<string, boolean> {
 
 /**
  * 合并后的 server 列表（带 name / type / enabled / source）。
- * 项目级覆盖用户级（同名时用项目级的定义和状态）。
+ * 优先级：项目级 > 用户级 > 插件级（同名时用高优先级的定义和状态）。
+ *
+ * 插件来源的 server 名带 `<插件id>:` 命名空间前缀，避免与用户自己的 server 撞名，
+ * 也便于在提示词里看出它来自哪个插件。
  */
 function getServers(projectDir: string | null): any[] {
   const userServers = readServersAt(getUserConfigFile());
@@ -152,6 +158,18 @@ function getServers(projectDir: string | null): any[] {
   for (const [name, def] of Object.entries(userServers) as [string, any][]) {
     if (seen.has(name)) continue;
     out.push(buildServerDef(name, def, 'user', userState));
+  }
+  // 最后插件级（最低优先级）。
+  // 能走到这里说明该插件的 execEnabled 已为 true —— 连接 MCP server 会 spawn 子进程，
+  // 属"在本机运行第三方代码"，所以授权是前提（见 plugins/roots.ts）。
+  for (const { pluginId, file } of getEnabledPluginMcpFiles()) {
+    const pluginServers = readServersAt(file);
+    for (const [name, def] of Object.entries(pluginServers) as [string, any][]) {
+      const nsName = pluginId + ':' + name;
+      if (seen.has(nsName)) continue;
+      seen.add(nsName);
+      out.push(buildServerDef(nsName, def, 'plugin', {}));
+    }
   }
   return out;
 }

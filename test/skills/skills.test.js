@@ -1,8 +1,11 @@
 'use strict';
 import { test } from 'vitest';
 import assert from 'node:assert';
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 import { parseFrontmatter } from '../../src/skills/frontmatter.js';
-import { mergeSkills } from '../../src/skills/scanner.js';
+import { mergeSkills, scanSkills } from '../../src/skills/scanner.js';
 import { buildSkillsSection } from '../../src/skills/prompt.js';
 
 // ===== frontmatter =====
@@ -50,6 +53,48 @@ test('mergeSkills: 同名项目级优先', () => {
   const a = merged.find((s) => s.name === 'a');
   assert.strictEqual(a.source, 'project');
   assert.strictEqual(merged.length, 3);
+});
+
+test('mergeSkills: 插件级优先级最低（项目 > 用户 > 插件）', () => {
+  const p = [mk('a', 'project')];
+  const u = [mk('a', 'user'), mk('b', 'user')];
+  const pl = [mk('a', 'plugin'), mk('b', 'plugin'), mk('c', 'plugin')];
+  const merged = mergeSkills(p, u, pl);
+  assert.strictEqual(merged.find((s) => s.name === 'a').source, 'project');
+  assert.strictEqual(merged.find((s) => s.name === 'b').source, 'user');
+  assert.strictEqual(merged.find((s) => s.name === 'c').source, 'plugin');
+  assert.strictEqual(merged.length, 3);
+});
+
+// ===== scanSkills 的插件扫描根 =====
+
+test('scanSkills: 额外扫描根被识别且 source=plugin', () => {
+  const root = path.join(os.tmpdir(), 'cuckoo-skill-root-test', 'skills');
+  fs.rmSync(path.dirname(root), { recursive: true, force: true });
+  fs.mkdirSync(path.join(root, 'from-plugin'), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, 'from-plugin', 'SKILL.md'),
+    '---\nname: from-plugin\ndescription: 来自插件\n---\n正文',
+    'utf-8'
+  );
+
+  const skills = scanSkills(null, [root]);
+  const found = skills.find((s) => s.name === 'from-plugin');
+  assert.ok(found, '插件目录里的技能应被扫到');
+  assert.strictEqual(found.source, 'plugin');
+
+  fs.rmSync(path.dirname(root), { recursive: true, force: true });
+});
+
+test('scanSkills: 不传额外扫描根时行为不变', () => {
+  const skills = scanSkills(null);
+  assert.ok(Array.isArray(skills));
+  assert.ok(!skills.some((s) => s.source === 'plugin'));
+});
+
+test('scanSkills: 忽略空字符串扫描根', () => {
+  const skills = scanSkills(null, ['', '']);
+  assert.ok(Array.isArray(skills));
 });
 
 // ===== buildSkillsSection =====

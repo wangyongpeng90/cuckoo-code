@@ -47,14 +47,21 @@ function scanDir(rulesDir: string, source: RuleSource): RuleMeta[] {
 }
 
 /**
- * 扫描并合并规则（项目级 + 用户级都保留，同名不覆盖）。
+ * 扫描并合并规则（项目级 + 用户级 + 插件级都保留，同名不覆盖）。
  * @param projectDir 项目根（可为 null）
+ * @param extraRulesDirs 额外的 rules 目录（绝对路径）。由上层（session）计算后传入，
+ *   本模块**不 import plugins**，避免形成依赖环。
  */
-export function scanRules(projectDir: string | null): RuleMeta[] {
+export function scanRules(projectDir: string | null, extraRulesDirs: string[] = []): RuleMeta[] {
   const user = scanDir(getUserRulesDir(), 'user');
   const project = projectDir ? scanDir(path.join(projectDir, '.cuckoo', 'rules'), 'project') : [];
-  // 项目级在前（展示顺序），同名不去重
-  return [...project, ...user];
+  const plugin: RuleMeta[] = [];
+  for (const dir of extraRulesDirs) {
+    if (!dir) continue;
+    plugin.push(...scanDir(dir, 'plugin'));
+  }
+  // 项目级在前（展示顺序），插件级最后（优先级最低）；同名不去重
+  return [...project, ...user, ...plugin];
 }
 
 /** 只取"无 paths"的规则（初始化时注入） */

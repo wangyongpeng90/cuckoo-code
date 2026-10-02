@@ -354,10 +354,10 @@ async function callMcpTool(serverName: string, toolName: string, args: any, proj
 function listConfiguredServers(projectDir: string | null): any[] {
   const servers = mcpConfig.getServers(projectDir);
   return servers.map((s: any) => {
-    const key = s.source === 'project'
-      ? 'project:' + (projectDir || '') + '::' + s.name
-      : 'user::' + s.name;
-    const entry = connections.get(key);
+    // 与连接侧共用 connKey：此前这里内联了一份同样的判断，
+    // 新增 plugin 来源后两处极易分叉（分叉 = "已连接"永远显示为假）
+    s.projectDir = projectDir;
+    const entry = connections.get(connKey(s));
     return {
       name: s.name,
       source: s.source,

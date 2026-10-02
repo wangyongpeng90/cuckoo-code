@@ -354,3 +354,15 @@ declare function mcpListServers(): Promise<string>;
  * @throws server 不存在或连接失败时抛出异常
  */
 declare function mcpGetTools(serverName: string): Promise<string>;
+
+
+// ================= 任务管理 =================
+
+/**
+ * 宣告当前目标（/goal 设定的自动多轮任务）已全部完成，结束自动推进。
+ * 仅在目标的所有要求都确实完成后调用；调用前先在正文给出完成情况总结。
+ * 非目标模式的普通对话不需要调用本工具。
+ * @returns 确认消息
+ * @throws 缺少窗口上下文、窗口已关闭或纯净对话模式未开启时抛出异常
+ */
+declare function goalDone(): Promise<string>;

@@ -76,6 +76,8 @@ export { MyTool };
 
 1. **新建** `src/providers/<id>.ts`，照 `deepseek.ts`：元数据（id/name/homeUrl/sessionUrlBase/useIntercept）+ 选择器方法（findInput/findSendButton/extractUserInfo/homeUrlPattern/extractSessionId/matchesUrl/isElementVisible）+ `getHookSource()`。
 
+   - **可选** `getSessionListFn()`：侧栏「对话」分页的抓取实现。默认实现扫 `a[href]` 并按 `sessionUrlBase` 的 pathname 前缀过滤；若平台侧栏不是 `<a href>` 结构（SPA 用 div + 点击切换会话），在此返回自定义函数。该函数会被 `toString` 序列化后注入页面主世界，**必须自包含**（只用 `doc`/`win`/`base` 入参与浏览器全局），返回 `[{ title, href, active }]`。
+
 2. **写 hook**（若 `useIntercept: true`）：新建 `src/providers/hooks/<id>.ts`，照 `hooks/deepseek.ts`。核心：
    - `install()` 猴补丁 `fetch`/`XHR`，判断 completion 请求
    - 解析 SSE 流 → 提取正文 → `dispatch(text, status, ...)`

@@ -137,6 +137,15 @@ async function initProject(skipPrompt: boolean = false, windowContext: any = nul
   console.log('[Cuckoo Code] 准备发送初始提示（不含目录树），长度:', combined.length);
   if (view && view.webContents && !view.webContents.isDestroyed()) {
     view.webContents.send('initial-prompt', combined);
+    // 主进程直接告诉纯净模式：框架正在驱动 AI 页面（不依赖 AI 页面 bridge 门控，
+    // 因为此刻页面可能正处在导航/重载中，bridge 尚未就绪）。
+    // 只反馈运行态，提示词内容不进对话流。
+    try {
+      const hv = ctx && (ctx as any).harnessView;
+      if (hv && !hv.webContents.isDestroyed()) {
+        hv.webContents.send('harness-event', { type: 'framework-send', tag: '系统提示词', system: true });
+      }
+    } catch (_) { /* ignore */ }
   }
   stepLog('initial-prompt 已发送');
 

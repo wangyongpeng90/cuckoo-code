@@ -107,7 +107,7 @@
 | 文件 | 职责 |
 |---|---|
 | `client.ts` | MCP 客户端：连接 server、列工具、调用 |
-| `config.ts` | MCP 配置读写（Claude Desktop 兼容格式） |
+| `config.ts` | MCP 配置读写（Claude Desktop 兼容格式）；合并 项目级 > 用户级 > **插件级**（插件 server 带 `<插件id>:` 前缀） |
 
 ## src/infra/ —— 无业务基础设施（最底层）
 
@@ -131,6 +131,45 @@
 | `agents/prompt.ts` | 生成系统提示词的「可用子代理」章节 |
 | `agents/types.ts` | `AgentMeta` / `AgentSource` 类型 |
 | `agents/index.ts` | 模块入口 |
+
+## src/plugins/ —— 插件（分发容器）
+
+> 插件**不是新的运行时**：它把一个 GitHub 仓库里的技能/代理/规则/MCP 配置/provider
+> 打成包，安装到 `~/.cuckoo/plugins/<id>/`，再由既有 scanner 识别。
+> 唯一真相源是 GitHub `topic:cuckoo-plugin`（搜索为空即如实显示空状态，不做来源补偿）。
+
+| 文件 | 职责 |
+|---|---|
+| `plugins/types.ts` | `PluginManifest` / `PluginContributes` / `InstalledPlugin` / `MarketItem` / `RemotePluginInfo` |
+| `plugins/paths.ts` | 插件路径解析（**纯 node**，`CUCKOO_HOME` 可覆盖）；id 合法性校验 |
+| `plugins/manifest.ts` | 解析 + 校验 `plugin.json`；**派生**实际贡献项（不信插件自述） |
+| `plugins/github.ts` | GitHub 地址构造与校验（repo / branch / tarball URL / raw URL） |
+| `plugins/market.ts` | topic 搜索 + 10 分钟缓存 + 限流提示；远端 `plugin.json` 拉取（版本 / 兼容要求，30 分钟缓存 + 并发限制 + 逐条降级） |
+| `plugins/installer.ts` | tarball 下载 / PAX 解压 / 校验 / 落盘 / 覆盖更新 / 卸载；解压过滤器在此 |
+| `plugins/state.ts` | 插件总开关读写（`plugins-state.json`）；独立成模块以免读状态的一方被 `tar` 拖累 |
+| `plugins/roots.ts` | `getPluginScanRoots()`（给 scanner）+ `getEnabledPluginProviderFiles()`（给 provider 加载器）+ `getEnabledPluginMcpFiles()`（给 MCP 配置合并） |
+| `plugins/http.ts` | **唯一依赖 electron** 的薄层：Electron `net`（走 Chromium 网络栈，继承系统代理与系统 CA） |
+| `plugins/index.ts` | 模块入口 |
+
+**为什么用 Electron `net` 而不是 Node `fetch`**：系统代理（MITM）环境下 Node 自带 CA 列表
+不认代理证书，访问 `api.github.com` 直接抛 `UNABLE_TO_VERIFY_LEAF_SIGNATURE`（实测）。
+
+**下载通道**：`codeload.github.com/<owner>/<repo>/tar.gz/refs/heads/<branch>`
+—— **不消耗 GitHub API 配额**（Search 未认证仅 10/min，配额要留给搜索）。
+
+**安全边界**：解压拒绝绝对路径 / `..` / 符号链接；落盘前校验清单且 `id` 必须匹配 kebab-case
+（id 直接作为目录名）；`repo` 的 owner 段**不允许点号**（否则 `..` 会通过校验，`../evil`
+会被当成合法仓库，拼出的 URL 被规范化到别的路径）。
+
+**插件总开关**（`plugins-state.json` 的 `enabled`，**默认关闭**）：
+
+| 状态 | 技能/代理/规则 | `mcp.json` | `providers/*.js` |
+|---|---|---|---|
+| 未启用（默认） | 不扫描 | 不读取 | 不加载（文件仍在磁盘） |
+| 已启用 | 扫描 | 读取（server 名带 `<插件id>:` 前缀） | 加载（`require`） |
+
+一个开关管全部 —— 这三类都属"这个插件的内容"，而 MCP 与 provider 会**在本机执行第三方代码**，
+所以默认不启用。**装一个插件不该顺带执行代码**，启用必须是用户的显式动作。
 
 ## src/updater/ 、src/types/ 、src/prompt/ 、src/ui/
 

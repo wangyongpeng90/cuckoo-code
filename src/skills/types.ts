@@ -5,8 +5,8 @@
  * 放在约定目录下，由宿主扫描后把 name + description 注入系统提示词（渐进式披露）。
  */
 
-/** 技能的来源作用域 */
-export type SkillSource = 'project' | 'user';
+/** 技能的来源作用域（plugin = 由已安装插件贡献，优先级最低） */
+export type SkillSource = 'project' | 'user' | 'plugin';
 
 /** 扫描出的技能元数据 */
 export interface SkillMeta {

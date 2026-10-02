@@ -92,13 +92,35 @@ let pendingSend: PendingSend | null = null;
 const SYSTEM_MSG_TAGS = [
   'JS汇总', '飞书', '看门狗', '重试', '重试(操作频繁)',
   '压缩-摘要', 'MCP信息', '技能与代理清单', '继续',
-  'JSON工具调用提示', 'XML工具调用提示',
+  'JSON工具调用提示', 'XML工具调用提示', '系统提示词',
 ];
 let onUserMessageSentCb: ((text: string, tag?: string) => void) | null = null;
 /** 注册"用户消息已发出"回调（返回取消注册） */
 function onUserMessageSent(cb: (text: string, tag?: string) => void): () => void {
   onUserMessageSentCb = cb;
   return () => { if (onUserMessageSentCb === cb) onUserMessageSentCb = null; };
+}
+
+// 「消息已投递」回调：所有经 sendToChat 发出的消息都派发（含系统内部消息），
+// 供纯净对话模式显示"框架正在驱动 AI 页面"的运行态反馈（内容不显示，只反馈状态）。
+let onMessageDeliveredCb: ((info: { text: string; tag: string; isSystem: boolean }) => void) | null = null;
+/** 注册"消息已投递"回调（返回取消注册） */
+function onMessageDelivered(cb: (info: { text: string; tag: string; isSystem: boolean }) => void): () => void {
+  onMessageDeliveredCb = cb;
+  return () => { if (onMessageDeliveredCb === cb) onMessageDeliveredCb = null; };
+}
+
+/** 是否框架内部消息（不视为"用户消息"，飞书不上报；纯净模式只反馈状态不显示内容） */
+function isSystemTag(tag?: string): boolean {
+  return SYSTEM_MSG_TAGS.indexOf(tag || '') !== -1;
+}
+
+/** 派发"消息已投递"（回调缺失时零开销） */
+function emitMessageDelivered(text: string, tag?: string): void {
+  if (!onMessageDeliveredCb) return;
+  try {
+    onMessageDeliveredCb({ text: text, tag: tag || '', isSystem: isSystemTag(tag) });
+  } catch (_) { /* ignore */ }
 }
 
 async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
@@ -127,8 +149,10 @@ async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterS
     console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
     // 通知监听者（飞书同步等）；系统内部消息（工具结果/看门狗/重试等）不上报
     try {
-      if (onUserMessageSentCb && !SYSTEM_MSG_TAGS.includes(tag || '')) onUserMessageSentCb(msg, tag);
+      if (onUserMessageSentCb && !isSystemTag(tag)) onUserMessageSentCb(msg, tag);
     } catch (_) {}
+    // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
+    emitMessageDelivered(msg, tag);
     if (typeof afterSent === 'function') afterSent();
   }, sendDelay);
   token.timer = timer;
@@ -239,6 +263,8 @@ async function sendInitialPromptToInput(): Promise<boolean> {
     console.log('[Cuckoo Code] 等待结束，开始发送初始提示');
     triggerSend(input);
     state.pendingInitialPrompt = false;
+    // 纯净模式：系统提示词投递也要有运行态反馈（内容不显示）
+    emitMessageDelivered(state.initialPromptContent || '', '系统提示词');
   }, sendDelay);
 
   return true;
@@ -450,6 +476,8 @@ export {
   appendTextToInput,
   sendToChat,
   onUserMessageSent,
+  onMessageDelivered,
+  isSystemTag,
   sendMessageToChat,
   sendCombinedJsResultsToChat,
   cancelPendingSend,

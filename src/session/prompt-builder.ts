@@ -11,6 +11,9 @@ import { registry as toolRegistry } from '../tools/index.js';
 import { scanSkills, buildSkillsSection } from '../skills/index.js';
 import { scanAgents, buildAgentsSection } from '../agents/index.js';
 import { scanRules, getUnscopedRules, buildUnscopedRulesSection } from '../rules/index.js';
+// 直接引 roots 子模块（不走 plugins 的 barrel），避免把整个插件模块图拉进来
+import { getPluginScanRoots } from '../plugins/roots.js';
+import type { PluginScanRoots } from '../plugins/roots.js';
 
 // 提示词模板目录（D20：锚定应用根，与 dist 结构解耦）
 const PROMPT_DIR = resolveSrc('prompt');
@@ -163,10 +166,19 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   const platformInfo = buildPlatformInfo();
   const projectIntro = readProjectIntro(selectedDir);
   const projectIntroSection = projectIntro ? '---\n## 项目介绍\n' + projectIntro : '';
-  const skillsSection = buildSkillsSection(scanSkills(selectedDir));
-  const agentsSection = buildAgentsSection(scanAgents(selectedDir));
+  // 已安装插件贡献的扫描根。
+  // 由本层居中传递：scanner 不 import plugins，plugins 不 import scanner，两边无依赖环。
+  let pluginRoots: PluginScanRoots = { skillDirs: [], agentDirs: [], ruleDirs: [], mcpFiles: [] };
+  try {
+    pluginRoots = getPluginScanRoots();
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 读取插件扫描根失败:', err && err.message ? err.message : String(err));
+  }
+
+  const skillsSection = buildSkillsSection(scanSkills(selectedDir, pluginRoots.skillDirs));
+  const agentsSection = buildAgentsSection(scanAgents(selectedDir, pluginRoots.agentDirs));
   // 无 paths 的规则：始终注入（「## 项目规则」章节）
-  const rulesSection = buildUnscopedRulesSection(getUnscopedRules(scanRules(selectedDir)));
+  const rulesSection = buildUnscopedRulesSection(getUnscopedRules(scanRules(selectedDir, pluginRoots.ruleDirs)));
 
   const placeholders: Record<string, string> = {
     '{{TOOL_API_TYPES}}': toolApiTypes,

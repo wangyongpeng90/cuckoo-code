@@ -7,8 +7,8 @@
  *  - 无 `paths` 的：初始化时注入（同 CUCKOO.md 待遇）
  */
 
-/** 规则来源作用域 */
-export type RuleSource = 'project' | 'user';
+/** 规则来源作用域（plugin = 由已安装插件贡献，优先级最低） */
+export type RuleSource = 'project' | 'user' | 'plugin';
 
 /** 扫描出的规则元数据 */
 export interface RuleMeta {

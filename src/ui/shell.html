@@ -761,6 +761,55 @@
   }
   .ck-task-status { display: inline-flex; align-items: center; gap: 5px; color: var(--ck-primary); font-weight: 600; }
 
+  /* ===== 对话（网页端会话列表） ===== */
+  .ck-conv-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: var(--ck-text-2); }
+  .ck-conv-item:hover { background: var(--ck-surface-hover); color: var(--ck-text); }
+  .ck-conv-item.ck-conv-active { background: var(--ck-primary-soft); color: var(--ck-primary); }
+  .ck-conv-item.ck-conv-disabled { opacity: .4; cursor: not-allowed; pointer-events: none; }
+  .ck-conv-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ===== 插件卡片（市场 + 已安装）=====
+     不复用 .ck-snip-preview：那是单行截断的，简介会显示不全。 */
+  .ck-plugin-item { padding: 10px 12px; border-bottom: 1px solid var(--ck-border); }
+  .ck-plugin-item:last-child { border-bottom: none; }
+  .ck-plugin-item:hover { background: var(--ck-surface); }
+  .ck-plugin-head { display: flex; align-items: center; gap: 8px; }
+  .ck-plugin-name {
+    font-size: 13px; font-weight: 600; color: var(--ck-text);
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  /* 已安装 / 有更新 徽标 */
+  .ck-plugin-badge {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    flex-shrink: 0; white-space: nowrap;
+  }
+  .ck-plugin-badge.on { background: rgba(74, 222, 128, .15); color: var(--ck-green); }
+  .ck-plugin-badge.update { background: rgba(255, 193, 7, .16); color: #ffc107; }
+  .ck-plugin-badge.archived { background: rgba(255, 107, 122, .15); color: var(--ck-red); }
+  /* 简介：多行，允许折行 */
+  .ck-plugin-desc {
+    font-size: 12px; color: var(--ck-text-dim); margin-top: 5px;
+    line-height: 1.55; white-space: normal; word-break: break-word;
+  }
+  /* 元信息行 */
+  .ck-plugin-meta {
+    font-size: 11px; color: var(--ck-text-dim); margin-top: 7px;
+    display: flex; flex-wrap: wrap; gap: 3px 10px; align-items: center;
+  }
+  .ck-plugin-meta .sep { opacity: .4; }
+  /* 版本要求行 */
+  .ck-plugin-req { font-size: 11px; color: var(--ck-text-dim); margin-top: 5px; }
+  .ck-plugin-req.warn { color: #ffc107; }
+  .ck-plugin-req.err { color: var(--ck-text-dim); opacity: .75; }
+  /* 已安装行的开关与操作按钮 */
+  .ck-plugin-switch-row { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .ck-plugin-switch-label { font-size: 11px; color: var(--ck-text-dim); }
+  /* 插件卡片的操作按钮：**常驻可见**。
+     不要复用 .ck-snip-actions —— 它带 opacity:0 + pointer-events:none，
+     且显示规则绑定在 .ck-snip-item:hover 上；放进 .ck-plugin-item 会永远不可见也点不到。
+     插件卡片的安装/更新/卸载是主要操作，不该藏到悬停里。 */
+  .ck-plugin-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+
 </style>
 </head>
 <body>
@@ -803,6 +852,12 @@
           </button>
           <button class="ck-ab-item" data-tab="skills" title="技能">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          </button>
+          <button class="ck-ab-item" data-tab="plugins" title="插件">
+            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.2 2.2 0 0 1 0 4.4H2V19a2 2 0 0 0 2 2h3.8v-1.5a2.2 2.2 0 0 1 4.4 0V21H18a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
+          </button>
+          <button class="ck-ab-item" data-tab="conversations" title="对话">
+            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           </button>
           <button class="ck-ab-item" data-tab="agents" title="子代理">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="12" rx="2"/><path d="M12 8V4"/><circle cx="12" cy="3" r="1"/><path d="M8 13h.01"/><path d="M16 13h.01"/><path d="M9 17h6"/></svg>
@@ -911,6 +966,45 @@
                 </button>
               </div>
               <div class="ck-list" id="ws-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+            </div>
+
+            <!-- ===== 对话（读网页端会话列表，实时同步） ===== -->
+            <div class="ck-tab" data-panel="conversations">
+              <div class="ck-actions">
+                <button class="ck-icon-btn" id="conv-new" title="新对话">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <span class="ck-set-group-title" style="flex:1;">对话</span>
+                <button class="ck-icon-btn" id="conv-refresh" title="刷新">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                </button>
+              </div>
+              <div class="ck-list" id="conv-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+            </div>
+
+            <!-- ===== 插件 ===== -->
+            <div class="ck-tab" data-panel="plugins">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">已安装插件</span>
+                <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                </button>
+                <button class="ck-icon-btn" id="plugin-refresh" title="刷新（重新搜索市场）">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                </button>
+              </div>
+              <div class="ck-list" id="plugin-installed-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">市场</span>
+                <span class="ck-snip-badge" title="唯一搜索源">topic:cuckoo-plugin</span>
+              </div>
+              <div class="ck-list" id="plugin-market-list">
                 <div class="ck-list-empty">加载中…</div>
               </div>
             </div>
@@ -2715,6 +2809,312 @@
     }
   });
 
+  // src/ui/shell/scripts/pages/conversations.ts
+  var harnessBusy = false;
+  function applyBusyState() {
+    const listEl = document.getElementById("conv-list");
+    if (!listEl) return;
+    listEl.querySelectorAll(".ck-conv-item").forEach((el) => {
+      el.classList.toggle("ck-conv-disabled", harnessBusy);
+    });
+  }
+  async function loadConversations(retainOnEmpty) {
+    const listEl = document.getElementById("conv-list");
+    if (!listEl || !api.listWebSessions) return;
+    let res = null;
+    try {
+      res = await api.listWebSessions();
+    } catch (_) {
+      res = null;
+    }
+    const sessions = res && res.success && Array.isArray(res.sessions) ? res.sessions : [];
+    const curUrl = res && res.currentUrl || "";
+    if (!sessions.length) {
+      if (retainOnEmpty) return;
+      if (listEl.querySelector(".ck-conv-item")) return;
+      listEl.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u4E2D\u2026\uFF08\u82E5\u6301\u7EED\u4E3A\u7A7A\uFF0C\u8BF7\u70B9\u5237\u65B0\uFF09</div>';
+      return;
+    }
+    listEl.innerHTML = sessions.map((s) => {
+      const active = s.href === curUrl ? " ck-conv-active" : "";
+      return '<div class="ck-conv-item' + active + '" data-url="' + escapeAttr(s.href) + '" title="' + escapeAttr(s.title) + '"><span class="ck-conv-title">' + escapeHtml(s.title) + "</span></div>";
+    }).join("");
+    listEl.querySelectorAll(".ck-conv-item").forEach((el) => {
+      el.addEventListener("click", () => {
+        if (harnessBusy) return;
+        const url = el.getAttribute("data-url");
+        if (url && api.navigateWebSession) {
+          api.navigateWebSession(url);
+          listEl.querySelectorAll(".ck-conv-item").forEach((x) => x.classList.remove("ck-conv-active"));
+          el.classList.add("ck-conv-active");
+        }
+      });
+    });
+    applyBusyState();
+  }
+  function reloadConversationsAfterNav() {
+    loadConversations(true);
+    setTimeout(() => loadConversations(true), 800);
+    setTimeout(() => loadConversations(true), 1800);
+    setTimeout(() => loadConversations(false), 3200);
+  }
+  document.getElementById("conv-refresh")?.addEventListener("click", () => loadConversations());
+  document.getElementById("conv-new")?.addEventListener("click", () => {
+    if (api.newWebConversation) api.newWebConversation().then(() => reloadConversationsAfterNav());
+  });
+  if (api.onHarnessBusy) api.onHarnessBusy((busy) => {
+    harnessBusy = busy;
+    applyBusyState();
+  });
+  if (api.onWebUrlChanged) api.onWebUrlChanged(() => {
+    const panel = document.querySelector('.ck-tab[data-panel="conversations"]');
+    if (panel && panel.classList.contains("ck-tab-active")) {
+      try {
+        reloadConversationsAfterNav();
+      } catch (_) {
+      }
+    }
+  });
+
+  // src/ui/shell/scripts/pages/plugins.ts
+  var pluginMarketItems = [];
+  var pluginMarketNotice = "";
+  var pluginInstalled = {};
+  var pluginRemote = {};
+  var ICON_INSTALL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>';
+  var ICON_UPDATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>';
+  var ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
+  async function loadPlugins() {
+    await loadInstalledPlugins();
+    await loadPluginMarket(false);
+  }
+  function pluginContribSummary(c) {
+    if (!c) return "";
+    const parts = [];
+    if (c.skills && c.skills.length) parts.push("\u6280\u80FD " + c.skills.length);
+    if (c.agents && c.agents.length) parts.push("\u4EE3\u7406 " + c.agents.length);
+    if (c.rules && c.rules.length) parts.push("\u89C4\u5219 " + c.rules.length);
+    if (c.mcp) parts.push("MCP");
+    if (c.providers && c.providers.length) parts.push("\u53EF\u6267\u884C " + c.providers.length);
+    return parts.join(" \xB7 ");
+  }
+  function pluginHasExec(c) {
+    if (!c) return false;
+    return !!(c.providers && c.providers.length > 0 || c.mcp);
+  }
+  function isNewerVersion(a, b) {
+    if (!a || !b) return false;
+    const pa = String(a).split(".").map((x) => parseInt(x, 10) || 0);
+    const pb = String(b).split(".").map((x) => parseInt(x, 10) || 0);
+    const n = Math.max(pa.length, pb.length);
+    for (let i = 0; i < n; i++) {
+      const x = pa[i] || 0, y = pb[i] || 0;
+      if (x > y) return true;
+      if (x < y) return false;
+    }
+    return false;
+  }
+  function pluginUpdateState(it) {
+    const inst = pluginInstalled[it.id];
+    if (!inst) return "none";
+    const remote = pluginRemote[it.id];
+    if (remote && remote.ok && remote.version) {
+      return isNewerVersion(remote.version, inst.version) ? "update" : "installed";
+    }
+    if (it.pushedAt && inst.installedAt) {
+      const pushed = Date.parse(it.pushedAt);
+      const installed = Date.parse(inst.installedAt);
+      if (Number.isFinite(pushed) && Number.isFinite(installed) && pushed > installed) return "update";
+    }
+    return "installed";
+  }
+  function pluginMetaHtml(pairs) {
+    const cells = [];
+    pairs.forEach((p) => {
+      if (p) cells.push("<span>" + p + "</span>");
+    });
+    if (!cells.length) return "";
+    return '<div class="ck-plugin-meta">' + cells.join('<span class="sep">\xB7</span>') + "</div>";
+  }
+  async function loadInstalledPlugins() {
+    const listEl = document.getElementById("plugin-installed-list");
+    if (!listEl || !api.listInstalledPlugins) return;
+    try {
+      const r = await api.listInstalledPlugins();
+      const plugins = r && r.success ? r.plugins : [];
+      if (!plugins.length) {
+        listEl.innerHTML = '<div class="ck-list-empty">\u8FD8\u6CA1\u6709\u5B89\u88C5\u63D2\u4EF6<br>\u4ECE\u4E0B\u65B9\u5E02\u573A\u5B89\u88C5</div>';
+        return;
+      }
+      listEl.innerHTML = plugins.map((p) => {
+        const hasExec = pluginHasExec(p.contributes);
+        const swTitle = hasExec ? "\u542F\u7528\u540E\uFF1A\u6280\u80FD/\u4EE3\u7406/\u89C4\u5219 + MCP + \u53EF\u6267\u884C\u5185\u5BB9\u5168\u90E8\u751F\u6548" : "\u542F\u7528\u540E\uFF1A\u6280\u80FD/\u4EE3\u7406/\u89C4\u5219\u5168\u90E8\u751F\u6548";
+        const sw = '<label class="ck-switch" title="' + escapeAttr(swTitle) + '"><input type="checkbox" data-toggle="' + escapeAttr(p.id) + '"' + (p.enabled ? " checked" : "") + ' /><span class="ck-switch-track"></span></label>';
+        const meta = [];
+        if (p.version) meta.push("v" + escapeHtml(p.version));
+        if (p.repo) meta.push(escapeHtml(p.repo));
+        const contrib = pluginContribSummary(p.contributes);
+        if (contrib) meta.push(escapeHtml(contrib));
+        return '<div class="ck-plugin-item" data-plugin="' + escapeAttr(p.id) + '"><div class="ck-plugin-head"><span class="ck-plugin-name">' + escapeHtml(p.name || p.id) + "</span>" + (hasExec ? '<span class="ck-plugin-badge update" title="\u542B\u53EF\u6267\u884C\u5185\u5BB9">\u542B\u53EF\u6267\u884C</span>' : "") + '<div class="ck-plugin-switch-row"><span class="ck-plugin-switch-label">' + (p.enabled ? "\u5DF2\u542F\u7528" : "\u5DF2\u7981\u7528") + "</span>" + sw + '</div><div class="ck-plugin-actions"><button class="ck-snip-icon-btn danger" data-uninstall="' + escapeAttr(p.id) + '" title="\u5378\u8F7D">' + ICON_TRASH + '</button></div></div><div class="ck-plugin-desc">' + escapeHtml(p.description || "\uFF08\u65E0\u63CF\u8FF0\uFF09") + "</div>" + pluginMetaHtml(meta) + "</div>";
+      }).join("");
+      listEl.querySelectorAll("[data-uninstall]").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const id = btn.dataset.uninstall;
+          if (!await ckConfirm("\u786E\u5B9A\u5378\u8F7D\u63D2\u4EF6\u300C" + id + "\u300D\uFF1F\n\n\u63D2\u4EF6\u76EE\u5F55\u4E0E\u5176\u542F\u7528\u72B6\u6001\u90FD\u4F1A\u88AB\u5220\u9664\u3002", "\u5378\u8F7D\u63D2\u4EF6")) return;
+          if (!api.pluginUninstall) return;
+          const r2 = await api.pluginUninstall(id);
+          if (!r2 || !r2.success) {
+            await ckAlert(r2 && r2.error || "\u5378\u8F7D\u5931\u8D25");
+            return;
+          }
+          await loadPlugins();
+        });
+      });
+      listEl.querySelectorAll("[data-toggle]").forEach((input2) => {
+        input2.addEventListener("change", async () => {
+          const id = input2.dataset.toggle;
+          const p = plugins.filter((x) => x.id === id)[0];
+          const turnOn = input2.checked;
+          if (turnOn && p && pluginHasExec(p.contributes)) {
+            const lines = (p.contributes.providers || []).map((f) => {
+              return "\xB7 providers/" + f + "\uFF08\u4F1A\u88AB require \u6267\u884C\uFF09";
+            });
+            if (p.contributes.mcp) lines.push("\xB7 mcp.json \u91CC\u7684 MCP server\uFF08\u4F1A\u542F\u52A8\u5B50\u8FDB\u7A0B\uFF09");
+            const ok = await ckConfirm(
+              "\u542F\u7528\u300C" + (p.name || id) + "\u300D\uFF1F\n\n\u8BE5\u63D2\u4EF6\u542B\u53EF\u6267\u884C\u5185\u5BB9\uFF0C\u542F\u7528\u540E\u4F1A\u5728\u672C\u673A\u8FD0\u884C\u7B2C\u4E09\u65B9\u4EE3\u7801\uFF1A\n\n" + lines.join("\n"),
+              "\u542F\u7528\u63D2\u4EF6"
+            );
+            if (!ok) {
+              input2.checked = false;
+              return;
+            }
+          }
+          if (!api.pluginSetEnabled) return;
+          const r2 = await api.pluginSetEnabled(id, turnOn);
+          if (!r2 || !r2.success) {
+            input2.checked = !turnOn;
+            await ckAlert(r2 && r2.error || "\u64CD\u4F5C\u5931\u8D25");
+            return;
+          }
+          await loadInstalledPlugins();
+        });
+      });
+    } catch (_) {
+      listEl.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u5931\u8D25</div>';
+    }
+  }
+  function renderPluginMarket() {
+    const listEl = document.getElementById("plugin-market-list");
+    if (!listEl) return;
+    const notice = pluginMarketNotice ? '<div class="ck-list-empty">' + escapeHtml(pluginMarketNotice) + "</div>" : "";
+    if (!pluginMarketItems.length) {
+      listEl.innerHTML = notice + '<div class="ck-list-empty">\u6682\u65E0\u63D2\u4EF6<br><br>\u7ED9\u4F60\u7684\u4ED3\u5E93\u6253\u4E0A <b>cuckoo-plugin</b> topic\uFF0C<br>\u5B83\u5C31\u4F1A\u51FA\u73B0\u5728\u8FD9\u91CC</div>';
+      return;
+    }
+    listEl.innerHTML = notice + pluginMarketItems.map(marketCardHtml).join("");
+    listEl.querySelectorAll("[data-install]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.install;
+        const it = pluginMarketItems.filter((x) => x.id === id)[0];
+        if (it) await installPluginFromMarket(it, btn.dataset.upgrade === "1");
+      });
+    });
+  }
+  function marketCardHtml(it) {
+    const state = pluginUpdateState(it);
+    const remote = pluginRemote[it.id];
+    let badges = "";
+    if (it.archived) badges += '<span class="ck-plugin-badge archived" title="\u4ED3\u5E93\u5DF2\u5F52\u6863\uFF0C\u53EF\u80FD\u4E0D\u518D\u7EF4\u62A4">\u5DF2\u5F52\u6863</span>';
+    if (state === "installed") badges += '<span class="ck-plugin-badge on">\u5DF2\u5B89\u88C5</span>';
+    if (state === "update") badges += '<span class="ck-plugin-badge update">\u53EF\u66F4\u65B0</span>';
+    let action = "";
+    if (state === "none") {
+      action = '<button class="ck-snip-icon-btn" data-install="' + escapeAttr(it.id) + '" title="\u5B89\u88C5">' + ICON_INSTALL + "</button>";
+    } else if (state === "update") {
+      action = '<button class="ck-snip-icon-btn" data-install="' + escapeAttr(it.id) + '" data-upgrade="1" title="\u66F4\u65B0\u5230\u6700\u65B0">' + ICON_UPDATE + "</button>";
+    }
+    let req = "";
+    if (remote && remote.ok) {
+      const bits = [];
+      if (remote.version) bits.push("\u63D2\u4EF6 v" + escapeHtml(remote.version));
+      if (remote.minAppVersion) bits.push("\u9700\u8981 Cuckoo Code \u2265 " + escapeHtml(remote.minAppVersion));
+      if (bits.length) req = '<div class="ck-plugin-req">' + bits.join(" \xB7 ") + "</div>";
+    } else if (remote && remote.error) {
+      req = '<div class="ck-plugin-req err">\u8BFB\u4E0D\u5230 plugin.json\uFF1A' + escapeHtml(remote.error) + "</div>";
+    }
+    return '<div class="ck-plugin-item" data-repo="' + escapeAttr(it.id) + '"><div class="ck-plugin-head"><span class="ck-plugin-name" title="' + escapeAttr(it.id) + '">' + escapeHtml(it.id) + "</span>" + badges + '<div class="ck-plugin-actions">' + action + '</div></div><div class="ck-plugin-desc">' + escapeHtml(it.description || "\uFF08\u65E0\u7B80\u4ECB\uFF09") + "</div>" + pluginMetaHtml([
+      it.language ? escapeHtml(it.language) : "",
+      it.stars ? "\u2605 " + it.stars : "",
+      it.license ? escapeHtml(it.license) : "",
+      (it.pushedAt || it.updatedAt || "").slice(0, 10)
+    ]) + req + "</div>";
+  }
+  async function loadPluginMarket(force) {
+    const listEl = document.getElementById("plugin-market-list");
+    if (!listEl || !api.pluginMarketList) return;
+    listEl.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u4E2D\u2026</div>';
+    try {
+      const r = await api.pluginMarketList({ force: !!force });
+      if (!r || !r.success) {
+        pluginMarketItems = [];
+        pluginMarketNotice = r && r.error || "\u52A0\u8F7D\u5931\u8D25";
+        renderPluginMarket();
+        return;
+      }
+      pluginMarketItems = r.items || [];
+      pluginInstalled = r && r.installed || {};
+      pluginMarketNotice = r && r.error || "";
+      renderPluginMarket();
+      loadRemoteManifests();
+    } catch (_) {
+      listEl.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u5931\u8D25</div>';
+    }
+  }
+  async function loadRemoteManifests() {
+    if (!api.pluginMarketRemote) return;
+    const targets = pluginMarketItems.filter((it) => it.defaultBranch).map((it) => ({ repo: it.id, branch: it.defaultBranch }));
+    if (!targets.length) return;
+    try {
+      const r = await api.pluginMarketRemote(targets);
+      if (!r || !r.success) return;
+      pluginRemote = r.remote || {};
+      renderPluginMarket();
+    } catch (_) {
+    }
+  }
+  async function installPluginFromMarket(item, isUpgrade) {
+    const remote = pluginRemote[item.id];
+    const what = isUpgrade ? "\u66F4\u65B0" : "\u5B89\u88C5";
+    const lines = [item.id];
+    if (item.description) lines.push(item.description);
+    if (remote && remote.ok) {
+      if (remote.version) lines.push("\u7248\u672C\uFF1Av" + remote.version);
+      if (remote.minAppVersion) lines.push("\u9700\u8981 Cuckoo Code \u2265 " + remote.minAppVersion);
+    }
+    const ok = await ckConfirm(
+      "\u786E\u5B9A" + what + "\u8BE5\u63D2\u4EF6\uFF1F\n\n" + lines.join("\n") + "\n\n\u88C5\u597D\u540E\u9ED8\u8BA4\u5904\u4E8E\u7981\u7528\u72B6\u6001\uFF0C\u9700\u5728\u300C\u5DF2\u5B89\u88C5\u300D\u5904\u6253\u5F00\u5F00\u5173\u624D\u751F\u6548\u3002",
+      what + "\u63D2\u4EF6"
+    );
+    if (!ok) return;
+    if (!api.pluginInstall) return;
+    const r = await api.pluginInstall(item.id, item.defaultBranch, !!isUpgrade);
+    if (!r || !r.success) {
+      await ckAlert(r && r.error || what + "\u5931\u8D25", what + "\u5931\u8D25");
+      return;
+    }
+    const msg = (r.upgraded ? "\u5DF2\u66F4\u65B0\uFF1A" : "\u5DF2\u5B89\u88C5\uFF1A") + (r.plugin && r.plugin.name || item.id);
+    await ckAlert(msg + "\n\n\u9ED8\u8BA4\u7981\u7528\u3002\u5728\u300C\u5DF2\u5B89\u88C5\u300D\u5904\u6253\u5F00\u5F00\u5173\u540E\uFF0C\u5B83\u7684\u6280\u80FD / \u4EE3\u7406 / \u89C4\u5219 / MCP / \u53EF\u6267\u884C\u5185\u5BB9\u624D\u4F1A\u751F\u6548\u3002", r.upgraded ? "\u66F4\u65B0\u5B8C\u6210" : "\u5B89\u88C5\u5B8C\u6210");
+    await loadPlugins();
+  }
+  document.getElementById("plugin-refresh")?.addEventListener("click", () => loadPluginMarket(true));
+  document.getElementById("plugin-open-dir")?.addEventListener("click", async () => {
+    if (!api.pluginOpenDir) return;
+    const r = await api.pluginOpenDir();
+    if (r && !r.success) await ckAlert(r.error || "\u6253\u5F00\u76EE\u5F55\u5931\u8D25");
+  });
+
   // src/ui/shell/scripts/main.ts
   registerTab("workspaces", loadWorkspaces);
   registerTab("snippets", loadSnippets);
@@ -2726,6 +3126,8 @@
   registerTab("feishu", loadFeishu);
   registerTab("windows", renderWindowList);
   registerTab("settings", loadSettings);
+  registerTab("conversations", loadConversations);
+  registerTab("plugins", loadPlugins);
   try {
     loadWorkspaces();
   } catch (_) {

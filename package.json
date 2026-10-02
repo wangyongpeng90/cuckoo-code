@@ -58,6 +58,7 @@
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
+    "katex": "^0.18.9",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
   },
@@ -141,8 +142,8 @@
       "src/overlay/template/*.html",
       "src/overlay/template/*.css",
       "src/ui/*.html",
-      "src/ui/vendor/**",
-      "src/ui/feishu-images/**"
+      "src/ui/feishu-images/**",
+      "src/ui/vendor/**"
     ]
   },
   "dependencies": {
@@ -155,6 +156,7 @@
     "marked": "^18.0.14",
     "mysql2": "^3.24.2",
     "picomatch": "^4.0.7",
+    "tar": "^7.5.22",
     "turndown": "^7.2.4"
   },
   "allowScripts": {

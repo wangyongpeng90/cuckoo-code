@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Cuckoo Code 主进程入口（多窗口多 profile 版）
  * 由项目根目录 main.js 薄壳加载。
  */
@@ -190,6 +190,7 @@ function createWindow(profile: any) {
     hv.webContents.loadFile(resolveSrc('ui/harness.html'));
     hv.webContents.on('did-finish-load', () => {
       console.log('[Cuckoo Harness] 页面加载完成');
+      try { notifyHarnessSession(view.webContents.getURL()); } catch (_) {}
     });
     hv.webContents.on('did-fail-load', (_e: any, code: any, desc: any) => {
       console.error('[Cuckoo Harness] 页面加载失败: ' + code + ' ' + desc);
@@ -229,7 +230,7 @@ function createWindow(profile: any) {
       width: Math.max(0, w - sbw),
       height: Math.max(0, h - tbh - STATUS_HEIGHT),
     });
-    // harness 只覆盖"网页区域"（与 AI view 同位置），保留地址栏/状态条/侧边栏；隐藏时尺寸归零
+    // harness 覆盖整个"网页区域"（与 AI view 同位置）
     const hv = (mainWindow as any).__ckHarnessView;
     if (hv && !hv.webContents.isDestroyed()) {
       if ((mainWindow as any).__ckHarnessVisible) {
@@ -262,6 +263,19 @@ function createWindow(profile: any) {
   windowState.addWindow(mainWindow, profileData.id, profileData.providerId || '', sessionStore, view);
   sessionsToFlush.add(winSession);
 
+  // 通知 harness 当前会话已变化（用于按会话隔离历史/目标/计划）
+  const notifyHarnessSession = (url: string) => {
+    try {
+      const c: any = windowState.getContextByWebContents(view.webContents);
+      const hv = c && c.harnessView;
+      if (!hv || hv.webContents.isDestroyed()) return; // 懒加载下 view 可能尚未创建
+      let sid = '';
+      const provider = c.providerId ? getProvider(c.providerId) : null;
+      if (provider && typeof provider.extractSessionId === 'function') sid = provider.extractSessionId(url) || '';
+      hv.webContents.send('harness-event', { type: 'session-changed', sessionId: sid });
+    } catch (_) { /* ignore */ }
+  };
+
   // 切换纯净模式（同窗口）：true=显示 harness，false=显示网页
   (mainWindow as any).__ckToggleHarness = (show?: boolean) => {
     if (mainWindow.isDestroyed()) return;
@@ -275,12 +289,9 @@ function createWindow(profile: any) {
     } else {
       layoutView();
     }
-    // 通知 AI 页面：纯净模式开/关（bridge 据此决定是否处理上报，关闭时零开销）
-    try {
-      if (view && view.webContents && !view.webContents.isDestroyed()) {
-        view.webContents.send('harness-mode', { enabled: next });
-      }
-    } catch (_) {}
+    // 注：不再向 AI 页面下发"纯净模式开关"。bridge 侧上报已不设门控
+    //（门控一旦判断错就整片静默丢弃，曾导致界面空白 + 状态卡死）；
+    // 主进程在没有 harness 视图时自会丢弃事件，无需 bridge 配合。
     // 通知壳页面：更新「纯净模式/原版模式」按钮
     try { mainWindow.webContents.send('shell-harness-mode', { harness: next }); } catch (_) {}
   };
@@ -365,6 +376,9 @@ function createWindow(profile: any) {
     pushUrlState(view);
     // 通知 AI 页面（overlay/看门狗）URL 已变，替代原先的渲染进程轮询
     try { view.webContents.send('cuckoo-url-changed', { url }); } catch (_) {}
+    notifyHarnessSession(url);
+    // 通知壳页面：网页 URL 变了 → 刷新对话列表高亮
+    try { mainWindow.webContents.send('shell-web-url-changed', { url }); } catch (_) {}
     // 通知 harness 页面刷新"需初始化项目"状态（首页 ↔ 会话页）
     try { pushHarnessState(windowState.getContextByWebContents(view.webContents)); } catch (_) {}
     autoConnectMcp();
@@ -375,6 +389,8 @@ function createWindow(profile: any) {
     pushUrlState(view);
     // SPA 路由（pushState）变化也在此触发，替代轮询
     try { view.webContents.send('cuckoo-url-changed', { url }); } catch (_) {}
+    notifyHarnessSession(url);
+    try { mainWindow.webContents.send('shell-web-url-changed', { url }); } catch (_) {}
     // 通知 harness 页面刷新"需初始化项目"状态（首页 ↔ 会话页）
     try { pushHarnessState(windowState.getContextByWebContents(view.webContents)); } catch (_) {}
     autoConnectMcp();

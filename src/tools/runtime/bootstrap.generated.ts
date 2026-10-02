@@ -8,6 +8,7 @@ const TOOL_BOOTSTRAP = [
   "  globalThis.deleteFile = async function (filePath) {\n      return await __call('deleteFile', { filePath: filePath });\n  };",
   "  globalThis.edit = async function (filePath, oldString, newString, replaceAll, dryRun) {\n      return await __call('edit', {\n          filePath: filePath,\n          oldString: oldString,\n          newString: newString,\n          replaceAll: replaceAll === true,\n          dryRun: dryRun === true,\n      });\n  };",
   "  globalThis.glob = async function (pattern, searchPath) {\n      return await __call('glob', { pattern: pattern, path: searchPath });\n  };",
+  "  globalThis.goalDone = async function () {\n      return await __call('goalDone', {});\n  };",
   "  globalThis.grep = async function (pattern, options) {\n      options = options || {};\n      return await __call('grep', {\n          pattern: pattern,\n          path: options.path,\n          include: options.include,\n      });\n  };",
   "  globalThis.injectJS = async function (windowId, code) {\n      return await __call('injectJS', { windowId: windowId, code: code });\n  };",
   "  globalThis.mcpCall = async function (server, tool, args) {\n      return await __call('mcpCall', { server: server, tool: tool, args: args || {} });\n  };",

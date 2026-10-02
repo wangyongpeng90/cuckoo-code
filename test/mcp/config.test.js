@@ -11,6 +11,9 @@ import assert from 'node:assert';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+// 直接引子模块（不走 plugins barrel —— 那会拉进 http.ts，撞上本文件对 node:module 的 mock）
+import { setPluginEnabled } from '../../src/plugins/state.js';
+import { getPluginsDir } from '../../src/plugins/paths.js';
 
 const TMP = path.join(os.tmpdir(), 'cuckoo-mcp-config-test');
 const FAKE_HOME = path.join(TMP, 'home');
@@ -173,4 +176,128 @@ test('migrateLegacy：旧文件非法 JSON 时不动', () => {
   fs.writeFileSync(path.join(USER_DATA, 'mcp.json'), 'not json {{{');
   cfg.migrateLegacy();
   assert.ok(!fs.existsSync(userConfigFile()), '不应创建新文件');
+});
+
+// ========== 插件来源（topic 插件带来的 mcp.json）==========
+// 安全语义：MCP server 定义会 spawn 子进程，与 providers/*.js 同级。
+// 因此归 plugins-state.json 的 enabled（插件总开关）管，未启用时不出现。
+
+/** 造一个带 mcp.json 的已安装插件 */
+function makePluginWithMcp(id, servers) {
+  const dir = path.join(getPluginsDir(), id);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({ id, name: id }), 'utf-8');
+  fs.writeFileSync(path.join(dir, 'mcp.json'), JSON.stringify({ mcpServers: servers }), 'utf-8');
+  return dir;
+}
+
+function pluginServers(projectDir) {
+  return cfg.getServers(projectDir).filter((s) => s.source === 'plugin');
+}
+
+test('插件 mcp.json：未授权时完全不出现（默认禁用）', () => {
+  makePluginWithMcp('demo', { fs: { command: 'npx', args: ['-y', 'x'] } });
+  assert.deepStrictEqual(pluginServers(null), []);
+});
+
+test('插件 mcp.json：授权后出现，且带 <插件id>: 命名空间前缀', () => {
+  makePluginWithMcp('demo', { fs: { command: 'npx', args: ['-y', 'x'] } });
+  setPluginEnabled('demo', true);
+
+  const list = pluginServers(null);
+  assert.strictEqual(list.length, 1);
+  assert.strictEqual(list[0].name, 'demo:fs');
+  assert.strictEqual(list[0].command, 'npx');
+  assert.deepStrictEqual(list[0].args, ['-y', 'x']);
+  assert.strictEqual(list[0].type, 'stdio');
+  assert.strictEqual(list[0].enabled, true, '已授权的插件 server 应可连接');
+});
+
+test('插件 mcp.json：与用户同名 server 不冲突（命名空间隔离）', () => {
+  cfg.upsertServer({ name: 'fs', type: 'stdio', command: 'user-cmd' });
+  makePluginWithMcp('demo', { fs: { command: 'plugin-cmd' } });
+  setPluginEnabled('demo', true);
+
+  const list = cfg.getServers(null);
+  assert.strictEqual(list.length, 2, '两者应并存，不是覆盖');
+  assert.strictEqual(list.find((s) => s.name === 'fs').command, 'user-cmd');
+  assert.strictEqual(list.find((s) => s.name === 'demo:fs').command, 'plugin-cmd');
+});
+
+test('插件 mcp.json：关闭授权后消失', () => {
+  makePluginWithMcp('demo', { fs: { command: 'npx' } });
+  setPluginEnabled('demo', true);
+  assert.strictEqual(pluginServers(null).length, 1);
+
+  setPluginEnabled('demo', false);
+  assert.deepStrictEqual(pluginServers(null), []);
+});
+
+test('插件 mcp.json：多个插件各自的 server 都在', () => {
+  makePluginWithMcp('aaa', { x: { command: 'a' } });
+  makePluginWithMcp('bbb', { y: { command: 'b' } });
+  setPluginEnabled('aaa', true);
+  setPluginEnabled('bbb', true);
+
+  const names = pluginServers(null).map((s) => s.name).sort();
+  assert.deepStrictEqual(names, ['aaa:x', 'bbb:y']);
+});
+
+test('插件 mcp.json：授权状态按插件隔离', () => {
+  makePluginWithMcp('aaa', { x: { command: 'a' } });
+  makePluginWithMcp('bbb', { y: { command: 'b' } });
+  setPluginEnabled('aaa', true);
+
+  const names = pluginServers(null).map((s) => s.name);
+  assert.deepStrictEqual(names, ['aaa:x'], '只有被授权的插件应出现');
+});
+
+test('插件 mcp.json：进入 getEnabledServers（会被真正连接）', () => {
+  makePluginWithMcp('demo', { fs: { command: 'npx' } });
+  setPluginEnabled('demo', true);
+  assert.ok(
+    cfg.getEnabledServers(null).some((s) => s.name === 'demo:fs'),
+    '否则 server 出现了却永远不会被连接'
+  );
+});
+
+test('插件 mcp.json：http 型 server 也支持', () => {
+  makePluginWithMcp('demo', { remote: { url: 'https://x/mcp' } });
+  setPluginEnabled('demo', true);
+  const s = pluginServers(null)[0];
+  assert.strictEqual(s.type, 'http');
+  assert.strictEqual(s.url, 'https://x/mcp');
+});
+
+test('插件 mcp.json：文件损坏时不炸，且不影响其它来源', () => {
+  const dir = path.join(getPluginsDir(), 'broken');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({ id: 'broken', name: 'b' }), 'utf-8');
+  fs.writeFileSync(path.join(dir, 'mcp.json'), '{ not json', 'utf-8');
+  setPluginEnabled('broken', true);
+  cfg.upsertServer({ name: 'mine', type: 'stdio', command: 'x' });
+
+  const list = cfg.getServers(null);
+  assert.strictEqual(list.find((s) => s.name === 'mine').command, 'x');
+  assert.deepStrictEqual(pluginServers(null), []);
+});
+
+test('插件 mcp.json：无 mcp.json 的插件不产生任何 server', () => {
+  const dir = path.join(getPluginsDir(), 'nomcp');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'plugin.json'), JSON.stringify({ id: 'nomcp', name: 'n' }), 'utf-8');
+  setPluginEnabled('nomcp', true);
+  assert.deepStrictEqual(pluginServers(null), []);
+});
+
+test('插件 mcp.json：项目级/用户级不受插件影响（优先级不变）', () => {
+  cfg.upsertServer({ name: 'mine', type: 'stdio', command: 'user' });
+  fs.mkdirSync(path.join(PROJ1, '.cuckoo'), { recursive: true });
+  fs.writeFileSync(projConfigFile(PROJ1), JSON.stringify({ mcpServers: { mine: { command: 'proj' } } }));
+  makePluginWithMcp('demo', { mine: { command: 'plugin' } });
+  setPluginEnabled('demo', true);
+
+  const list = cfg.getServers(PROJ1);
+  assert.strictEqual(list.find((s) => s.name === 'mine').command, 'proj', '项目级仍最高优先');
+  assert.strictEqual(list.find((s) => s.name === 'demo:mine').command, 'plugin');
 });

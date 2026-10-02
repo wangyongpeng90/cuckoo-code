@@ -2,6 +2,7 @@ import { Tool } from '../core/Tool.js';
 import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import { scanAgents } from '../../agents/index.js';
+import { getPluginScanRoots } from '../../plugins/roots.js';
 
 // ========== D12：API 契约元数据 ==========
 export const apiMetas: ToolApiMeta[] = [
@@ -73,8 +74,8 @@ class RunAgentTool extends Tool {
       }
     } catch (_) { /* ignore */ }
 
-    // 找代理定义
-    const agents = scanAgents(projectDir || null);
+    // 找代理定义（含插件贡献的代理）
+    const agents = scanAgents(projectDir || null, getPluginScanRoots().agentDirs);
     const agent = agents.find((a) => a.name === name);
     if (!agent) return ToolResult.error('未找到子代理: ' + name);
 

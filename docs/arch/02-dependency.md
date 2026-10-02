@@ -10,6 +10,7 @@ infra ← providers ← tools ← bridge ← session ← app
                  overlay ──────┘
 
 skills ← agents          （底层共享，供 session/tools 使用）
+plugins                  （底层共享：扫描根由上层计算后传给 scanner）
 ```
 
 箭头读作"被依赖"。即：
@@ -19,8 +20,10 @@ skills ← agents          （底层共享，供 session/tools 使用）
 | `infra/` | 无（最底层） | 一切上层 |
 | `skills/` | 无（仅 node 内置） | 一切上层 |
 | `agents/` | `skills`（仅用其 frontmatter 解析） | 一切上层 |
-| `providers/` | `infra` | tools/bridge/overlay/session/app |
-| `tools/` | `infra`、`providers`、`skills`、`agents` | bridge/overlay/session/app |
+| `plugins/` | 无（仅 node 内置 + `tar`） | 一切上层 |
+| `providers/` | `infra`、`plugins` | tools/bridge/overlay/session/app |
+| `tools/` | `infra`、`providers`、`skills`、`agents`、`plugins` | bridge/overlay/session/app |
+| `mcp/` | `infra`、`plugins` | tools/bridge/overlay/session/app |
 | `bridge/` | `infra`、`providers`、`tools`、**`overlay`** | session/app |
 | `overlay/` | `infra`、`providers`、`tools` | **bridge/session/app**（见下） |
 | `session/` | `infra`、`providers`、`tools`、`bridge`、`skills`、`agents` | overlay/app |
@@ -29,6 +32,32 @@ skills ← agents          （底层共享，供 session/tools 使用）
 **记忆法**：`infra` / `skills` 最底层，`app` 最顶层；`overlay` 与 `bridge` 是 UI 侧的"兄弟"，但 **bridge 可依赖 overlay，overlay 不可依赖 bridge**。
 
 **关于 `skills/` 与 `agents/`**：两者是**底层共享模块**（纯文件扫描 + 解析，只依赖 node 内置；`agents/` 额外用 `skills/frontmatter`）。被 `session/prompt-builder`（组装提示词）、`tools/impl/run-agent`（执行子代理）等引用。**它们不得反向依赖任何上层**（如 app/bridge/session）。
+
+**关于 `plugins/`**：同为**底层共享模块**（node 内置 + `tar`；`http.ts` 是唯一依赖 electron 的薄适配层，且 electron 只在函数内懒 require）。
+
+已安装插件贡献的技能/代理/规则，**不是让 scanner 去 import `plugins/`**——那会形成
+`skills ← plugins` 与 `plugins → skills` 的环。正确做法：
+
+```
+session / tools（依赖序在上）
+   └── 调 plugins/roots.ts 的 getPluginScanRoots()
+        └── 把绝对目录**作为参数**传给 scanSkills / scanAgents / scanRules
+```
+
+即 scanner 只多收一个可选入参（`extraSkillDirs` 等），**两边互不认识**，由上层居中传递。
+
+`providers/` 也依赖 `plugins/`，但只调 `roots.ts` 的 `getEnabledPluginProviderFiles()`——
+它只返回**插件总开关已打开**（`plugins-state.json` 的 `enabled`）的 provider 文件。
+该函数只依赖 `paths` / `manifest` / `state`（全为纯 node），
+不会把 `installer` 的 `tar` 拖进模块图。
+
+`mcp/` 同理，只调 `getEnabledPluginMcpFiles()`（同一套开关）。
+
+**为什么 MCP 与 provider 共用一个开关**：MCP server 定义会 spawn 子进程（`command` + `args`），
+安全等级与 `providers/*.js` **同级**——都是"在本机运行第三方代码"。
+而技能/代理/规则只是数据，所以开关统一控制"这个插件的全部内容"，
+语义上比"部分内容单独授权"更不容易被误点。
+未启用时三者**全部不生效**，且插件安装后**默认就是未启用**。
 
 ## 两个关键约束
 

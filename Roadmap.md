@@ -12,6 +12,7 @@
 - [x] 多窗口管理：每窗口独立 profile 上下文
 - [x] MCP 支持：配置管理 + SDK 连接 + UI 面板 + mcpCall 工具
 - [x] 自定义 Provider：导入/替换/删除，支持 DeepSeek/Claude 等平台
+- [x] 插件市场：GitHub `topic:cuckoo-plugin` 自动发现 + 一键安装/卸载（插件=分发容器，复用既有五套扩展机制）
 
 ---
 

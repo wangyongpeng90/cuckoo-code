@@ -6,8 +6,8 @@
  * 主对话通过 runAgent 工具委派任务给独立上下文的子代理。
  */
 
-/** 代理的来源作用域 */
-export type AgentSource = 'project' | 'user';
+/** 代理的来源作用域（plugin = 由已安装插件贡献，优先级最低） */
+export type AgentSource = 'project' | 'user' | 'plugin';
 
 /** 扫描出的代理元数据 */
 export interface AgentMeta {
