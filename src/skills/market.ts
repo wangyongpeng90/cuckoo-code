@@ -15,6 +15,18 @@ const require = createRequire(import.meta.url);
 
 const API_BASE = 'https://api.skillhub.cn';
 
+/** 从中文描述里提取一个简短中文名（截到第一个标点/括号） */
+function pickZhName(desc: string, fallback: string): string {
+  const d = String(desc || '').trim();
+  if (!d) return fallback;
+  // 取开头到第一个标点（（、-、,、。、：等）
+  const m = d.match(/^[^\-（(,，。：:、\n]{1,20}/);
+  const name = m ? m[0].trim() : '';
+  // 太短或无中文则回退
+  if (name.length < 2 || !/[\u4e00-\u9fa5]/.test(name)) return fallback;
+  return name;
+}
+
 /** 带 UA 的 GET（部分接口对无 UA 请求返回 405） */
 async function httpGet(url: string, opts: { binary?: boolean } = {}): Promise<any> {
   const res = await fetch(url, {
@@ -46,6 +58,7 @@ async function searchSkills(keyword: string, page = 1, pageSize = 24): Promise<a
       namespace: s.namespace && s.namespace.handle,
       canonicalName: s.namespace && s.namespace.canonicalName,
       name: s.name,
+      displayName: pickZhName(s.description_zh || s.description || '', s.name),
       summary: s.description_zh || s.description || '',
       category: s.category,
       subCategories: (s.subCategories || []).map((c: any) => c.name),

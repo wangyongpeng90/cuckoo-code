@@ -145,10 +145,10 @@ function registerProjectIpc(): void {
   });
 
   // 安装市场技能
-  ipcMain.handle('install-skill', async (_event: any, { slug, namespace }: any) => {
+  ipcMain.handle('install-skill', async (_event: any, { slug, namespace, displayName }: any) => {
     try {
       const dir = await skillMarket.downloadAndExtract(slug, namespace);
-      const saved = skillConfig.installSkillFromDir(dir);
+      const saved = skillConfig.installSkillFromDir(dir, undefined, displayName);
       return { success: true, skill: saved };
     } catch (err: any) {
       return { success: false, error: err.message };

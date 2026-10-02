@@ -124,9 +124,12 @@ function readSkillFile(skillMdPath: string, id: string): any | null {
   const name = (data.name && data.name.trim()) || id;
   const description = (data.description || '').trim();
   const allowedTools = data['allowed-tools'] ? parseAllowedTools(data['allowed-tools']) : undefined;
+  // 显示名：优先 frontmatter.display_name（中文），否则回退 name
+  const displayName = (data.display_name && data.display_name.trim()) || (data.name_zh && data.name_zh.trim()) || name;
   return {
     id,
     name,
+    displayName,
     description,
     license: data.license || '',
     allowedTools,
@@ -216,11 +219,12 @@ function upsertSkill(skill: any): any {
  * @param id 目标 id（目录名）；缺省从 SKILL.md 的 name 生成
  * @returns 安装后的技能
  */
-function installSkillFromDir(srcDir: string, id?: string): any {
+function installSkillFromDir(srcDir: string, id?: string, displayName?: string): any {
   ensureDir();
   const skillMd = path.join(srcDir, 'SKILL.md');
   if (!fs.existsSync(skillMd)) throw new Error('技能包缺少 SKILL.md');
-  const { data } = parseFrontmatter(fs.readFileSync(skillMd, 'utf-8'));
+  const rawMd = fs.readFileSync(skillMd, 'utf-8');
+  const { data } = parseFrontmatter(rawMd);
   const name = (data.name && data.name.trim()) || path.basename(srcDir);
   let finalId = id ? safeId(id) : idFromName(name);
   if (!finalId) finalId = 'skill-' + Date.now();
@@ -229,6 +233,25 @@ function installSkillFromDir(srcDir: string, id?: string): any {
   // 清空已存在的目标目录（覆盖安装）
   if (fs.existsSync(destDir)) fs.rmSync(destDir, { recursive: true, force: true });
   fs.cpSync(srcDir, destDir, { recursive: true });
+
+  // 若提供了中文显示名，写入 SKILL.md 的 display_name（供 UI 显示中文）
+  if (displayName && String(displayName).trim()) {
+    const destMd = path.join(destDir, 'SKILL.md');
+    try {
+      const cur = fs.readFileSync(destMd, 'utf-8');
+      const dm = (data.display_name || '').trim();
+      if (!dm) {
+        // 在 frontmatter 的 name 行后插入 display_name
+        if (/^---\r?\n/.test(cur)) {
+          const inserted = cur.replace(/^(---\r?\n)/, '$1' + 'display_name: ' + String(displayName).trim() + '\n');
+          // 确保插入在 name 之后（简单起见插在 frontmatter 开头，合法）
+          fs.writeFileSync(destMd, inserted, 'utf-8');
+        }
+      }
+    } catch (err: any) {
+      console.error('[Skills] 写入 display_name 失败:', err.message);
+    }
+  }
   return getSkill(finalId);
 }
 

@@ -39,6 +39,8 @@ const shellAPI = {
   deleteProfileWindow: (profileId: string) => ipcRenderer.invoke('delete-profile', { profileId }),
   setProfileAutoOpen: (profileId: string, autoOpen: boolean) => ipcRenderer.invoke('set-profile-auto-open', { profileId, autoOpen }),
   // ========== 快捷提示词 ==========
+  listScheduledTasks: () => ipcRenderer.invoke('list-scheduled-tasks'),
+  saveScheduledTasks: (tasks: any) => ipcRenderer.invoke('save-scheduled-tasks', { tasks }),
   listSnippets: () => ipcRenderer.invoke('list-snippets'),
   saveSnippets: (snippets: any) => ipcRenderer.invoke('save-snippets', { snippets }),
   triggerSnippet: (content: string, autoSend: boolean) => ipcRenderer.invoke('trigger-snippet', { content, autoSend }),
@@ -56,7 +58,7 @@ const shellAPI = {
   setSkillEnabled: (id: any, enabled: any) => ipcRenderer.invoke('set-skill-enabled', { id, enabled }),
   searchSkills: (keyword: any, page: any, pageSize: any) => ipcRenderer.invoke('search-skills', { keyword, page, pageSize }),
   getSkillDetail: (slug: any, namespace: any) => ipcRenderer.invoke('get-skill-detail', { slug, namespace }),
-  installSkill: (slug: any, namespace: any) => ipcRenderer.invoke('install-skill', { slug, namespace }),
+  installSkill: (slug: any, namespace: any, displayName: any) => ipcRenderer.invoke('install-skill', { slug, namespace, displayName }),
   // ========== MCP ==========
   listMcpServers: () => ipcRenderer.invoke('list-mcp-servers', {}),
   enableMcpServer: (name: string) => ipcRenderer.invoke('enable-mcp-server', { name }),

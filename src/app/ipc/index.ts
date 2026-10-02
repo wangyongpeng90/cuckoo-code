@@ -13,6 +13,7 @@ import { registerHarnessIpc } from './harness.js';
 import { registerSnippetsIpc } from './snippets.js';
 import { registerSettingsIpc } from './settings.js';
 import { registerFeishuIpc } from './feishu.js';
+import { registerSchedulerIpc } from './scheduler.js';
 
 function registerIpcHandlers(): void {
   registerProjectIpc();
@@ -26,6 +27,7 @@ function registerIpcHandlers(): void {
   registerSnippetsIpc();
   registerSettingsIpc();
   registerFeishuIpc();
+  registerSchedulerIpc();
 }
 
 export { registerIpcHandlers };

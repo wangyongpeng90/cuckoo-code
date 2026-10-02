@@ -47,6 +47,7 @@ if (RENDERER_LOG_DIR) {
 }
 
 import { registerIpcHandlers } from './ipc/index.js';
+import { startScheduler } from './scheduler.js';
 import { initFeishu } from './ipc/feishu.js';
 import { injectSubagentDeps, runAgent as runAgentImpl } from './subagent.js';
 import { injectAgentRunner } from '../tools/impl/run-agent.js';
@@ -855,6 +856,8 @@ if (!gotSingleInstanceLock) {
       createWindow(null);
     }
 
+    // 启动定时任务调度器（含启动补跑）
+    try { startScheduler(); } catch (err: any) { console.error('[Scheduler] 启动失败:', err.message); }
     });
 }
 

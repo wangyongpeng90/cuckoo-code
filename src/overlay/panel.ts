@@ -207,10 +207,16 @@ function disableMaskBlock(): void {
   maskBlockHandler = null;
 }
 
-function showToolMask(onCancel?: () => void): void {
+function showToolMask(onCancel?: () => void, content?: string): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.remove('cuckoo-hidden');
-  enableMaskBlock();
+  // 悬浮小窗：不屏蔽页面操作
+  const sub = document.getElementById('cuckoo-tool-mask-sub');
+  if (sub) {
+    const text = String(content || '').replace(/\s+/g, ' ').trim();
+    sub.textContent = text.length > 20 ? text.slice(0, 20) + '…' : text;
+    sub.style.display = text ? '' : 'none';
+  }
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) {
     if (onCancel) {
@@ -231,7 +237,6 @@ function showToolMask(onCancel?: () => void): void {
 function hideToolMask(): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.add('cuckoo-hidden');
-  disableMaskBlock();
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) { btn.classList.add('cuckoo-hidden'); btn.onclick = null; }
 }

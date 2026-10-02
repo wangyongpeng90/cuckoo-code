@@ -670,6 +670,9 @@
           <button class="ck-ab-item" id="ck-harness-btn" title="纯净对话模式（Ctrl+Shift+H）">
             <span class="ck-ab-text">简</span>
           </button>
+          <button class="ck-ab-item" data-tab="schedule" title="定时任务">
+            <span class="ck-ab-text">定</span>
+          </button>
           <div class="ck-ab-spacer"></div>
           <button class="ck-ab-item" data-tab="about" title="关于">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
@@ -964,6 +967,31 @@
               <div class="ck-card">
                 <div class="ck-set-group-title">接收（飞书 → Cuckoo）</div>
                 <p class="ck-about-tip">在<strong>绑定的群</strong>里发消息（可 @ 或直接发），会送到<strong>本窗口</strong>发给 AI。<br>一个群只对应一个窗口；未绑定群的窗口不推也不收。</p>
+              </div>
+            </div>
+
+            <!-- ===== 定时任务 ===== -->
+            <div class="ck-tab" data-panel="schedule">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">定时任务</span>
+                <button class="ck-btn-sm ck-btn-primary" id="sched-add">＋ 新建</button>
+              </div>
+              <p class="ck-about-tip">到点后自动给<strong>当前活跃窗口</strong>的 AI 发送提示词（应用未运行时，下次启动补跑）。</p>
+
+              <!-- 编辑表单（默认隐藏） -->
+              <div id="sched-edit" class="ck-card" style="display:none;">
+                <input type="hidden" id="sched-edit-idx" value="-1" />
+                <div class="ck-set-field"><span class="ck-set-key">名称</span><input type="text" class="ck-set-input" id="sched-edit-name" placeholder="如：每日待办" /></div>
+                <div class="ck-set-field"><span class="ck-set-key">时间</span><input type="text" class="ck-set-input" id="sched-edit-time" placeholder="09:00（HH:MM）" /></div>
+                <div class="ck-set-field" style="flex-direction:column;align-items:stretch;"><span class="ck-set-key">提示词</span><textarea class="ck-set-input" id="sched-edit-prompt" rows="3" placeholder="发给 AI 的内容，如：总结今日待办" style="resize:vertical;"></textarea></div>
+                <div class="ck-actions">
+                  <button class="ck-btn-sm ck-btn-primary" id="sched-edit-save">保存</button>
+                  <button class="ck-btn-sm" id="sched-edit-cancel">取消</button>
+                </div>
+              </div>
+
+              <div class="ck-list" id="sched-list">
+                <div class="ck-list-empty">加载中…</div>
               </div>
             </div>
 
@@ -1396,6 +1424,7 @@
         if (t === 'about') { try { loadAbout(); } catch (e) {} }
         if (t === 'feishu') { try { loadFeishu(); } catch (e) {} }
         if (t === 'skills') { try { loadSkills(); } catch (e) {} }
+        if (t === 'schedule') { try { loadScheduledTasks(); } catch (e) {} }
       };
       // 收起状态下点图标 → 展开并切到该标签
       if (isCollapsed) {
@@ -1657,13 +1686,14 @@
         html += '<div class="ck-mcp-group-title">已安装（应用级）</div>';
         html += appSkills.map(function (s) {
           var dot = s.enabled ? 'var(--ck-green)' : 'var(--ck-text-dim)';
+          var disp = s.displayName || s.name;
           return '<div class="ck-skill-item" data-app-id="' + escapeHtml(s.id) + '">' +
             '<div class="ck-skill-top">' +
-              '<span class="ck-skill-name">' + escapeHtml(s.name) + '</span>' +
+              '<span class="ck-skill-name">' + escapeHtml(disp) + '</span>' +
               '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;"></span>' +
             '</div>' +
             '<div class="ck-skill-actions" style="margin-top:6px;display:flex;gap:8px;">' +
-              '<button class="ck-btn-sm ck-btn-primary" data-act="send" data-name="' + escapeHtml(s.name) + '">发送</button>' +
+              '<button class="ck-btn-sm ck-btn-primary" data-act="send" data-name="' + escapeHtml(s.displayName || s.name) + '">发送</button>' +
               '<button class="ck-btn-sm" data-act="toggle" data-id="' + escapeHtml(s.id) + '">' + (s.enabled ? '禁用' : '启用') + '</button>' +
               '<button class="ck-btn-sm" data-act="edit" data-id="' + escapeHtml(s.id) + '">编辑</button>' +
             '</div>' +
@@ -1677,10 +1707,11 @@
       if (other.length) {
         html += '<div class="ck-mcp-group-title">项目/用户级（只读）</div>';
         html += other.map(function (s) {
-          return '<div class="ck-skill-item" data-name="' + escapeHtml(s.name) + '">' +
-            '<div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.name) + '</span></div>' +
+          var disp = s.displayName || s.name;
+          return '<div class="ck-skill-item" data-name="' + escapeHtml(disp) + '">' +
+            '<div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(disp) + '</span></div>' +
             '<div class="ck-skill-actions" style="margin-top:6px;display:flex;gap:8px;">' +
-              '<button class="ck-btn-sm ck-btn-primary" data-act="send" data-name="' + escapeHtml(s.name) + '">发送</button>' +
+              '<button class="ck-btn-sm ck-btn-primary" data-act="send" data-name="' + escapeHtml(disp) + '">发送</button>' +
             '</div>' +
           '</div>';
         }).join('');
@@ -1742,7 +1773,7 @@
       if (!skillMarketCache.length) { listEl.innerHTML = '<div class="ck-list-empty">无结果</div>'; return; }
       listEl.innerHTML = skillMarketCache.map(function (s) {
         return '<div class="ck-skill-item" data-market-key="' + escapeHtml(s.namespace + '/' + s.slug) + '">' +
-          '<div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.name) + '</span>' +
+          '<div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.displayName || s.name) + '</span>' +
             '<button class="ck-btn-sm ck-btn-primary" data-install-key="' + escapeHtml(s.namespace + '/' + s.slug) + '">安装</button></div>' +
           '<div class="ck-skill-desc">' + escapeHtml(s.summary || '') + '</div>' +
         '</div>';
@@ -1754,9 +1785,16 @@
           var item = skillMarketCache.find(function (x) { return (x.namespace + '/' + x.slug) === key; });
           if (!item) return;
           btn.disabled = true; btn.textContent = '安装中…';
-          var res = await api.installSkill(item.slug, item.namespace);
-          if (res && res.success) { await ckAlert('已安装: ' + (res.skill ? res.skill.name : item.name)); }
-          else { btn.disabled = false; btn.textContent = '安装'; await ckAlert('安装失败: ' + ((res && res.error) || '未知')); }
+          var res = await api.installSkill(item.slug, item.namespace, item.displayName || item.name);
+          if (res && res.success) {
+            await ckAlert('已安装: ' + (res.skill ? (res.skill.displayName || res.skill.name) : item.name));
+            // 刷新已安装列表 + 重置按钮
+            try { await loadSkills(); } catch (e) {}
+            btn.disabled = false; btn.textContent = '已安装';
+          } else {
+            btn.disabled = false; btn.textContent = '安装';
+            await ckAlert('安装失败: ' + ((res && res.error) || '未知'));
+          }
         });
       });
     } catch (e) {
@@ -1766,6 +1804,82 @@
 
   var skillRefreshBtn = document.getElementById('skill-refresh');
   if (skillRefreshBtn) skillRefreshBtn.addEventListener('click', loadSkills);
+
+  // ===== 定时任务 =====
+  var schedTasks = [];
+  async function loadScheduledTasks() {
+    var listEl = document.getElementById('sched-list');
+    if (!listEl || !api.listScheduledTasks) return;
+    try {
+      var r = await api.listScheduledTasks();
+      schedTasks = (r && r.success && Array.isArray(r.tasks)) ? r.tasks : [];
+      renderScheduledTasks();
+    } catch (e) {
+      listEl.innerHTML = '<div class="ck-list-empty">加载失败</div>';
+    }
+  }
+  function renderScheduledTasks() {
+    var listEl = document.getElementById('sched-list');
+    if (!listEl) return;
+    if (!schedTasks.length) { listEl.innerHTML = '<div class="ck-list-empty">暂无定时任务<br>点「＋ 新建」添加</div>'; return; }
+    listEl.innerHTML = schedTasks.map(function (t, i) {
+      var dot = t.enabled ? 'var(--ck-green)' : 'var(--ck-text-dim)';
+      return '<div class="ck-skill-item" data-idx="' + i + '">' +
+        '<div class="ck-skill-top">' +
+          '<span class="ck-skill-name">' + escapeHtml(t.name || '未命名') + '</span>' +
+          '<span style="font-size:12px;color:var(--ck-text-2);">' + escapeHtml(t.time || '') + '</span>' +
+          '<span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;"></span>' +
+        '</div>' +
+        '<div style="font-size:12px;color:var(--ck-text-dim);margin:4px 0;word-break:break-all;">' + escapeHtml((t.prompt || '').slice(0, 80)) + '</div>' +
+        '<div style="margin-top:6px;display:flex;gap:8px;">' +
+          '<button class="ck-btn-sm" data-sact="edit" data-idx="' + i + '">编辑</button>' +
+          '<button class="ck-btn-sm" data-sact="toggle" data-idx="' + i + '">' + (t.enabled ? '禁用' : '启用') + '</button>' +
+          '<button class="ck-btn-sm" data-sact="del" data-idx="' + i + '" style="color:var(--ck-danger);">删除</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    listEl.querySelectorAll('button[data-sact]').forEach(function (btn) {
+      btn.addEventListener('click', async function (e) {
+        e.stopPropagation();
+        var i = parseInt(btn.dataset.idx, 10);
+        var act = btn.dataset.sact;
+        if (act === 'toggle') { schedTasks[i].enabled = !schedTasks[i].enabled; await saveSched(); loadScheduledTasks(); }
+        else if (act === 'del') {
+          if (await ckConfirm('删除定时任务「' + (schedTasks[i].name || '') + '」？')) { schedTasks.splice(i, 1); await saveSched(); loadScheduledTasks(); }
+        } else if (act === 'edit') { openSchedEdit(i); }
+      });
+    });
+  }
+  async function saveSched() {
+    try { await api.saveScheduledTasks(schedTasks); } catch (e) {}
+  }
+  function openSchedEdit(idx) {
+    var t = idx >= 0 ? schedTasks[idx] : { id: 'task_' + Date.now(), name: '', time: '09:00', enabled: true, prompt: '', lastRun: '' };
+    document.getElementById('sched-edit-idx').value = String(idx);
+    document.getElementById('sched-edit-name').value = t.name || '';
+    document.getElementById('sched-edit-time').value = t.time || '09:00';
+    document.getElementById('sched-edit-prompt').value = t.prompt || '';
+    document.getElementById('sched-edit').style.display = 'block';
+  }
+  function closeSchedEdit() { var e = document.getElementById('sched-edit'); if (e) e.style.display = 'none'; }
+  var schedAddBtn = document.getElementById('sched-add');
+  if (schedAddBtn) schedAddBtn.addEventListener('click', function () { openSchedEdit(-1); });
+  var schedCancelBtn = document.getElementById('sched-edit-cancel');
+  if (schedCancelBtn) schedCancelBtn.addEventListener('click', closeSchedEdit);
+  var schedSaveBtn = document.getElementById('sched-edit-save');
+  if (schedSaveBtn) schedSaveBtn.addEventListener('click', function () {
+    var idx = parseInt(document.getElementById('sched-edit-idx').value, 10);
+    var name = document.getElementById('sched-edit-name').value.trim();
+    var time = document.getElementById('sched-edit-time').value.trim();
+    var pr = document.getElementById('sched-edit-prompt').value.trim();
+    if (!name) { ckAlert('请填名称'); return; }
+    if (!/^\d{1,2}:\d{2}$/.test(time)) { ckAlert('时间格式应为 HH:MM'); return; }
+    if (!pr) { ckAlert('请填提示词'); return; }
+    var t = idx >= 0 ? schedTasks[idx] : { id: 'task_' + Date.now(), lastRun: '' };
+    t.name = name; t.time = time; t.prompt = pr; t.enabled = true;
+    if (idx >= 0) schedTasks[idx] = t; else schedTasks.push(t);
+    saveSched().then(function () { closeSchedEdit(); loadScheduledTasks(); });
+  });
   var skillNewBtn = document.getElementById('skill-new');
   if (skillNewBtn) skillNewBtn.addEventListener('click', function () { openSkillEdit(null); });
   var skillMarketBtn = document.getElementById('skill-market-btn');
