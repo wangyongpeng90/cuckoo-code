@@ -16,7 +16,7 @@ import * as chatInput from '../overlay/chat-input.js';
 import * as settingsPanel from '../overlay/panels/settings.js';
 import { wireEvents } from '../overlay/events.js';
 import { getProviderByUrl } from '../providers/registry.js';
-import { startInterceptObserver, onInterceptedResponse, onTaskIdle } from './intercept/observer.js';
+import { startInterceptObserver, onInterceptedResponse, onTaskIdle, onToolCall } from './intercept/observer.js';
 import { startRetryEngine } from './loop/retry.js';
 import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/watchdog.js';
 import { initSubagentIfNeeded } from './subagent.js';
@@ -228,6 +228,14 @@ function init(): void {
 
   // 消息折叠：把「【JS 执行结果汇总】」等渲染成工具卡片
   try { initMessageFold(); } catch (err) { console.error('[Cuckoo Code] initMessageFold 失败:', err); }
+
+  // 实时工具状态：订阅工具开始/结束 → 更新小窗
+  try {
+    onToolCall((ev: any) => {
+      if (ev.phase === 'start') ui.showToolMask(undefined, ev.code || '');
+      else if (ev.phase === 'end') ui.setToolMaskDone(!!ev.success);
+    });
+  } catch (err) { console.error('[Cuckoo Code] onToolCall 订阅失败:', err); }
 }
 
 if (document.readyState === 'loading') {

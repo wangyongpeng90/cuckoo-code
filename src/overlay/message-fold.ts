@@ -28,6 +28,8 @@ function injectStyle(): void {
     '.' + FOLD_CLASS + '-arg { flex: 1; font-size: 12px; opacity: 0.6; font-family: ui-monospace,Consolas,monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }' +
     '.' + FOLD_CLASS + '-badge { font-size: 10px; padding: 1.5px 6px; border-radius: 4px; font-weight: 600; flex-shrink: 0; }' +
     '.' + FOLD_CLASS + '-badge.ok { background: rgba(127,176,105,0.18); color: #6aa84f; }' +
+    '.' + FOLD_CLASS + '-badge.run { background: rgba(217,160,91,0.18); color: #d9a05b; animation: ck-pulse 1.2s ease-in-out infinite; }' +
+    '@keyframes ck-pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }' +
     '.' + FOLD_CLASS + '-badge.err { background: rgba(224,108,117,0.18); color: #e06c75; }' +
     '.' + FOLD_CLASS + '-caret { flex-shrink: 0; transition: transform 0.15s; font-size: 10px; opacity: 0.6; }' +
     '.' + FOLD_CLASS + '[data-open="true"] .' + FOLD_CLASS + '-caret { transform: rotate(90deg); }' +
@@ -229,7 +231,62 @@ function initMessageFold(): void {
   }
 }
 
+/** 实时工具卡片：正在运行的卡片元素（单例） */
+let _liveCard: HTMLElement | null = null;
+
+/** 找到消息流容器（末尾插入实时卡片） */
+function findStream(): HTMLElement | null {
+  return document.querySelector('.ds-virtual-list-visible-items') ||
+    document.querySelector('[class*="visible-items"]') || document.body;
+}
+
+/** 工具开始：在消息流末尾插入"运行中"卡片 */
+function showLiveToolCard(code: string): void {
+  try {
+    console.log('[Cuckoo Code] 实时卡片: start, code=' + String(code || '').slice(0, 40));
+    injectStyle();
+    if (_liveCard && _liveCard.parentElement) { _liveCard.remove(); }
+    const stream = findStream();
+    if (!stream) return;
+    const first = String(code || '').split('\n')[0].trim();
+    const arg = first.length > 30 ? first.slice(0, 30) + '…' : first;
+    const card = document.createElement('div');
+    card.className = FOLD_CLASS + ' ck-live-tool';
+    card.setAttribute('data-open', 'false');
+    card.innerHTML =
+      '<div class="' + FOLD_CLASS + '-head">' +
+        '<span class="' + FOLD_CLASS + '-icon">🔧</span>' +
+        '<span class="' + FOLD_CLASS + '-name">tool</span>' +
+        '<span class="' + FOLD_CLASS + '-arg">' + esc(arg || '执行中') + '</span>' +
+        '<span class="' + FOLD_CLASS + '-badge run">运行中</span>' +
+        '<span class="' + FOLD_CLASS + '-caret">▶</span>' +
+      '</div>';
+    stream.appendChild(card);
+    _liveCard = card;
+  } catch (_) {}
+}
+
+/** 工具结束：更新卡片为"完成/失败"，延时移除 */
+function endLiveToolCard(success: boolean, output?: string, error?: string): void {
+  try {
+    console.log('[Cuckoo Code] 实时卡片: end, success=' + success + ', hasCard=' + !!_liveCard);
+    const card = _liveCard;
+    if (!card) return;
+    const badge = card.querySelector('.' + FOLD_CLASS + '-badge');
+    if (badge) {
+      badge.className = FOLD_CLASS + '-badge ' + (success ? 'ok' : 'err');
+      badge.textContent = success ? '完成' : '失败';
+    }
+    // 可展开查看输出
+    const arg = card.querySelector('.' + FOLD_CLASS + '-arg');
+    if (arg) arg.textContent = success ? '完成' : '失败';
+    _liveCard = null;
+    // 2 秒后淡出移除
+    setTimeout(() => { try { card.remove(); } catch (_) {} }, 2000);
+  } catch (_) {}
+}
+
 function makeMarker(): string { return ''; }
 
-export { initMessageFold, makeMarker };
+export { initMessageFold, makeMarker, showLiveToolCard, endLiveToolCard };
 

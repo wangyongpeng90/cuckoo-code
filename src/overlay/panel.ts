@@ -210,6 +210,11 @@ function disableMaskBlock(): void {
 function showToolMask(onCancel?: () => void, content?: string): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.remove('cuckoo-hidden');
+  // 重置为"运行中"状态
+  const textEl = el ? el.querySelector('.cuckoo-tool-mask-text') : null;
+  if (textEl) textEl.textContent = '工具执行中…';
+  const sp = el ? el.querySelector('.cuckoo-tool-mask-spinner') : null;
+  if (sp) (sp as any).style.display = '';
   // 悬浮小窗：不屏蔽页面操作
   const sub = document.getElementById('cuckoo-tool-mask-sub');
   if (sub) {
@@ -229,6 +234,19 @@ function showToolMask(onCancel?: () => void, content?: string): void {
       btn.onclick = null;
     }
   }
+}
+
+/**
+ * 工具执行完成：小窗显示"完成/失败"，延时后自动隐藏
+ */
+function setToolMaskDone(success: boolean): void {
+  const el = document.getElementById('cuckoo-tool-mask');
+  if (!el) return;
+  const textEl = el.querySelector('.cuckoo-tool-mask-text');
+  if (textEl) textEl.textContent = success ? '工具执行完成 ✅' : '工具执行失败 ❌';
+  const sp = el.querySelector('.cuckoo-tool-mask-spinner') as any;
+  if (sp) sp.style.display = 'none';
+  setTimeout(() => { try { hideToolMask(); } catch (_) {} }, 1500);
 }
 
 /**
@@ -445,6 +463,7 @@ export {
   showConfirmDialog,
   setTaskStatus,
   showToolMask,
+  setToolMaskDone,
   hideToolMask,
   showOverlay,
   hideOverlay,
