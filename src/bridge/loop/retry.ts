@@ -23,6 +23,8 @@ const require = createRequire(import.meta.url);
 const { ipcRenderer } = require('electron');
 
 const DEFAULT_PROMPT = '刚才的回复似乎中断了，请重新完整回答上一个问题。';
+// 工具执行疑似失败时使用的提示词（区别于"回复中断"）
+const TOOL_FAIL_PROMPT = '上面的工具执行似乎出错了（详见「JS 执行结果汇总」里的错误信息），请检查原因后重新执行。';
 const DEFAULTS = {
   enabled: true,
   delayMin: 4000,
@@ -101,7 +103,7 @@ let cancelPending = function cancelPending(): void {
   showToast('已取消自动重试', 2000);
 };
 
-let showCountdown = function showCountdown(totalMs: number): any {
+let showCountdown = function showCountdown(totalMs: number, prefix?: string): any {
   const box = ensureCountdownBox();
   const textEl = box.querySelector('#cuckoo-retry-countdown-text');
   const cancelBtn = box.querySelector('#cuckoo-retry-cancel');
@@ -110,7 +112,7 @@ let showCountdown = function showCountdown(totalMs: number): any {
 
   let remain = Math.ceil(totalMs / 1000);
   function render() {
-    if (textEl) textEl.textContent = '请求失败，' + remain + ' 秒后自动重试...';
+    if (textEl) textEl.textContent = (prefix || '请求失败，') + remain + ' 秒后自动重试...';
   }
   render();
   const cd = setInterval(() => {
@@ -149,6 +151,8 @@ let handleError = function handleError(detail: any): void {
     }
   }
 
+  // 工具执行失败（由 intercept-observer 派发）：用专用提示词
+  const isToolFail = !!(detail && detail.reason === 'tool_failure');
   // 操作频繁：HTTP 429，或 hook 标记的 reason='rate_limit'（如 biz_code=40029）
   const is429 = detail && (detail.httpStatus === 429 || detail.reason === 'rate_limit');
   // 限流 → 通知主进程（供"窗口组自动切换"决策；主进程自行判断该窗口是否属于某组）
@@ -176,14 +180,16 @@ let handleError = function handleError(detail: any): void {
     ? (Number.isFinite(cfg.delay429) ? cfg.delay429 : 60000)
     : pickDelay(cfg.delayMin, cfg.delayMax);
 
-  const cdTimer = showCountdown(delay);
+  const cdTimer = showCountdown(delay, isToolFail ? '工具执行失败，' : undefined);
   const timer = setTimeout(() => {
     const box = document.getElementById('cuckoo-retry-countdown');
     if (box) box.classList.add('cuckoo-hidden');
     if (pending && pending.countdownTimer) clearInterval(pending.countdownTimer);
     pending = null;
     try {
-      sendToChat(cfg.prompt, is429 ? '重试(操作频繁)' : '重试', 300);
+      const prompt = isToolFail ? TOOL_FAIL_PROMPT : cfg.prompt;
+      const tag = is429 ? '重试(操作频繁)' : (isToolFail ? '重试(工具失败)' : '重试');
+      sendToChat(prompt, tag, 300);
     } catch (e: any) {
       console.error('[Cuckoo Code][重试] 发送提示词失败: ' + e.message);
     }

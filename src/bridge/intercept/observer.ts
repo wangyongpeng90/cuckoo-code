@@ -33,6 +33,38 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * 判断工具执行结果是否"疑似出错"——用于触发自动恢复（重发提示词）。
+ * 覆盖两类：
+ *  1. 脚本抛异常（result.success === false）
+ *  2. 脚本"成功"但输出含高可靠错误信号（bash 非零退出、常见错误字样）
+ * @returns 命中则返回简要原因，否则返回 null
+ */
+function detectToolFailure(results: any[]): string | null {
+  if (!Array.isArray(results) || results.length === 0) return null;
+  // 高可靠错误信号（宁可漏判，不误判：只匹配明确的错误特征）
+  const ERR_PATTERNS: RegExp[] = [
+    /\[exit code:\s*[1-9]\d*\]/,      // bash/pwsh 非零退出
+    /\bcommand not found\b/i,
+    /\bNo such file or directory\b/i,
+    /\bCannot find (?:module|path)\b/i,
+    /^\s*Error[:\s]/m,                    // 行首 Error:
+    /\bTypeError\b|\bReferenceError\b|\bSyntaxError\b/,
+  ];
+  for (const item of results) {
+    const res = item && item.result;
+    if (!res) continue;
+    if (res.success === false) {
+      return (res.error || '脚本执行失败').slice(0, 120);
+    }
+    const out = String(res.output || '');
+    for (const re of ERR_PATTERNS) {
+      if (re.test(out)) return ('输出疑似错误: ' + out.slice(0, 100)).replace(/\s+/g, ' ');
+    }
+  }
+  return null;
+}
+
+/**
  * 执行 JS 代码块，遇到"代码不完整"错误时自动重试。
  * 拦截模式下文本已完整（finished），无需重新提取，简单重试执行即可。
  */
@@ -110,6 +142,16 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     const sent = await sendCombinedJsResultsToChat(results, hideToolMask);
     if (cancelled) return; // 用户已取消，不再处理
     if (!sent) hideToolMask();
+    // 工具执行疑似出错 → 派发错误事件，交由自动重试引擎（cuckoo-retry-* 配置）恢复
+    const failReason = detectToolFailure(results);
+    if (failReason) {
+      console.log('[Cuckoo Code][拦截] 工具疑似失败，触发自动恢复: ' + failReason);
+      try {
+        window.dispatchEvent(new CustomEvent('cuckoo-ai-error', {
+          detail: { reason: 'tool_failure', message: failReason },
+        }));
+      } catch (_) { /* ignore */ }
+    }
     return;
   }
 
