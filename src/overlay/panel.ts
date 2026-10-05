@@ -207,10 +207,21 @@ function disableMaskBlock(): void {
   maskBlockHandler = null;
 }
 
-function showToolMask(onCancel?: () => void): void {
+function showToolMask(onCancel?: () => void, content?: string): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.remove('cuckoo-hidden');
-  enableMaskBlock();
+  // 重置为"运行中"状态
+  const textEl = el ? el.querySelector('.cuckoo-tool-mask-text') : null;
+  if (textEl) textEl.textContent = '工具执行中…';
+  const sp = el ? el.querySelector('.cuckoo-tool-mask-spinner') : null;
+  if (sp) (sp as any).style.display = '';
+  // 悬浮小窗：不屏蔽页面操作
+  const sub = document.getElementById('cuckoo-tool-mask-sub');
+  if (sub) {
+    const text = String(content || '').replace(/\s+/g, ' ').trim();
+    sub.textContent = text.length > 20 ? text.slice(0, 20) + '…' : text;
+    sub.style.display = text ? '' : 'none';
+  }
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) {
     if (onCancel) {
@@ -226,12 +237,24 @@ function showToolMask(onCancel?: () => void): void {
 }
 
 /**
+ * 工具执行完成：小窗显示"完成/失败"，延时后自动隐藏
+ */
+function setToolMaskDone(success: boolean): void {
+  const el = document.getElementById('cuckoo-tool-mask');
+  if (!el) return;
+  const textEl = el.querySelector('.cuckoo-tool-mask-text');
+  if (textEl) textEl.textContent = success ? '工具执行完成 ✅' : '工具执行失败 ❌';
+  const sp = el.querySelector('.cuckoo-tool-mask-spinner') as any;
+  if (sp) sp.style.display = 'none';
+  setTimeout(() => { try { hideToolMask(); } catch (_) {} }, 1500);
+}
+
+/**
  * 隐藏工具调用遮罩
  */
 function hideToolMask(): void {
   const el = document.getElementById('cuckoo-tool-mask');
   if (el) el.classList.add('cuckoo-hidden');
-  disableMaskBlock();
   const btn = document.getElementById('cuckoo-tool-mask-cancel') as any;
   if (btn) { btn.classList.add('cuckoo-hidden'); btn.onclick = null; }
 }
@@ -440,6 +463,7 @@ export {
   showConfirmDialog,
   setTaskStatus,
   showToolMask,
+  setToolMaskDone,
   hideToolMask,
   showOverlay,
   hideOverlay,

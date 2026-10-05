@@ -84,8 +84,9 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   if (jsBlocks.length > 0) {
     console.log('[Cuckoo Code][拦截] 检测到 JS 工具代码块（' + jsBlocks.length + ' 个），开始执行');
     formatHintCount = 0;
-    // 从检测到工具调用到结果发送完成，全程遮盖页面，禁止用户额外操作
-    showToolMask();
+    // 从检测到工具调用到结果发送完成，显示执行小窗
+    const firstLine = String(jsBlocks[0] || '').split('\n')[0].trim();
+    showToolMask(undefined, firstLine);
     let results: any[] = [];
     try {
       results = await executeJsBlocksWithRetry(jsBlocks);
@@ -103,7 +104,7 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
       cancelled = true;
       cancelPendingSend();
       hideToolMask();
-    });
+    }, firstLine);
     if (abortRequested) { abortRequested = false; hideToolMask(); console.log('[Cuckoo Code][拦截] 已请求中止，不回传工具结果'); return; }
     // afterSent 在"结果已发出"时触发隐藏；发送失败（找不到输入框等）则立即隐藏兜底
     const sent = await sendCombinedJsResultsToChat(results, hideToolMask);

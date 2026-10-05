@@ -18,7 +18,7 @@ test('OVERLAY_HTML 只保留工具遮罩 + 首次引导框', () => {
 
 test('OVERLAY_HTML 包含工具调用遮罩及提示文案', () => {
   assert.ok(OVERLAY_HTML.includes('id="cuckoo-tool-mask"'));
-  assert.ok(OVERLAY_HTML.includes('工具调用执行中，请不要有额外操作'));
+  assert.ok(OVERLAY_HTML.includes('工具执行中'));
 });
 
 test('OVERLAY_CSS 包含核心样式', () => {

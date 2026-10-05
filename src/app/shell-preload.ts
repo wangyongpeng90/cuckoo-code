@@ -75,6 +75,8 @@ const shellAPI = {
   setSessionTitle: (sessionId: string, title: string) => ipcRenderer.invoke('set-session-title', { sessionId, title }),
   newConversationForProject: (projectDir: string) => ipcRenderer.invoke('new-conversation-for-project', { projectDir }),
   // ========== 快捷提示词 ==========
+  listScheduledTasks: () => ipcRenderer.invoke('list-scheduled-tasks'),
+  saveScheduledTasks: (tasks: any) => ipcRenderer.invoke('save-scheduled-tasks', { tasks }),
   listSnippets: () => ipcRenderer.invoke('list-snippets'),
   saveSnippets: (snippets: any) => ipcRenderer.invoke('save-snippets', { snippets }),
   triggerSnippet: (content: string, autoSend: boolean) => ipcRenderer.invoke('trigger-snippet', { content, autoSend }),
@@ -95,6 +97,13 @@ const shellAPI = {
   openAgentFile: (agentPath: string) => ipcRenderer.invoke('open-agent-file', { agentPath }),
   renameAgent: (agentPath: string, newName: string) => ipcRenderer.invoke('rename-agent', { agentPath, newName }),
   deleteAgentFile: (agentPath: string) => ipcRenderer.invoke('delete-agent-file', { agentPath }),
+  listAppSkills: () => ipcRenderer.invoke('list-app-skills'),
+  upsertSkill: (skill: any) => ipcRenderer.invoke('upsert-skill', { skill }),
+  removeSkill: (id: any) => ipcRenderer.invoke('remove-skill', { id }),
+  setSkillEnabled: (id: any, enabled: any) => ipcRenderer.invoke('set-skill-enabled', { id, enabled }),
+  searchSkills: (keyword: any, page: any, pageSize: any) => ipcRenderer.invoke('search-skills', { keyword, page, pageSize }),
+  getSkillDetail: (slug: any, namespace: any) => ipcRenderer.invoke('get-skill-detail', { slug, namespace }),
+  installSkill: (slug: any, namespace: any, displayName: any) => ipcRenderer.invoke('install-skill', { slug, namespace, displayName }),
   // ========== MCP ==========
   listMcpServers: () => ipcRenderer.invoke('list-mcp-servers', {}),
   enableMcpServer: (name: string) => ipcRenderer.invoke('enable-mcp-server', { name }),

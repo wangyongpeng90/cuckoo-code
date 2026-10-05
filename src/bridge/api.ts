@@ -80,6 +80,14 @@ let electronAPI: any = {
   refreshSkills: () => {
     return ipcRenderer.invoke('refresh-skills');
   },
+  dumpDom: (data: any) => ipcRenderer.invoke('ck-dump-dom', { data }),
+  listAppSkills: () => ipcRenderer.invoke('list-app-skills'),
+  upsertSkill: (skill: any) => ipcRenderer.invoke('upsert-skill', { skill }),
+  removeSkill: (id: any) => ipcRenderer.invoke('remove-skill', { id }),
+  setSkillEnabled: (id: any, enabled: any) => ipcRenderer.invoke('set-skill-enabled', { id, enabled }),
+  searchSkills: (keyword: any, page: any, pageSize: any) => ipcRenderer.invoke('search-skills', { keyword, page, pageSize }),
+  getSkillDetail: (slug: any, namespace: any) => ipcRenderer.invoke('get-skill-detail', { slug, namespace }),
+  installSkill: (slug: any, namespace: any) => ipcRenderer.invoke('install-skill', { slug, namespace }),
   // ========== MCP 相关 API ==========
   listMcpServers: (opts: any) => {
     return ipcRenderer.invoke('list-mcp-servers', opts || {});
