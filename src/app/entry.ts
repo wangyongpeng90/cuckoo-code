@@ -58,6 +58,8 @@ import { injectAgentRunner, injectSubagentChecker } from '../tools/impl/run-agen
 import { injectGoalDonePusher } from '../tools/impl/goal-done.js';
 import { isSubagentWindow, pushGoalDone } from './goal.js';
 import { injectSessionTitleSetter } from '../tools/impl/name-conversation.js';
+import { injectSnapshotStore } from '../tools/impl/snapshot.js';
+import { createSnapshot, listSnapshots, restoreSnapshot } from './snapshots.js';
 import { pushUrlState } from './ipc/shell.js';
 import { pushHarnessState, stopGeneration } from './ipc/harness.js';
 import { injectWindowGroupDeps, requestShareFromWindow } from './ipc/window-groups.js';
@@ -654,6 +656,18 @@ injectSessionTitleSetter(async ({ windowId, title }: any) => {
     try { if (ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send('shell-sessions-changed'); } catch (_) { /* ignore */ }
   }
   return r;
+});
+
+// 给 createSnapshot/listSnapshots/restoreSnapshot 工具注入快照存储
+injectSnapshotStore({
+  create: (projectDir: string, name: string, description?: string) => {
+    const m = createSnapshot(projectDir, name, description);
+    return { id: m.id, fileCount: m.fileCount, projectDir: m.projectDir };
+  },
+  list: (projectDir: string) => listSnapshots()
+    .filter((s) => !projectDir || s.projectDir === projectDir)
+    .map((s) => ({ id: s.id, name: s.name, description: s.description, fileCount: s.fileCount, createdAt: s.createdAt, projectDir: s.projectDir })),
+  restore: (id: string) => restoreSnapshot(id),
 });
 
 // ========== 窗口组探测 ==========

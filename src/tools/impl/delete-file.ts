@@ -1,6 +1,7 @@
 import { Tool } from '../core/Tool.js';
 import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
+import { isProtectedPath } from '../../infra/protected-paths.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -69,6 +70,10 @@ class DeleteFileTool extends Tool {
     } else if (!path.isAbsolute(absolutePath)) {
       absolutePath = path.resolve(filePath);
     }
+
+    // 受保护路径检查（禁止删除快照/记忆数据）
+    const guard = isProtectedPath(absolutePath);
+    if (guard) return ToolResult.error('删除失败: 目标路径受保护 — ' + guard);
 
     try {
       // 检查文件是否存在

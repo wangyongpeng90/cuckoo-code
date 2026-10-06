@@ -367,3 +367,30 @@ declare function mcpGetTools(serverName: string): Promise<string>;
  * @throws 缺少窗口上下文、窗口已关闭或纯净对话模式未开启时抛出异常
  */
 declare function goalDone(): Promise<string>;
+
+
+// ================= 快照 =================
+
+/**
+ * 为当前项目创建一份工作快照（复制项目文件到用户目录存档）。在大范围改动、重构、批量编辑前调用，万一改坏可回滚。
+ * @param name 快照名（简短，如"重构前"）
+ * @param description 可选描述
+ * @returns { id, fileCount, message }
+ * @throws 项目目录未初始化、名为空或复制失败时抛出异常
+ */
+declare function createSnapshot(name: string, description?: string): Promise<{ id: string, fileCount: number, message: string }>;
+
+/**
+ * 列出当前项目的所有工作快照（含 id、名称、文件数、创建时间），用于选择要恢复的快照。
+ * @returns 快照列表文本
+ * @throws 无
+ */
+declare function listSnapshots(): Promise<string>;
+
+/**
+ * 把指定快照的文件恢复到当前项目目录（覆盖同名文件）。属破坏性操作，执行前应先向用户确认。
+ * @param id 要恢复的快照 id（来自 listSnapshots 或 createSnapshot）
+ * @returns { restored, message }
+ * @throws 快照不存在、原项目目录丢失或复制失败时抛出异常
+ */
+declare function restoreSnapshot(id: string): Promise<{ restored: number, message: string }>;

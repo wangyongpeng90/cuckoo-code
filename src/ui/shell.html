@@ -1095,6 +1095,9 @@
           <button class="ck-ab-item" data-tab="snippets" title="提示词">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </button>
+          <button class="ck-ab-item" data-tab="snapshots" title="快照">
+            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+          </button>
           <button class="ck-ab-item" data-tab="skills" title="技能">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
           </button>
@@ -1409,6 +1412,23 @@
                 </button>
               </div>
               <div class="ck-list" id="snip-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+            </div>
+
+            <!-- ===== 快照 ===== -->
+            <div class="ck-tab" data-panel="snapshots">
+              <div class="ck-actions">
+                <button class="ck-btn ck-btn-anim" id="snap-add">
+                  <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  <span>创建快照</span>
+                </button>
+                <button class="ck-icon-btn" id="snap-refresh" title="刷新">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                </button>
+              </div>
+              <p class="ck-about-tip">快照当前项目文件（不含 .git/node_modules），改坏可回滚。</p>
+              <div class="ck-list" id="snap-list">
                 <div class="ck-list-empty">加载中…</div>
               </div>
             </div>
@@ -4438,6 +4458,105 @@
     if (r && !r.success) await ckAlert(r.error || "\u6253\u5F00\u76EE\u5F55\u5931\u8D25");
   });
 
+  // src/ui/shell/scripts/pages/snapshots.ts
+  init_shared();
+  var snapshots = [];
+  var currentProjectDir = null;
+  async function loadSnapshots() {
+    if (!api.listSnapshots) return;
+    try {
+      if (api.getProjectDir) {
+        const pr = await api.getProjectDir();
+        currentProjectDir = pr && pr.dir ? pr.dir : null;
+      }
+    } catch (_) {
+    }
+    try {
+      const res = await api.listSnapshots(currentProjectDir || void 0);
+      snapshots = res && res.success && Array.isArray(res.snapshots) ? res.snapshots : [];
+    } catch (_) {
+      snapshots = [];
+    }
+    renderSnapshots();
+  }
+  function fmtTime(ts) {
+    try {
+      return new Date(ts).toLocaleString("zh-CN");
+    } catch (_) {
+      return "";
+    }
+  }
+  function fmtSize2(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / 1024 / 1024).toFixed(1) + " MB";
+  }
+  function renderSnapshots() {
+    const listEl2 = document.getElementById("snap-list");
+    if (!listEl2) return;
+    if (!snapshots.length) {
+      listEl2.innerHTML = '<div class="ck-list-empty">\u6682\u65E0\u5FEB\u7167\uFF0C\u70B9\u4E0A\u65B9\u521B\u5EFA\uFF0C\u6216\u8BA9 AI \u7528 createSnapshot \u5DE5\u5177</div>';
+      return;
+    }
+    listEl2.innerHTML = snapshots.map((s) => {
+      return '<div class="ck-snip-item" data-id="' + escapeAttr(s.id) + '"><div class="ck-snip-top"><span class="ck-snip-name">' + escapeHtml(s.name) + '</span><div class="ck-snip-actions"><button class="ck-snip-icon-btn" data-restore="' + escapeAttr(s.id) + '" title="\u6062\u590D"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button><button class="ck-snip-icon-btn danger" data-del="' + escapeAttr(s.id) + '" title="\u5220\u9664"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div></div><span class="ck-snip-preview">' + s.fileCount + " \u4E2A\u6587\u4EF6 \xB7 " + fmtSize2(s.totalBytes || 0) + " \xB7 " + fmtTime(s.createdAt) + (s.description ? " \xB7 " + escapeHtml(s.description) : "") + "</span></div>";
+    }).join("");
+    listEl2.querySelectorAll("[data-restore]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.restore;
+        const s = snapshots.filter((x) => x.id === id)[0];
+        if (!await ckConfirm("\u786E\u5B9A\u628A\u5FEB\u7167\u300C" + (s ? s.name : "") + "\u300D\u6062\u590D\u5230\u9879\u76EE\u76EE\u5F55\uFF1F\n\n\u26A0\uFE0F \u5C06\u8986\u76D6\u9879\u76EE\u4E2D\u7684\u540C\u540D\u6587\u4EF6\uFF0C\u5F53\u524D\u672A\u4FDD\u5B58\u7684\u6539\u52A8\u53EF\u80FD\u4E22\u5931\u3002")) return;
+        if (api.restoreSnapshot) {
+          try {
+            await api.restoreSnapshot(id);
+          } catch (_) {
+          }
+        }
+        await ckAlert("\u5DF2\u6062\u590D");
+      });
+    });
+    listEl2.querySelectorAll("[data-del]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.del;
+        const s = snapshots.filter((x) => x.id === id)[0];
+        if (!await ckConfirm("\u786E\u5B9A\u5220\u9664\u5FEB\u7167\u300C" + (s ? s.name : "") + "\u300D\uFF1F")) return;
+        if (api.deleteSnapshot) {
+          try {
+            await api.deleteSnapshot(id);
+          } catch (_) {
+          }
+        }
+        await loadSnapshots();
+      });
+    });
+  }
+  document.getElementById("snap-add")?.addEventListener("click", async () => {
+    if (!currentProjectDir) {
+      await ckAlert("\u8BF7\u5148\u9009\u62E9\u9879\u76EE\u76EE\u5F55");
+      return;
+    }
+    const name = await ckPrompt({ title: "\u521B\u5EFA\u5FEB\u7167", placeholder: "\u5982\uFF1A\u91CD\u6784\u524D", value: "\u5FEB\u7167-" + (/* @__PURE__ */ new Date()).toLocaleString("zh-CN") });
+    if (name === null) return;
+    const n = name.trim();
+    if (!n) {
+      await ckAlert("\u540D\u79F0\u4E0D\u80FD\u4E3A\u7A7A");
+      return;
+    }
+    if (api.createSnapshot) {
+      try {
+        const r = await api.createSnapshot(currentProjectDir, n);
+        if (r && !r.success) {
+          await ckAlert("\u521B\u5EFA\u5931\u8D25\uFF1A" + (r.error || ""));
+        }
+      } catch (_) {
+      }
+    }
+    await loadSnapshots();
+  });
+  document.getElementById("snap-refresh")?.addEventListener("click", loadSnapshots);
+
   // src/ui/shell/scripts/main.ts
   registerTab("workspaces", loadWorkspaces);
   registerTab("files", loadFiles);
@@ -4452,6 +4571,7 @@
   registerTab("settings", loadSettings);
   registerTab("conversations", loadConversations);
   registerTab("plugins", loadPlugins);
+  registerTab("snapshots", loadSnapshots);
   try {
     loadWorkspaces();
   } catch (_) {

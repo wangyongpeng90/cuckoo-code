@@ -32,6 +32,10 @@ let electronAPI: any = {
   executeTool: (toolName: any, params: any, callId: any) => {
     return ipcRenderer.invoke('execute-tool', { toolName, params, callId });
   },
+  // 正文标记触发：AI 回复里的 [快照]xxx
+  createSnapshotFromMarker: (name: any) => {
+    return ipcRenderer.invoke('create-snapshot-marker', { name });
+  },
   executeJs: (code: any, callId: any) => {
     // 附件上传间隔（毫秒），随 JS 执行一并传给主进程的 attachFile 工具
     let attachDelayMin, attachDelayMax;
