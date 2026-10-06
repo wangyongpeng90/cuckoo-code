@@ -30,31 +30,29 @@
     --ck-danger: #e5484d;
     --ck-green: #30a46c;
   }
-  /* ===== 深色（跟随系统）===== */
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --ck-bg: #16181d;
-      --ck-bg-sub: #191c22;
-      --ck-toolbar: #191c22;
-      --ck-surface: rgba(255, 255, 255, 0.045);
-      --ck-surface-hover: rgba(255, 255, 255, 0.08);
-      --ck-border: rgba(255, 255, 255, 0.08);
-      --ck-border-strong: rgba(255, 255, 255, 0.14);
-      --ck-primary: #6b83ff;
-      --ck-primary-strong: #8b9dff;
-      --ck-primary-soft: rgba(107, 131, 255, 0.16);
-      --ck-text: #e4e6eb;
-      --ck-text-2: #a8adba;
-      --ck-text-dim: #757b8a;
-      --ck-hover-bg: rgba(255, 255, 255, 0.13);
-      --ck-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
-      --ck-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
-      --ck-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35);
-      --ck-scroll-thumb: rgba(255, 255, 255, 0.14);
-      --ck-scroll-hover: rgba(255, 255, 255, 0.24);
-      --ck-danger: #ff6369;
-      --ck-green: #46b47e;
-    }
+  /* ===== 深色（由主题 presenter 设 body[data-ck-dark]）===== */
+  body[data-ck-dark] {
+    --ck-bg: #16181d;
+    --ck-bg-sub: #191c22;
+    --ck-toolbar: #191c22;
+    --ck-surface: rgba(255, 255, 255, 0.045);
+    --ck-surface-hover: rgba(255, 255, 255, 0.08);
+    --ck-border: rgba(255, 255, 255, 0.08);
+    --ck-border-strong: rgba(255, 255, 255, 0.14);
+    --ck-primary: #6b83ff;
+    --ck-primary-strong: #8b9dff;
+    --ck-primary-soft: rgba(107, 131, 255, 0.16);
+    --ck-text: #e4e6eb;
+    --ck-text-2: #a8adba;
+    --ck-text-dim: #757b8a;
+    --ck-hover-bg: rgba(255, 255, 255, 0.13);
+    --ck-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --ck-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+    --ck-shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.35);
+    --ck-scroll-thumb: rgba(255, 255, 255, 0.14);
+    --ck-scroll-hover: rgba(255, 255, 255, 0.24);
+    --ck-danger: #ff6369;
+    --ck-green: #46b47e;
   }
   * { box-sizing: border-box; }
   html, body {
@@ -74,8 +72,8 @@
   }
   /* 纯净模式/原版模式 切换按钮（项目选择器右侧） */
   .harness-toggle {
-    height: 30px; padding: 0 12px; flex-shrink: 0;
-    border: none; border-radius: 999px;
+    height: 30px; min-width: 30px; padding: 0 8px; flex-shrink: 0;
+    border: none; border-radius: 8px;
     background: transparent; color: var(--ck-text-2);
     font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;
     transition: background .14s, color .14s;
@@ -129,6 +127,7 @@
     border-radius: 9px;
     transition: border-color .15s, background .15s, box-shadow .15s;
   }
+  .url-wrap.cuckoo-hidden { display: none; }
   .url-wrap:hover { background: var(--ck-surface-hover); }
   .url-wrap:focus-within { border-color: var(--ck-primary); background: var(--ck-bg); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
   .lock { width: 13px; height: 13px; flex-shrink: 0; margin-right: 9px; color: var(--ck-green); }
@@ -214,3 +213,52 @@
   .ck-tab { display: none; flex-direction: column; gap: 14px; }
   .ck-tab.ck-tab-active { display: flex; }
   .ck-placeholder { color: var(--ck-text-dim); font-size: 12px; text-align: center; padding: 20px 0; }
+
+  /* ===== 自绘标题栏：拖拽区 + 窗口控制按钮 ===== */
+  .toolbar {
+    -webkit-app-region: drag;
+  }
+  /* macOS：左上角给系统红绿灯留出空间 */
+  body.ck-mac .toolbar { padding-left: 78px; }
+  .toolbar button,
+  .toolbar input,
+  .toolbar .url-wrap,
+  .toolbar .ck-win-controls {
+    -webkit-app-region: no-drag;
+  }
+  .ck-win-divider {
+    margin-left: auto;
+  }
+  .ck-win-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: 6px;
+    flex-shrink: 0;
+  }
+  .ck-win-btn {
+    width: 34px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ck-text-2);
+    cursor: pointer;
+    transition: background .14s, color .14s;
+  }
+  .ck-win-btn svg {
+    width: 12px;
+    height: 12px;
+    fill: currentColor;
+  }
+  .ck-win-btn:hover {
+    background: var(--ck-surface-hover);
+    color: var(--ck-text);
+  }
+  .ck-win-close:hover {
+    background: #e5484d;
+    color: #fff;
+  }

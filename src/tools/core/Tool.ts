@@ -22,6 +22,8 @@ class Tool {
   description: string;
   parameters: any; // JSON Schema 格式
   jsApi: string | null; // JS 调用签名
+  /** 运行时动态工具（如插件工具）：沙箱注入 + 提示词都需运行期生成 */
+  dynamic?: boolean;
 
   constructor(name: string, description: string, parameters: any, jsApi?: string | null) {
     this.name = name;

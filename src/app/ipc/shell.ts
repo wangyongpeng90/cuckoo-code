@@ -96,6 +96,24 @@ function pushTps(view: any, text: string): void {
 }
 
 function registerShellIpc(): void {
+  // ===== 自绘标题栏：窗口控制（无边框窗口由壳页面按钮驱动）=====
+  ipcMain.handle('shell-window-minimize', (event: any) => {
+    try { BrowserWindow.fromWebContents(event.sender)?.minimize(); } catch (_) {}
+  });
+  ipcMain.handle('shell-window-maximize', (event: any) => {
+    try {
+      const w = BrowserWindow.fromWebContents(event.sender);
+      if (!w) return;
+      if (w.isMaximized()) w.unmaximize(); else w.maximize();
+    } catch (_) {}
+  });
+  ipcMain.handle('shell-window-close', (event: any) => {
+    try { BrowserWindow.fromWebContents(event.sender)?.close(); } catch (_) {}
+  });
+  ipcMain.handle('shell-window-is-maximized', (event: any) => {
+    try { return !!BrowserWindow.fromWebContents(event.sender)?.isMaximized(); } catch (_) { return false; }
+  });
+
   // 启动时清理子代理遗留的 token 统计键（历史 bug：子代理上报污染系统总累计）
   try { cleanupSubagentKeys(); } catch (_) { /* ignore */ }
   // AI 页面报告 token（上下文 + 对话累计 + 窗口累计 + 今日累计）→ 转发给壳页面状态条

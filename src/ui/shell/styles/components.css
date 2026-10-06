@@ -177,6 +177,10 @@
     font-size: 12.5px; font-family: inherit;
   }
   .ck-set-input:focus { outline: none; border-color: var(--ck-primary); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
+  /* select：原生选项弹层跟随 color-scheme（否则深色主题下白底白字看不清） */
+  select.ck-set-input { color-scheme: light; }
+  body[data-ck-dark] select.ck-set-input { color-scheme: dark; }
+  select.ck-set-input option { background: var(--ck-bg); color: var(--ck-text); }
   .ck-set-textarea {
     width: 100%; background: var(--ck-surface); border: 1px solid transparent;
     border-radius: 9px; padding: 8px 10px; color: var(--ck-text);

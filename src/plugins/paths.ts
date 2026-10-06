@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 插件路径解析（**纯 node，无 electron 依赖**，可在 vitest 直接测）
  *
  * 目录约定（对齐 skills/agents/rules 的 ~/.cuckoo 约定）：
@@ -21,6 +21,10 @@ const AGENTS_DIR = 'agents';
 const RULES_DIR = 'rules';
 const MCP_FILE = 'mcp.json';
 const PROVIDERS_DIR = 'providers';
+/** 插件入口目录（第 6 条扩展线：可执行插件，写法参考 DSH） */
+const DSH_DIR = 'dsh';
+/** UI 扩展目录（第 7 条扩展线：向界面注入 HTML/JS/CSS） */
+const UI_DIR = 'ui';
 /** 网页注入脚本（按 URL 匹配注入 AI 页面主世界，见 bridge/entry.ts） */
 const SCRIPTS_DIR = 'scripts';
 
@@ -100,6 +104,8 @@ export {
   RULES_DIR,
   MCP_FILE,
   PROVIDERS_DIR,
+  DSH_DIR,
+  UI_DIR,
   SCRIPTS_DIR,
   PLUGIN_ID_RE,
   isValidPluginId,

@@ -43,6 +43,11 @@ class ToolRegistry {
     return Array.from(this.tools.values()).map(t => t.getDescription());
   }
 
+  /** 列出运行时动态工具（插件工具等，需运行期注入沙箱） */
+  getDynamicTools(): Tool[] {
+    return Array.from(this.tools.values()).filter((t) => (t as any).dynamic === true);
+  }
+
   getFormattedToolsForPrompt(): string {
     const descriptions = this.getDescriptions();
     if (descriptions.length === 0) return '暂无可用工具';

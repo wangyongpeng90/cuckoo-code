@@ -24,6 +24,8 @@ import { loadConversations } from './pages/conversations.js';
 import { loadPlugins } from './pages/plugins.js';
 import { loadScheduledTasks } from './pages/schedule.js';
 import { loadMemories } from './pages/memory.js';
+import { initPluginShell } from './plugin-shell.js';
+import { initThemePresenter } from './theme-presenter.js';
 
 // 注册 tab → 加载函数（sidebar 点击时调用）
 registerTab('workspaces', loadWorkspaces);
@@ -49,6 +51,12 @@ try { loadAutoCompact(); } catch (_) { /* ignore */ }
 
 // 渲染底部状态栏「最近使用」
 try { renderRecent(); } catch (_) { /* ignore */ }
+
+// 插件界面挂载（接收主进程 shell-plugin-mount）
+try { initPluginShell(); } catch (_) { /* ignore */ }
+
+// 主题呈现层（消费主进程快照，写 --ck-* 变量）
+try { initThemePresenter(); } catch (_) { /* ignore */ }
 
 // 上报壳页面真实可视尺寸（主进程据此精确布局，避免菜单栏高度误差盖住状态栏）
 function reportShellSize(): void {

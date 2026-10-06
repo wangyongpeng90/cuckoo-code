@@ -92,3 +92,49 @@ document.getElementById('st-reset')?.addEventListener('click', async () => {
     if (r && r.success && r.data) renderSettings(r.data);
   } catch (_) { /* ignore */ }
 });
+
+// ===== 外观：主题下拉（走主进程 theme API，不归 settings 存取）=====
+const themeSelect = document.getElementById('st-theme-select') as any;
+const THEME_BUILTINS: [string, string][] = [
+  ['system', '跟随系统'],
+  ['light', '浅色'],
+  ['dark', '深色'],
+];
+function fillThemeOptions(registered: any[]): void {
+  if (!themeSelect) return;
+  const opts: [string, string][] = THEME_BUILTINS.slice();
+  for (const t of (registered || [])) {
+    // 内置 light/dark 已在上面，跳过
+    if (t && t.id && t.id !== 'light' && t.id !== 'dark') opts.push([t.id, t.id]);
+  }
+  const cur = themeSelect.value;
+  themeSelect.innerHTML = opts.map(([v, label]) =>
+    '<option value="' + v + '">' + label + '</option>').join('');
+  if (cur) themeSelect.value = cur;
+}
+function renderThemeSelect(): void {
+  const anyApi = api as any;
+  if (!themeSelect || typeof anyApi.themeGet !== 'function') return;
+  anyApi.themeGet().then((r: any) => {
+    if (r && r.success && r.snapshot) {
+      fillThemeOptions(r.snapshot.themes);
+      themeSelect.value = r.snapshot.preference || 'system';
+    }
+  }).catch(() => {});
+  if (typeof anyApi.onThemeChanged === 'function') {
+    anyApi.onThemeChanged((snap: any) => {
+      if (!snap) return;
+      fillThemeOptions(snap.themes);
+      if (themeSelect) themeSelect.value = snap.preference || 'system';
+    });
+  }
+}
+if (themeSelect) {
+  themeSelect.addEventListener('change', () => {
+    const anyApi = api as any;
+    if (typeof anyApi.themeSet === 'function') {
+      anyApi.themeSet(themeSelect.value).catch(() => {});
+    }
+  });
+  renderThemeSelect();
+}

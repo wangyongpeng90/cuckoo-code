@@ -3,6 +3,8 @@
  * 全部方法可选——用防御式调用（if (api.xxx) api.xxx()）。
  */
 export interface ShellAPI {
+  /** 运行平台（darwin/win32/linux） */
+  platform?: string;
   navigate?: (url: string) => void;
   back?: () => void;
   forward?: () => void;
@@ -28,6 +30,12 @@ export interface ShellAPI {
   listInstalledPlugins?: () => Promise<any>;
   pluginSetEnabled?: (id: string, enabled: boolean) => Promise<any>;
   pluginOpenDir?: () => Promise<any>;
+  // ===== Cuckoo 插件（DSH 兼容）=====
+  cuckooPluginList?: () => Promise<any>;
+  cuckooPluginInstall?: (pkgName: string) => Promise<any>;
+  cuckooPluginUninstall?: (id: string) => Promise<any>;
+  cuckooPluginToggle?: (id: string, enabled: boolean) => Promise<any>;
+  cuckooPluginOpenDir?: () => Promise<any>;
   // 窗口组
   wgList?: () => Promise<any>;
   wgCreate?: (name?: string) => Promise<any>;
@@ -48,6 +56,12 @@ export interface ShellAPI {
   onPlatformMode?: (cb: (data: any) => void) => void;
   /** 会话标题/归档变化（如 AI 命名对话）→ 刷新工作区列表 */
   onSessionsChanged?: (cb: () => void) => void;
+  // ===== 主题 =====
+  themeGet?: () => Promise<any>;
+  themeSet?: (id: string) => Promise<any>;
+  themeList?: () => Promise<any>;
+  themeSubscribe?: () => Promise<any>;
+  onThemeChanged?: (cb: (snapshot: any) => void) => void;
   // 会话（侧边栏「工作区」页）
   listAllSessions?: () => Promise<any>;
   navigateSession?: (sessionId: string) => Promise<any>;

@@ -163,3 +163,5 @@
      且显示规则绑定在 .ck-snip-item:hover 上；放进 .ck-plugin-item 会永远不可见也点不到。
      插件卡片的安装/更新/卸载是主要操作，不该藏到悬停里。 */
   .ck-plugin-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+  /* 无配置时的占位：占住 ⚙ 的位置，保证各行开关/按钮对齐 */
+  .ck-snip-icon-placeholder { visibility: hidden; }

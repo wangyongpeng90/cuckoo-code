@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Cuckoo Code preload 入口
  * 原 preload.js 的全部逻辑拆分为本目录下的模块，此处负责组装与初始化，
  * 初始化时序与原文件保持一致。
@@ -25,6 +25,7 @@ import { initHarnessBridge } from './harness-bridge.js';
 import { initProbeIfNeeded } from './probe.js';
 import { initFeishuBridge } from './feishu-bridge.js';
 import { initMessageFold } from '../overlay/message-fold.js';
+import { initPlugins, bindPluginReload } from './plugin-system.js';
 
 const require = createRequire(import.meta.url);
 const { webFrame, ipcRenderer } = require('electron');
@@ -251,6 +252,13 @@ function init(): void {
 
     // 飞书同步：上报用户消息/AI回复/工具状态，并接收飞书来消息
     initFeishuBridge();
+
+    // Cuckoo 插件系统：加载 dsh/*.js 风格插件（异步，不阻塞）
+    initPlugins().catch((err: any) => {
+      console.error('[Cuckoo Code] 加载 DSH 插件失败:', err && err.message ? err.message : err);
+    });
+    // 监听插件热重载通知（启用/禁用插件时主进程推送）
+    bindPluginReload();
 
     // 窗口组探测：若本次导航带 cuckoo-probe 标记，发测试消息判限流
     initProbeIfNeeded();

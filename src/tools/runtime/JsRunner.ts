@@ -97,6 +97,38 @@ function toProjectRelPath(filePath: any, projectDir: any): string | null {
   return p.replace(/^\.\//, '');
 }
 
+/** 合法 JS 标识符（防注入：插件工具名/参数名来自不可信插件） */
+const JS_IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
+ * 为"运行时动态工具"（插件工具）生成沙箱注入代码。
+ * 每个工具生成 globalThis.<name> = async function(...) { return await __call('<name>', {...}) }
+ * @returns 注入代码；无动态工具时返回空串
+ */
+function buildDynamicToolsBootstrap(registry: any): string {
+  if (!registry || typeof registry.getDynamicTools !== 'function') return '';
+  const tools = registry.getDynamicTools();
+  if (!tools || tools.length === 0) return '';
+  // 用暴露的 __hostBridge（沙箱 globalThis 上）——不能依赖 BOOTSTRAP IIFE 内的局部 __call
+  const lines: string[] = ['(function () {', "'use strict';"];
+  for (const tool of tools) {
+    const name = tool.name;
+    if (!JS_IDENT_RE.test(name)) continue; // 非法标识符，跳过
+    const props = Object.keys((tool.parameters && tool.parameters.properties) || {})
+      .filter((p) => JS_IDENT_RE.test(p));
+    const params = props.join(', ');
+    const argsObj = props.map((p) => p + ': ' + p).join(', ');
+    lines.push('  globalThis.' + name + ' = async function (' + params + ') {');
+    lines.push('    var resText = await globalThis.__hostBridge(' + JSON.stringify(name) + ', JSON.stringify({ ' + argsObj + ' }));');
+    lines.push('    var res; try { res = JSON.parse(resText); } catch (e) { throw new Error("工具结果解析失败: " + e.message); }');
+    lines.push('    if (!res || res.success !== true) { throw new Error((res && res.error) || "工具 ' + name + ' 执行失败"); }');
+    lines.push('    return res.data;');
+    lines.push('  };');
+  }
+  lines.push('})();');
+  return lines.join('\n');
+}
+
 /**
  * 安全的 JSON 序列化（处理循环引用等异常）
  */
@@ -233,6 +265,11 @@ class JsRunner {
 
     try {
       vm.runInContext(BOOTSTRAP, context, { filename: 'cuckoo-js-api.js' });
+      // 动态注入插件工具（运行时工具，非构建期固定）
+      const dynCode = buildDynamicToolsBootstrap(this.registry);
+      if (dynCode) {
+        vm.runInContext(dynCode, context, { filename: 'cuckoo-plugin-tools.js' });
+      }
     } catch (err: any) {
       return { success: false, error: '沙箱初始化失败: ' + (err.message || String(err)) };
     }

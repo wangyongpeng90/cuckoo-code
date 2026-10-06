@@ -46,6 +46,8 @@ resources/runtime/
 # .cuckoo/ 下的本地运行时配置（各人不同，不进仓库）
 .cuckoo/mcp.json
 .cuckoo/mcp-state.json
+# 各人安装的插件（含大体积模型/资源，不进仓库）
+.cuckoo/plugins/
 
 # Playwright MCP 产物（快照/截图）
 .playwright-mcp/

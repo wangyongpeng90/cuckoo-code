@@ -19,6 +19,8 @@ import {
   RULES_DIR,
   MCP_FILE,
   PROVIDERS_DIR,
+  DSH_DIR,
+  UI_DIR,
   SCRIPTS_DIR,
 } from './paths.js';
 import type { PluginManifest, PluginContributes } from './types.js';
@@ -59,6 +61,26 @@ export function validateManifest(raw: unknown): ManifestResult {
   const name = str(obj.name);
   if (!name) return { ok: false, error: '缺少必填字段 name' };
 
+  // config：对象（键 → { type, label, default, ... }），非法则忽略
+  let config: Record<string, any> | undefined;
+  if (obj.config && typeof obj.config === 'object' && !Array.isArray(obj.config)) {
+    config = {};
+    for (const [k, v] of Object.entries(obj.config as Record<string, unknown>)) {
+      if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+      const f = v as Record<string, unknown>;
+      const type = f.type;
+      if (type !== 'string' && type !== 'number' && type !== 'boolean') continue;
+      const field: any = { type };
+      if (typeof f.label === 'string') field.label = f.label;
+      if (typeof f.description === 'string') field.description = f.description;
+      if (f.default !== undefined) field.default = f.default;
+      if (typeof f.min === 'number') field.min = f.min;
+      if (typeof f.max === 'number') field.max = f.max;
+      config[k] = field;
+    }
+    if (Object.keys(config).length === 0) config = undefined;
+  }
+
   return {
     ok: true,
     manifest: {
@@ -68,6 +90,7 @@ export function validateManifest(raw: unknown): ManifestResult {
       description: str(obj.description),
       author: str(obj.author),
       minAppVersion: str(obj.minAppVersion),
+      config,
     },
   };
 }
@@ -156,6 +179,8 @@ export function deriveContributes(dir: string): PluginContributes {
     rules: listMdNames(path.join(dir, RULES_DIR)),
     mcp: fs.existsSync(path.join(dir, MCP_FILE)),
     providers: listJsFiles(path.join(dir, PROVIDERS_DIR)),
+    dshPlugins: listJsFiles(path.join(dir, DSH_DIR)),
+    uiPlugins: listJsFiles(path.join(dir, UI_DIR)),
     scripts: listJsFiles(path.join(dir, SCRIPTS_DIR)),
   };
 }

@@ -4,7 +4,7 @@
  * 落盘前校验清单、可执行内容需显式启用授权。
  */
 // ===== 插件 =====
-import { api, ckAlert, ckConfirm, escapeHtml, escapeAttr } from '../shared.js';
+import { api, ckAlert, ckConfirm, ckPrompt, escapeHtml, escapeAttr } from '../shared.js';
 
 // 市场唯一搜索源是 GitHub topic:cuckoo-plugin。
 // 搜索为空就如实显示空状态 —— 不做关键词兜底、不做官方精选清单。
@@ -21,6 +21,7 @@ const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" s
 export async function loadPlugins(): Promise<void> {
   await loadInstalledPlugins();
   await loadPluginMarket(false);
+  await loadCuckooPlugins();
 }
 
 function pluginContribSummary(c: any): string {
@@ -119,6 +120,7 @@ async function loadInstalledPlugins(): Promise<void> {
             sw +
           '</div>' +
           '<div class="ck-plugin-actions">' +
+            (p.hasConfig ? '<button class="ck-snip-icon-btn" data-config="' + escapeAttr(p.id) + '" title="配置">⚙</button>' : '<span class="ck-snip-icon-btn ck-snip-icon-placeholder" aria-hidden="true"></span>') +
             '<button class="ck-snip-icon-btn danger" data-uninstall="' + escapeAttr(p.id) + '" title="卸载">' +
               ICON_TRASH +
             '</button>' +
@@ -128,6 +130,15 @@ async function loadInstalledPlugins(): Promise<void> {
         pluginMetaHtml(meta) +
       '</div>';
     }).join('');
+
+    // 配置按钮：弹简单配置表单（按 schema 渲染）
+    listEl.querySelectorAll('[data-config]').forEach((btn) => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = (btn as any).dataset.config;
+        await openPluginConfig(id);
+      });
+    });
 
     listEl.querySelectorAll('[data-uninstall]').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
@@ -322,4 +333,173 @@ document.getElementById('plugin-open-dir')?.addEventListener('click', async () =
   const r = await api.pluginOpenDir();
   if (r && !r.success) await ckAlert(r.error || '打开目录失败');
 });
+
+/** 打开插件配置弹窗（按 schema 渲染简单表单） */
+async function openPluginConfig(pluginId: string): Promise<void> {
+  const apiAny: any = api as any;
+  if (!apiAny || typeof apiAny.pluginConfigGet !== 'function') {
+    await ckAlert('配置接口不可用');
+    return;
+  }
+  const r = await apiAny.pluginConfigGet(pluginId);
+  if (!r || !r.success) { await ckAlert((r && r.error) || '读取配置失败'); return; }
+  const schema = r.schema || {};
+  const values = r.values || {};
+  const keys = Object.keys(schema);
+  if (keys.length === 0) { await ckAlert('该插件没有配置项'); return; }
+
+  // 用 ck-dialog 的 mask 手动构建表单
+  const mask = document.getElementById('ck-dialog');
+  const titleEl = document.getElementById('ck-dialog-title');
+  const msgEl = document.getElementById('ck-dialog-msg');
+  const okBtn = document.getElementById('ck-dialog-ok');
+  const cancelBtn = document.getElementById('ck-dialog-cancel');
+  if (!mask || !titleEl || !msgEl || !okBtn || !cancelBtn) return;
+
+  titleEl.textContent = '插件配置：' + pluginId;
+  // 加宽弹窗（原 ck-dialog 只有 280px，放不下表单）
+  const dlg = mask.querySelector('.ck-dialog') as any;
+  if (dlg) { dlg.__oldMaxWidth = dlg.style.maxWidth; dlg.style.maxWidth = '420px'; dlg.style.width = '380px'; }
+  msgEl.innerHTML = '';
+  const inputs: Record<string, any> = {};
+  for (const k of keys) {
+    const f = schema[k] || {};
+    const row = document.createElement('div');
+    row.style.cssText = 'margin:10px 0;display:flex;flex-direction:column;gap:4px';
+    const lab = document.createElement('label');
+    lab.textContent = (f.label || k) + (f.description ? '（' + f.description + '）' : '');
+    lab.style.cssText = 'font-size:12px;color:var(--ck-text-2)';
+    let inp: any;
+    if (f.type === 'boolean') {
+      inp = document.createElement('input');
+      inp.type = 'checkbox';
+      inp.checked = values[k] !== undefined ? !!values[k] : !!f.default;
+      inp.style.cssText = 'align-self:flex-start';
+    } else if (f.type === 'number') {
+      inp = document.createElement('input');
+      inp.type = 'number';
+      inp.value = values[k] !== undefined ? values[k] : (f.default !== undefined ? f.default : '');
+      inp.style.cssText = 'width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid var(--ck-border-strong);border-radius:6px;background:var(--ck-surface);color:var(--ck-text);font-size:12px';
+    } else {
+      inp = document.createElement('input');
+      inp.type = 'text';
+      inp.value = values[k] !== undefined ? values[k] : (f.default !== undefined ? f.default : '');
+      inp.style.cssText = 'width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid var(--ck-border-strong);border-radius:6px;background:var(--ck-surface);color:var(--ck-text);font-size:12px';
+    }
+    inputs[k] = { inp, type: f.type };
+    row.appendChild(lab); row.appendChild(inp);
+    msgEl.appendChild(row);
+  }
+  cancelBtn.classList.remove('cuckoo-hidden');
+
+  const cleanup = () => {
+    mask.classList.add('cuckoo-hidden');
+    // 恢复弹窗宽度
+    const d2 = mask.querySelector('.ck-dialog') as any;
+    if (d2) { d2.style.maxWidth = d2.__oldMaxWidth || ''; d2.style.width = ''; }
+    okBtn.removeEventListener('click', onOk);
+    cancelBtn.removeEventListener('click', onCancel);
+  };
+  const onOk = async () => {
+    cleanup();
+    const out: any = {};
+    for (const k of Object.keys(inputs)) {
+      const { inp, type } = inputs[k];
+      if (type === 'boolean') out[k] = !!inp.checked;
+      else if (type === 'number') out[k] = Number(inp.value);
+      else out[k] = String(inp.value);
+    }
+    const sr = await apiAny.pluginConfigSet(pluginId, out);
+    if (!sr || !sr.success) { await ckAlert((sr && sr.error) || '保存失败'); return; }
+    await ckAlert('已保存。重启或重载后生效（部分插件即时生效）。', '配置已保存');
+  };
+  const onCancel = () => { cleanup(); };
+  okBtn.addEventListener('click', onOk);
+  cancelBtn.addEventListener('click', onCancel);
+  mask.classList.remove('cuckoo-hidden');
+}
+
+// ===== Cuckoo 插件（DSH 兼容）=====
+function ckpRenderItem(p: any): string {
+  const on = !!p.enabled;
+  return '<div class="ck-list-item" data-id="' + escapeAttr(p.id) + '">' +
+    '<div class="ck-list-main">' +
+      '<div class="ck-list-title">' + escapeHtml(p.name || p.id) +
+        (p.version ? ' <span class="ck-plugin-ver">v' + escapeHtml(p.version) + '</span>' : '') +
+      '</div>' +
+      (p.description ? '<div class="ck-list-desc">' + escapeHtml(p.description) + '</div>' : '') +
+      '<div class="ck-plugin-meta"><span>' + escapeHtml(p.id) + '</span></div>' +
+    '</div>' +
+    '<label class="ck-switch" title="' + (on ? '已启用' : '已禁用') + '">' +
+      '<input type="checkbox" class="ckp-toggle" ' + (on ? 'checked' : '') + ' />' +
+      '<span class="ck-switch-track"></span>' +
+    '</label>' +
+    '<button class="ck-icon-btn ckp-del" title="卸载">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>' +
+    '</button>' +
+  '</div>';
+}
+
+export async function loadCuckooPlugins(): Promise<void> {
+  const listEl = document.getElementById('ckp-list');
+  const apiAny: any = api as any;
+  if (!listEl || typeof apiAny.cuckooPluginList !== 'function') return;
+  try {
+    const r = await apiAny.cuckooPluginList();
+    const plugins: any[] = (r && r.success) ? (r.plugins || []) : [];
+    if (plugins.length === 0) {
+      listEl.innerHTML = '<div class="ck-list-empty">暂无 DSH 插件（点 + 安装）</div>';
+      return;
+    }
+    listEl.innerHTML = plugins.map(ckpRenderItem).join('');
+    listEl.querySelectorAll('.ck-list-item').forEach((el: any) => {
+      const id = el.getAttribute('data-id');
+      const toggle = el.querySelector('.ckp-toggle') as any;
+      const del = el.querySelector('.ckp-del') as any;
+      if (toggle) {
+        toggle.addEventListener('change', async () => {
+          const r2 = await apiAny.cuckooPluginToggle(id, !!toggle.checked);
+          if (!r2 || !r2.success) { await ckAlert((r2 && r2.error) || '操作失败'); toggle.checked = !toggle.checked; }
+        });
+      }
+      if (del) {
+        del.addEventListener('click', async () => {
+          if (!(await ckConfirm('确定卸载插件「' + id + '」？\n（工具需重启后移除）'))) return;
+          const r2 = await apiAny.cuckooPluginUninstall(id);
+          if (!r2 || !r2.success) { await ckAlert((r2 && r2.error) || '卸载失败'); return; }
+          await loadCuckooPlugins();
+        });
+      }
+    });
+  } catch (_) {
+    listEl.innerHTML = '<div class="ck-list-empty">加载失败</div>';
+  }
+}
+
+document.getElementById('ckp-install-btn')?.addEventListener('click', async () => {
+  const apiAny: any = api as any;
+  if (typeof apiAny.cuckooPluginInstall !== 'function') return;
+  const pkgName = await ckPrompt({ title: '安装 DSH 插件', placeholder: 'npm 包名，如 @scope/dsh-plugin-xxx', value: '' });
+  if (!pkgName) return;
+  const btn = document.getElementById('ckp-install-btn') as any;
+  if (btn) btn.disabled = true;
+  try {
+    const r = await apiAny.cuckooPluginInstall(pkgName);
+    if (!r || !r.success) { await ckAlert((r && r.error) || '安装失败', '安装失败'); return; }
+    const tools = (r.tools || []).join(', ');
+    await ckAlert('已安装：' + (r.pluginName || r.id) + '\n工具：' + (tools || '(无)') + '\n\n重启应用后工具生效。', '安装完成');
+    await loadCuckooPlugins();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+});
+
+document.getElementById('ckp-open-dir')?.addEventListener('click', async () => {
+  const apiAny: any = api as any;
+  if (typeof apiAny.cuckooPluginOpenDir !== 'function') return;
+  const r = await apiAny.cuckooPluginOpenDir();
+  if (r && !r.success) await ckAlert(r.error || '打开目录失败');
+});
+// ===== Cuckoo 插件（结束） =====
+
 // ===== 插件（结束） =====

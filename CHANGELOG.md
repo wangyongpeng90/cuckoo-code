@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **插件系统（对标 DSH）**：引入可执行插件运行时——函数/对象/类三种插件形态、5 种事件派发
+  （emit/parallel/serial/bail/waterfall）、服务 provide/inject、可逆副作用（effect/scope）、
+  资源（assets）、工具注册（tools.register）、agents/sessions 核心映射、插件配置（config schema）。
+- **主题系统（对标 DSH ui-theme）**：`ctx.theme`（register / overrideTokens / setTheme / getTheme / list +
+  theme/change 事件）；主进程权威 + 渲染进程 IPC 代理；`--ck-*` token 体系；自绘标题栏；设置页「外观」分区；
+  主题持久化；AI 页面跟随系统主题（nativeTheme，不侵入 AI 页面）。
+- **UI 原子能力**：`ctx.ui.overlay`（覆盖层）、`ctx.ui.shell`（壳页面挂载）、`ctx.ui.slot`（通用槽位）、
+  `ctx.ui.shell.addStyle`（注入壳页面 CSS）、`ctx.ui.setWebViewVisible`、`ctx.ui.setWindowMaterial`。
+- **纯净模式集成**：透明 harness 视图 + `harness/change` 事件。
+- 插件开发文档（`docs/plugin-system.md` / `docs/plugin-dev.md`）、示例插件与模板、单元测试。
+
 ## [0.8.10] - 2026-10-06
 
 ### Added

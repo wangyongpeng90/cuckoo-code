@@ -20,16 +20,7 @@ export async function loadAbout(): Promise<void> {
   }
 }
 
-const aboutCheckBtn = document.getElementById('about-check-update') as any;
-if (aboutCheckBtn) aboutCheckBtn.addEventListener('click', async () => {
-  if (!api.checkUpdate) return;
-  aboutCheckBtn.disabled = true;
-  try {
-    const r = await api.checkUpdate();
-    if (r && !r.success) await ckAlert((r && r.error) || '检查更新失败');
-  } catch (e: any) { await ckAlert('检查更新失败: ' + (e.message || e)); }
-  aboutCheckBtn.disabled = false;
-});
+// 插件改造版：已删除「检查更新」按钮（禁用原版在线更新）
 document.getElementById('about-github')?.addEventListener('click', () => {
   if (api.openExternal) api.openExternal('https://github.com/wangyongpeng90/cuckoo-code');
 });

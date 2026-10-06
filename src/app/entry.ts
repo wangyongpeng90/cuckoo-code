@@ -17,6 +17,10 @@ import { resolveAsset, resolveSrc } from '../infra/paths.js';
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');
 
+// ========== 关闭确认 ==========
+/** 已确认关闭的窗口 id（确认后再次触发 close 时直接放行，避免重复弹框） */
+const closeConfirmed = new Set<number>();
+
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
 const USER_DATA_DIR = path.join(app.getPath('appData'), SESSION_DIR);
@@ -119,9 +123,14 @@ function createWindow(profile: any) {
   const cascadeOffset = savedBounds ? 0 : winCount * 30;
 
   // 壳窗口：webContents 承载地址栏（src/ui/shell.html），AI 页面放入下方 WebContentsView
+  const isMac = process.platform === 'darwin';
   const mainWindow = new BrowserWindow({
     width: defaultBounds.width,
     height: defaultBounds.height,
+    // 自绘标题栏：
+    //  - macOS：hiddenInset（保留左上角红绿灯，隐藏标题栏）
+    //  - Windows/Linux：无边框（顶部工具栏兼任拖拽区，右上角自绘窗口按钮）
+    ...(isMac ? { titleBarStyle: 'hiddenInset' as const } : { frame: false }),
     // 最小尺寸：保证工具栏(46)+状态栏(28)+内容区都放得下（防止恢复成过小窗口导致状态栏被挤出）
     minWidth: 480,
     minHeight: 240,
@@ -135,9 +144,21 @@ function createWindow(profile: any) {
       nodeIntegration: false,
       sandbox: false,
       partition: profileData.partition, // 每个 profile 独立持久化 session
-      additionalArguments: ['--cuckoo-user-data=' + app.getPath('userData')],
+      additionalArguments: ['--cuckoo-user-data=' + app.getPath('userData'), '--cuckoo-platform=' + process.platform],
     },
   });
+
+  // 无边框窗口：最大化时按当前显示器工作区设置 bounds，避免盖住任务栏（Windows 已知问题）
+  try {
+    const applyWorkArea = () => {
+      if (!mainWindow.isMaximized()) return;
+      const { screen } = require('electron');
+      const disp = screen.getDisplayMatching(mainWindow.getBounds());
+      mainWindow.setBounds(disp.workArea);
+    };
+    mainWindow.on('maximize', () => { try { applyWorkArea(); } catch (_) {} });
+    mainWindow.on('unmaximize', () => { try { mainWindow.setBounds(mainWindow.getBounds()); } catch (_) {} });
+  } catch (_) { /* ignore */ }
 
   // 子代理配置：序列化后经 additionalArguments 传给 bridge（供子代理窗口自识别）
   const subagentArg = profileData.subagentConfig
@@ -159,6 +180,62 @@ function createWindow(profile: any) {
     },
   });
   mainWindow.contentView.addChildView(view);
+
+  // ========== 插件覆盖层窗口（透明、置顶、鼠标穿透） ==========
+  // 用独立 BrowserWindow（而非 WebContentsView）——因为只有 BrowserWindow 支持
+  // setIgnoreMouseEvents（鼠标穿透）；WebContentsView 不支持，会拦截 AI 页面的滚轮/点击。
+  // 插件 UI（如桌宠）住在这里，不注入 AI 页面；由 ctx.ui.overlay 驱动。
+  let overlayWin: any = null;
+  (mainWindow as any).__ckOverlayView = null;  // 兼容旧引用名（值为 overlayWin）
+  (mainWindow as any).__ckEnsureOverlay = () => ensureOverlayView();
+  const ensureOverlayView = (): any => {
+    if (overlayWin && !overlayWin.isDestroyed()) return overlayWin;
+    const ow = new BrowserWindow({
+      parent: mainWindow,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      skipTaskbar: true,
+      focusable: false,           // 不抢焦点
+      show: false,
+      hasShadow: false,
+      webPreferences: {
+        preload: path.join(import.meta.dirname, 'plugin-overlay-preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        partition: profileData.partition,
+        transparent: true,
+        additionalArguments: ['--cuckoo-user-data=' + app.getPath('userData')],
+      },
+    });
+    // 鼠标穿透：默认全穿透（滚轮/点击/滚动条透到 AI 页面）
+    try { ow.setIgnoreMouseEvents(true, { forward: true }); } catch (_) {}
+    overlayWin = ow;
+    (mainWindow as any).__ckOverlayView = ow;
+    // 主窗口关闭 → overlay 一起关
+    mainWindow.on('closed', () => { try { if (!ow.isDestroyed()) ow.destroy(); } catch (_) {} });
+    mainWindow.on('minimize', () => { try { ow.hide(); } catch (_) {} });
+    mainWindow.on('restore', () => { try { ow.showInactive(); } catch (_) {} });
+    // 挂到窗口上下文
+    {
+      const ctx: any = windowState.getWindowContext(mainWindow.id);
+      if (ctx) { ctx.__ckEnsureOverlay = () => ensureOverlayView(); ctx.overlayView = ow; }
+    }
+    // 加载覆盖层页面（内联 HTML）
+    ow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(
+      '<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}*{box-sizing:border-box}</style></head><body><div id="__ck_overlay_root"></div></body></html>'
+    ));
+    ow.webContents.on('did-finish-load', () => {
+      console.log('[Cuckoo Overlay] 页面加载完成');
+      try { ow.showInactive(); } catch (_) {}
+    });
+    setTimeout(() => { try { (mainWindow as any).__ckLayout && (mainWindow as any).__ckLayout(); } catch (_) {} }, 50);
+    return ow;
+  };
 
   // ========== 纯净对话模式（Harness）覆盖视图（懒加载） ==========
   // 承载类 Codex 的纯净对话 UI，默认隐藏；按 Ctrl+Shift+H 或 IPC 切换。
@@ -183,7 +260,8 @@ function createWindow(profile: any) {
     });
     mainWindow.contentView.addChildView(hv);
     // harness 页面加载前的底色：跟随系统深浅色（对齐设计规范，加载后由页面 CSS 接管）
-    hv.setBackgroundColor(nativeTheme.shouldUseDarkColors ? '#16181d' : '#ffffff');
+    // 透明：让 harness 透出下面的壳页面（壁纸/背景）
+    hv.setBackgroundColor('#00000000');
     hv.setBounds({ x: 0, y: 0, width: 0, height: 0 });
     harnessView = hv;
     (mainWindow as any).__ckHarnessView = hv;
@@ -236,6 +314,16 @@ function createWindow(profile: any) {
       width: Math.max(0, w - sbw),
       height: Math.max(0, h - tbh - STATUS_HEIGHT),
     });
+    // overlay（独立 BrowserWindow）覆盖整个"网页区域" —— 用屏幕坐标
+    const ov = (mainWindow as any).__ckOverlayView;
+    if (ov && !ov.isDestroyed()) {
+      const cb = mainWindow.getContentBounds();  // 窗口内容区在屏幕上的位置
+      ov.setBounds({
+        x: cb.x + sbw, y: cb.y + tbh,
+        width: Math.max(0, w - sbw),
+        height: Math.max(0, h - tbh - STATUS_HEIGHT),
+      });
+    }
     // harness 覆盖整个"网页区域"（与 AI view 同位置）
     const hv = (mainWindow as any).__ckHarnessView;
     if (hv && !hv.webContents.isDestroyed()) {
@@ -253,6 +341,20 @@ function createWindow(profile: any) {
   (mainWindow as any).__ckLayout = layoutView;
   layoutView();
   mainWindow.on('resize', layoutView);
+  mainWindow.on('move', layoutView);
+
+  // 覆盖层：把"确保创建"挂到 windowState 的 ctx（供 IPC 调用；IPC 通过 getAllContexts 拿）
+  {
+    const ctx: any = windowState.getWindowContext(mainWindow.id);
+    if (ctx) {
+      ctx.__ckEnsureOverlay = () => ensureOverlayView();
+      // 同步 overlayView 引用到 ctx（后续 ensure 创建时也会再写一次）
+      Object.defineProperty(ctx, 'overlayView', {
+        configurable: true,
+        get() { return (mainWindow as any).__ckOverlayView; },
+      });
+    }
+  }
 
   // 加载地址栏壳页面；壳就绪后主动推一次当前 URL 状态（避免与 view 加载竞态）
   mainWindow.loadFile(resolveSrc('ui/shell.html'));
@@ -290,16 +392,32 @@ function createWindow(profile: any) {
     if (next) {
       // 懒加载：首次进入纯净模式才创建 harness 视图
       const hv = ensureHarnessView();
+      try { hv.setVisible(true); } catch (_) {}
+      // 隐藏 AI 视图（DS 页面）→ harness 透明可透出壳页面壁纸，天然对齐
+      try { if (view && !view.webContents.isDestroyed()) view.setVisible(false); } catch (_) {}
       layoutView();
       if (hv && !hv.webContents.isDestroyed()) hv.webContents.focus();
     } else {
+      // 切回网页模式：显式隐藏 harness（setVisible + setBounds 双保险，避免盖住工具栏）
+      const hv0 = (mainWindow as any).__ckHarnessView;
+      if (hv0 && !hv0.webContents.isDestroyed()) {
+        try { hv0.setVisible(false); } catch (_) {}
+        try { hv0.setBounds({ x: 0, y: 0, width: 0, height: 0 }); } catch (_) {}
+      }
+      // 恢复 AI 视图（DS 页面）
+      try { if (view && !view.webContents.isDestroyed()) view.setVisible(true); } catch (_) {}
       layoutView();
     }
+    // overlay 现在是独立 BrowserWindow（不是 WebContentsView），它本来就浮在主窗口之上，
+    // 不会被 harnessView 盖住 —— 无需"提到顶层"。只需重新布局（同步位置）。
+    try { layoutView(); } catch (_) {}
     // 注：不再向 AI 页面下发"纯净模式开关"。bridge 侧上报已不设门控
     //（门控一旦判断错就整片静默丢弃，曾导致界面空白 + 状态卡死）；
     // 主进程在没有 harness 视图时自会丢弃事件，无需 bridge 配合。
     // 通知壳页面：更新「纯净模式/原版模式」按钮
     try { mainWindow.webContents.send('shell-harness-mode', { harness: next }); } catch (_) {}
+    // 通知 AI 页面（插件运行处）→ 广播 harness/change 给插件
+    try { view.webContents.send('harness-mode-changed', { harness: next }); } catch (_) {}
   };
 
   // 更新主窗口引用
@@ -409,8 +527,31 @@ function createWindow(profile: any) {
   });
 
   // 关闭前记录窗口大小/位置（用 getNormalBounds 取"还原后"尺寸；closed 时窗口已销毁取不到）
-  mainWindow.on('close', () => {
-    if (profileData.isSubagent) return; // 子代理窗口不记录
+  mainWindow.on('close', (e: any) => {
+    if (profileData.isSubagent) return; // 子代理窗口：不记录、不弹框
+    // 未确认关闭 且 非程序主动关闭 → 弹框确认
+    if (!closeConfirmed.has(mainWindow.id) && !(mainWindow as any).__programmaticClose) {
+      e.preventDefault();
+      // 防重复：弹框已打开时再点 ✕ 不再弹
+      if ((mainWindow as any).__closeDialogOpen) return;
+      (mainWindow as any).__closeDialogOpen = true;
+      dialog.showMessageBox(mainWindow, {
+        type: 'question',
+        buttons: ['取消', '关闭'],
+        defaultId: 1,
+        cancelId: 0,
+        noLink: true,
+        title: '确认关闭',
+        message: '确定要关闭窗口「' + (profileData.name || profileData.id) + '」吗？',
+      }).then((res: any) => {
+        (mainWindow as any).__closeDialogOpen = false;
+        if (res && res.response === 1) {
+          closeConfirmed.add(mainWindow.id);
+          if (!mainWindow.isDestroyed()) mainWindow.close();
+        }
+      }).catch(() => { (mainWindow as any).__closeDialogOpen = false; });
+      return;
+    }
     try {
       if (mainWindow.isDestroyed()) return;
       const b = mainWindow.getNormalBounds();
@@ -828,7 +969,10 @@ ipcMainForProfile.handle('delete-profile', async (_event: any, { profileId }: an
   // 关掉该 profile 的**全部**窗口（含子代理分身）
   const all = windowState.getAllWindowsByProfileId(profileId);
   for (const c of all) {
-    if (c && c.win && !c.win.isDestroyed()) c.win.close();
+    if (c && c.win && !c.win.isDestroyed()) {
+      (c.win as any).__programmaticClose = true; // 删除窗口是明确意图，跳过关闭确认
+      c.win.close();
+    }
   }
   const ok = profileManager.deleteProfile(profileId);
   return { success: ok, error: ok ? null : '窗口不存在' };
@@ -1094,6 +1238,17 @@ if (!gotSingleInstanceLock) {
     setupAppMenu();
     // MCP 配置首次迁移（旧 userData/mcp.json → ~/.cuckoo/mcp.json，旧文件保留）
     try { mcpConfig.migrateLegacy(); } catch (_) { /* ignore */ }
+    // 加载已启用的 Cuckoo 插件（DSH 兼容；注册其工具到全局工具表）
+    import('../plugins/cuckoo-plugins/index.js').then((m: any) => {
+      import('../tools/index.js').then((t: any) => {
+        m.loadEnabledPlugins(t.registry).then((r: any) => {
+          if (r.loaded.length || r.failed.length) {
+            console.log('[Cuckoo Plugin] 已加载: ' + (r.loaded.join(' | ') || '(无)') +
+              (r.failed.length ? '；失败: ' + r.failed.map((f: any) => f.id + ':' + f.error).join(' | ') : ''));
+          }
+        }).catch((e: any) => console.error('[Cuckoo Plugin] 加载失败:', e && e.message));
+      });
+    }).catch(() => {});
     // 清理子代理窗口遗留的 session 存储文件（历史 bug：子代理不需要持久化）
     try { profileManager.cleanupSubagentStores(); } catch (_) { /* ignore */ }
     // 启动时打开所有"默认打开"的窗口；若一个都没勾，回退默认（上次活跃的或第一个）

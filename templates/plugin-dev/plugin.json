@@ -1,0 +1,8 @@
+{
+  "id": "my-plugin",
+  "name": "我的插件",
+  "version": "1.0.0",
+  "description": "一句话描述这个插件做什么",
+  "author": "你的名字",
+  "minAppVersion": "0.8.8"
+}

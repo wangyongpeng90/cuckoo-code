@@ -12,7 +12,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { listInstalledPluginDirs, SKILLS_DIR, AGENTS_DIR, RULES_DIR, MCP_FILE, PROVIDERS_DIR, SCRIPTS_DIR } from './paths.js';
+import { listInstalledPluginDirs, SKILLS_DIR, AGENTS_DIR, RULES_DIR, MCP_FILE, PROVIDERS_DIR, DSH_DIR, UI_DIR, SCRIPTS_DIR } from './paths.js';
 import { readManifest } from './manifest.js';
 import { isPluginEnabled } from './state.js';
 
@@ -69,6 +69,56 @@ export function getEnabledPluginProviderFiles(): string[] {
       if (!ent.isFile()) continue;
       if (!ent.name.toLowerCase().endsWith('.js')) continue;
       out.push(path.join(providersDir, ent.name));
+    }
+  }
+  return out.sort();
+}
+
+/**
+ * 已启用插件的 DSH 风格插件入口（`dsh/*.js` 绝对路径，已排序）。
+ *
+ * 与 providers/*.js 同级：都会被"执行"，等同运行第三方代码，
+ * 所以只有插件被显式启用后才会出现在这里。
+ */
+export function getEnabledPluginDshFiles(): string[] {
+  const out: string[] = [];
+  for (const { dir } of listEnabledPlugins()) {
+    const dshDir = path.join(dir, DSH_DIR);
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dshDir, { withFileTypes: true });
+    } catch {
+      continue; // 无 dsh 目录 = 该插件没带 DSH 插件
+    }
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      if (!ent.name.toLowerCase().endsWith('.js')) continue;
+      out.push(path.join(dshDir, ent.name));
+    }
+  }
+  return out.sort();
+}
+
+/**
+ * 已启用插件的 UI 扩展文件（`ui/*.js` 绝对路径，已排序）。
+ *
+ * 与 providers/dsh 同级：都会被"执行"，等同运行第三方代码，
+ * 所以只有插件被显式启用后才会出现在这里。
+ */
+export function getEnabledPluginUiFiles(): string[] {
+  const out: string[] = [];
+  for (const { dir } of listEnabledPlugins()) {
+    const uiDir = path.join(dir, UI_DIR);
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(uiDir, { withFileTypes: true });
+    } catch {
+      continue; // 无 ui 目录 = 该插件没带 UI 扩展
+    }
+    for (const ent of entries) {
+      if (!ent.isFile()) continue;
+      if (!ent.name.toLowerCase().endsWith('.js')) continue;
+      out.push(path.join(uiDir, ent.name));
     }
   }
   return out.sort();

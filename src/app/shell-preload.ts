@@ -7,7 +7,12 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { contextBridge, ipcRenderer } = require('electron');
 
+// 平台（主进程经 additionalArguments 传入）：mac 上保留系统红绿灯、隐藏自绘窗口按钮
+const platformArg = (process.argv || []).find((a) => a.startsWith('--cuckoo-platform='));
+const platform = platformArg ? platformArg.slice('--cuckoo-platform='.length) : process.platform;
+
 const shellAPI = {
+  platform,
   navigate: (url: string) => ipcRenderer.invoke('shell-navigate', { url }),
   back: () => ipcRenderer.invoke('shell-back'),
   forward: () => ipcRenderer.invoke('shell-forward'),
@@ -50,6 +55,35 @@ const shellAPI = {
   onHarnessMode: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-harness-mode', (_e: any, data: any) => cb(data));
   },
+  // 插件界面挂载（主进程 → 壳页面）
+  onPluginShellMount: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-plugin-mount', (_e: any, data: any) => cb(data));
+  },
+  // 拉取"已缓存的插件挂载"（壳页面就绪后补渲染）
+  listPluginShellMounts: () => ipcRenderer.invoke('plugin-shell-list'),
+  // 插件注入壳页面 CSS
+  onPluginShellStyle: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-plugin-style', (_e: any, data: any) => cb(data));
+  },
+  onPluginShellStyleRemove: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-plugin-style-remove', (_e: any, data: any) => cb(data));
+  },
+  listPluginShellStyles: () => ipcRenderer.invoke('plugin-shell-style-list'),
+  // 插件背景图（基座对齐）
+  onShellBackground: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-background', (_e: any, data: any) => cb(data));
+  },
+  getShellBackground: () => ipcRenderer.invoke('plugin-shell-background-list'),
+  // 命令（插件命令，工具栏按钮等触发）
+  commandInvoke: (commandId: string) => ipcRenderer.invoke('plugin-command-invoke', { commandId }),
+  commandList: () => ipcRenderer.invoke('plugin-command-list'),
+  // 通用槽位
+  onPluginSlotRegister: (cb: (m: any) => void) => { ipcRenderer.on('shell-slot-register', (_e: any, m: any) => cb(m)); },
+  onPluginSlotUnregister: (cb: (m: any) => void) => { ipcRenderer.on('shell-slot-unregister', (_e: any, m: any) => cb(m)); },
+  listPluginSlots: () => ipcRenderer.invoke('plugin-slot-list'),
+  // 插件配置
+  pluginConfigGet: (pluginId: string) => ipcRenderer.invoke('plugin-config-get', { pluginId }),
+  pluginConfigSet: (pluginId: string, values: any) => ipcRenderer.invoke('plugin-config-set', { pluginId, values }),
   // 壳页面上报真实可视尺寸（供主进程精确布局 WebContentsView，避免菜单栏高度误差）
   reportShellSize: (w: number, h: number) => ipcRenderer.send('shell-report-size', { w, h }),
   // ========== 窗口组 ==========
@@ -104,6 +138,19 @@ const shellAPI = {
   onSessionsChanged: (cb: () => void) => {
     ipcRenderer.on('shell-sessions-changed', () => cb());
   },
+  // ========== 自绘标题栏：窗口控制 ==========
+  windowMinimize: () => ipcRenderer.invoke('shell-window-minimize'),
+  windowMaximize: () => ipcRenderer.invoke('shell-window-maximize'),
+  windowClose: () => ipcRenderer.invoke('shell-window-close'),
+  windowIsMaximized: () => ipcRenderer.invoke('shell-window-is-maximized'),
+  // ========== 主题 ==========
+  themeGet: () => ipcRenderer.invoke('theme-get'),
+  themeSet: (id: string) => ipcRenderer.invoke('theme-set', { id }),
+  themeList: () => ipcRenderer.invoke('theme-list'),
+  themeSubscribe: () => ipcRenderer.invoke('theme-subscribe'),
+  onThemeChanged: (cb: (snapshot: any) => void) => {
+    ipcRenderer.on('theme-changed', (_e: any, snap: any) => cb(snap));
+  },
   // ========== 技能 ==========
   listSkills: () => ipcRenderer.invoke('list-skills'),
   // ========== 子代理 ==========
@@ -139,6 +186,12 @@ const shellAPI = {
   pluginSetEnabled: (id: string, enabled: boolean) =>
     ipcRenderer.invoke('plugin-set-enabled', { id, enabled }),
   pluginOpenDir: () => ipcRenderer.invoke('plugin-open-dir'),
+  // ===== Cuckoo 插件（DSH 兼容）=====
+  cuckooPluginList: () => ipcRenderer.invoke('cuckoo-plugin-list'),
+  cuckooPluginInstall: (pkgName: string) => ipcRenderer.invoke('cuckoo-plugin-install', { pkgName }),
+  cuckooPluginUninstall: (id: string) => ipcRenderer.invoke('cuckoo-plugin-uninstall', { id }),
+  cuckooPluginToggle: (id: string, enabled: boolean) => ipcRenderer.invoke('cuckoo-plugin-toggle', { id, enabled }),
+  cuckooPluginOpenDir: () => ipcRenderer.invoke('cuckoo-plugin-open-dir'),
   // ========== 关于 ==========
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   checkUpdate: () => ipcRenderer.invoke('check-update'),

@@ -8,73 +8,71 @@
 <link rel="stylesheet" href="vendor/katex/katex.min.css">
 <script src="vendor/katex/katex.min.js"></script>
 <style>
-  /* ===== 浅色（默认）===== */
+  /* ===== 跟随 Cuckoo 主题（--ck-* 由 theme-presenter 写入）=====
+     变量引用 --ck-*，有则用主题值、无则用回退值（默认浅色）*/
   :root {
-    /* 对齐设计规范（同壳页面 --ck-*）*/
-    --bg: #ffffff;
-    --bg-elev: #fbfbfd;
-    --surface: #f5f6f8;
-    --surface-hover: #eef0f4;
-    --border: rgba(16, 24, 40, 0.07);
-    --border-strong: rgba(16, 24, 40, 0.12);
-    --border-soft: rgba(16, 24, 40, 0.05);
-    --text: #16181d;
-    --text-2: #545a67;
-    --text-dim: #8a8f9b;
-    --text-strong: #000000;
-    --accent: #4d6bfe;
-    --accent-soft: rgba(77, 107, 254, 0.08);
-    --green: #30a46c;
-    --red: #e5484d;
+    --bg: var(--ck-bg, #ffffff);
+    --bg-elev: var(--ck-bg-sub, #fbfbfd);
+    --surface: var(--ck-surface, #f5f6f8);
+    --surface-hover: var(--ck-surface-hover, #eef0f4);
+    --border: var(--ck-border, rgba(16, 24, 40, 0.07));
+    --border-strong: var(--ck-border-strong, rgba(16, 24, 40, 0.12));
+    --border-soft: var(--ck-border, rgba(16, 24, 40, 0.05));
+    --text: var(--ck-text, #16181d);
+    --text-2: var(--ck-text-2, #545a67);
+    --text-dim: var(--ck-text-dim, #8a8f9b);
+    --text-strong: var(--ck-text, #000000);
+    --accent: var(--ck-primary, #4d6bfe);
+    --accent-soft: var(--ck-primary-soft, rgba(77, 107, 254, 0.08));
+    --green: var(--ck-green, #30a46c);
+    --red: var(--ck-danger, #e5484d);
     --amber: #b07d2b;
-    --user-bg: #eef0f4;
-    --code-bg: #f5f6f8;
+    --user-bg: var(--ck-surface-hover, #eef0f4);
+    --code-bg: var(--ck-surface, #f5f6f8);
     --code-text: #b5451f;
-    --think-bg: rgba(0,0,0,0.02);
-    --hover-soft: rgba(0,0,0,0.05);
-    --scroll-thumb: rgba(0, 0, 0, 0.14);
-    --scroll-hover: rgba(0, 0, 0, 0.24);
+    --think-bg: var(--ck-surface, rgba(0,0,0,0.02));
+    --hover-soft: var(--ck-surface-hover, rgba(0,0,0,0.05));
+    --scroll-thumb: var(--ck-scroll-thumb, rgba(0, 0, 0, 0.14));
+    --scroll-hover: var(--ck-scroll-hover, rgba(0, 0, 0, 0.24));
     --amber-soft: rgba(176,125,43,0.10);
-    --shadow-color: rgba(16,24,40,0.12);
+    --shadow-color: var(--ck-shadow-lg, rgba(16,24,40,0.12));
     --mono: "SFMono-Regular", "SF Mono", "Cascadia Code", "Consolas", "Liberation Mono", monospace;
     --sans: -apple-system, "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
   }
-  /* ===== 深色（跟随系统）===== */
-  @media (prefers-color-scheme: dark) {
-    :root {
-      /* 对齐设计规范（同壳页面 --ck-*）*/
-      --bg: #16181d;
-      --bg-elev: #191c22;
-      --surface: rgba(255, 255, 255, 0.045);
-      --surface-hover: rgba(255, 255, 255, 0.08);
-      --border: rgba(255, 255, 255, 0.08);
-      --border-strong: rgba(255, 255, 255, 0.14);
-      --border-soft: rgba(255, 255, 255, 0.05);
-      --text: #e4e6eb;
-      --text-2: #a8adba;
-      --text-dim: #757b8a;
-      --text-strong: #ffffff;
-      --accent: #6b83ff;
-      --accent-soft: rgba(107, 131, 255, 0.16);
-      --green: #46b47e;
-      --red: #ff6369;
-      --amber: #d9a05b;
-      --user-bg: rgba(255, 255, 255, 0.08);
-      --code-bg: rgba(0, 0, 0, 0.35);
-      --code-text: #e0a58a;
-      --think-bg: rgba(255,255,255,0.018);
-      --hover-soft: rgba(255,255,255,0.08);
-      --scroll-thumb: rgba(255, 255, 255, 0.14);
-      --scroll-hover: rgba(255, 255, 255, 0.24);
-      --amber-soft: rgba(217,160,91,0.08);
-      --shadow-color: rgba(0,0,0,0.45);
-    }
+  /* 深色：presenter 写 body[data-ck-dark] 时生效（提供深色回退值；
+     自定义主题的 --ck-* token 仍优先，因为有 var(--ck-xxx, 回退) 兜底）*/
+  body[data-ck-dark] {
+    --bg: var(--ck-bg, #16181d);
+    --bg-elev: var(--ck-bg-sub, #191c22);
+    --surface: var(--ck-surface, rgba(255, 255, 255, 0.045));
+    --surface-hover: var(--ck-surface-hover, rgba(255, 255, 255, 0.08));
+    --border: var(--ck-border, rgba(255, 255, 255, 0.08));
+    --border-strong: var(--ck-border-strong, rgba(255, 255, 255, 0.14));
+    --border-soft: var(--ck-border, rgba(255, 255, 255, 0.05));
+    --text: var(--ck-text, #e4e6eb);
+    --text-2: var(--ck-text-2, #a8adba);
+    --text-dim: var(--ck-text-dim, #757b8a);
+    --text-strong: var(--ck-text, #ffffff);
+    --accent: var(--ck-primary, #6b83ff);
+    --accent-soft: var(--ck-primary-soft, rgba(107, 131, 255, 0.16));
+    --green: var(--ck-green, #46b47e);
+    --red: var(--ck-danger, #ff6369);
+    --amber: #d9a05b;
+    --user-bg: var(--ck-surface-hover, rgba(255, 255, 255, 0.08));
+    --code-bg: var(--ck-surface, rgba(0, 0, 0, 0.35));
+    --code-text: #e0a58a;
+    --think-bg: var(--ck-surface, rgba(255,255,255,0.018));
+    --hover-soft: var(--ck-surface-hover, rgba(255,255,255,0.08));
+    --scroll-thumb: var(--ck-scroll-thumb, rgba(255, 255, 255, 0.14));
+    --scroll-hover: var(--ck-scroll-hover, rgba(255, 255, 255, 0.24));
+    --amber-soft: rgba(217,160,91,0.08);
+    --shadow-color: var(--ck-shadow-lg, rgba(0,0,0,0.45));
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0; height: 100%;
     font-family: var(--sans);
-    background: var(--bg); color: var(--text);
+    background: transparent; color: var(--text);
     overflow: hidden; font-size: 14px;
     -webkit-font-smoothing: antialiased;
   }
@@ -2601,6 +2599,70 @@
   });
 
   if (api.ready) api.ready();
+
+  // ===== 主题：跟随 Cuckoo 主题系统（写 --ck-* + body[data-ck-dark]）=====
+  (function () {
+    if (typeof api.onThemeChanged !== 'function') return;
+    var applied = [];
+    function applyTheme(snap) {
+      if (!snap || !snap.active) return;
+      var scheme = snap.active.colorScheme;
+      document.documentElement.style.colorScheme = scheme;
+      if (scheme === 'dark') document.body.setAttribute('data-ck-dark', '');
+      else document.body.removeAttribute('data-ck-dark');
+      for (var i = 0; i < applied.length; i++) document.documentElement.style.removeProperty(applied[i]);
+      applied = [];
+      var tokens = snap.active.tokens || {};
+      for (var name in tokens) {
+        if (Object.prototype.hasOwnProperty.call(tokens, name)) {
+          document.documentElement.style.setProperty(name, tokens[name]);
+          applied.push(name);
+        }
+      }
+    }
+    api.onThemeChanged(applyTheme);
+    if (typeof api.themeGet === 'function') {
+      api.themeGet().then(function (r) { if (r && r.success && r.snapshot) applyTheme(r.snapshot); }).catch(function () {});
+    }
+    if (typeof api.themeSubscribe === 'function') api.themeSubscribe().catch(function () {});
+
+    // 插件注入的 CSS（壁纸/字体等）：harness 也是 Cuckoo 界面，一起跟随
+    function applyPluginStyle(pluginId, css) {
+      if (!pluginId || typeof css !== 'string') return;
+      var tag = document.querySelector('style[data-plugin-style="' + pluginId + '"]');
+      if (!tag) { tag = document.createElement('style'); tag.setAttribute('data-plugin-style', pluginId); document.head.appendChild(tag); }
+      tag.textContent = css;
+    }
+    if (typeof api.onPluginStyle === 'function') api.onPluginStyle(function (m) { if (m) applyPluginStyle(m.pluginId, m.css); });
+    // 拉取已缓存的插件 CSS（harness 懒加载，插件加载时可能还没进纯净模式）
+    if (typeof api.listPluginStyles === 'function') {
+      api.listPluginStyles().then(function (r) { if (r && r.success && r.styles) { for (var i = 0; i < r.styles.length; i++) { try { applyPluginStyle(r.styles[i].pluginId, r.styles[i].css); } catch (e) {} } } }).catch(function () {});
+    }
+    if (typeof api.onPluginStyleRemove === 'function') api.onPluginStyleRemove(function (m) {
+      if (!m || !m.pluginId) return;
+      var tag = document.querySelector('style[data-plugin-style="' + m.pluginId + '"]');
+      if (tag && tag.parentNode) tag.parentNode.removeChild(tag);
+    });
+
+    // 插件背景图（基座对齐：background-position 补偿 offsetX/offsetY）
+    function applyBackground(data) {
+      var tag = document.getElementById('ck-harness-bg');
+      if (!data || !data.url) { if (tag) tag.remove(); return; }
+      if (!tag) { tag = document.createElement('style'); tag.id = 'ck-harness-bg'; document.head.appendChild(tag); }
+      var overlay = data.overlay || 'rgba(10,12,20,0.5)';
+      var ox = data.offsetX || 0, oy = data.offsetY || 0;
+      var w = data.winW || window.innerWidth, h = data.winH || window.innerHeight;
+      // 锚定窗口左上角：图铺窗口尺寸，harness 偏移 (-ox,-oy)；铺在 html/body 保证填满视口
+      tag.textContent = 'html, body { background: linear-gradient(' + overlay + ',' + overlay + '), url(' + data.url + ') no-repeat fixed !important;' +
+        'background-size: auto, ' + w + 'px ' + h + 'px !important;' +
+        'background-position: 0 0, -' + ox + 'px -' + oy + 'px !important; }';
+    }
+    if (typeof api.onHarnessBackground === 'function') api.onHarnessBackground(applyBackground);
+    // 拉取已缓存的背景（harness 懒加载，插件设背景时可能还没进纯净模式）
+    if (typeof api.getHarnessBackground === 'function') {
+      api.getHarnessBackground().then(function (r) { if (r && r.success && r.background) applyBackground({ url: r.background.url, overlay: r.background.overlay, offsetX: r.offsetX, offsetY: r.offsetY, winW: r.winW, winH: r.winH }); }).catch(function () {});
+    }
+  })();
 })();
 </script>
 </body>
