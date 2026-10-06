@@ -164,4 +164,6 @@ log(r);
 
 {{PROJECT_RULES_SECTION}}
 
+{{MEMORY_SECTION}}
+
 ---

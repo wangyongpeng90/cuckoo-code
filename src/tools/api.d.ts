@@ -347,6 +347,20 @@ declare function nameConversation(title: string): Promise<{ message: string }>;
  */
 declare function mcpListServers(): Promise<string>;
 
+
+// ================= 记忆 =================
+
+/**
+ * 把用户明确表达的偏好、习惯或长期有用的事实记入长期记忆（跨会话、跨项目保留）。后续对话会自动注入这些记忆。
+ * @param text 要记住的内容（一句话，如"用户偏好用中文回复"）
+ * @returns { id: string, message: string }
+ * @throws 缺少窗口上下文或内容为空时抛出异常
+ */
+declare function remember(text: string): Promise<{ id: string, message: string }>;
+
+
+// ================= MCP =================
+
 /**
  * 查看指定 MCP server 提供的工具列表（含描述和参数）。
  * 确认工具能力后再调用 mcpCall。
@@ -355,6 +369,17 @@ declare function mcpListServers(): Promise<string>;
  * @throws server 不存在或连接失败时抛出异常
  */
 declare function mcpGetTools(serverName: string): Promise<string>;
+
+
+// ================= 记忆 =================
+
+/**
+ * 按 id 删除一条长期记忆（当用户要求"忘掉"某事，或记忆已过时）。可用 listMemories 查看现有记忆及其 id。
+ * @param id 要删除的记忆 id
+ * @returns 确认消息
+ * @throws id 为空或记忆不存在时抛出异常
+ */
+declare function forgetMemory(id: string): Promise<string>;
 
 
 // ================= 任务管理 =================

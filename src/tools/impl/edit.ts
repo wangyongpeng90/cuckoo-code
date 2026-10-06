@@ -2,6 +2,7 @@ import { Tool } from '../core/Tool.js';
 import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import { normalizeLineEndings, detectLineEndings, restoreLineEndings } from '../../infra/eol.js';
+import { isProtectedPath } from '../../infra/protected-paths.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -149,6 +150,10 @@ class EditTool extends Tool {
       } else if (!path.isAbsolute(normalizedPath)) {
         resolvedPath = path.resolve(normalizedPath);
       }
+
+      // 受保护路径检查（禁止改快照/记忆数据）
+      const guard = isProtectedPath(resolvedPath);
+      if (guard) return ToolResult.error('编辑失败: 目标路径受保护 — ' + guard);
 
       // 文件存在性与类型检查
       if (!fs.existsSync(resolvedPath)) {

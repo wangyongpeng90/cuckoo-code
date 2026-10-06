@@ -138,6 +138,14 @@ const shellAPI = {
   getAutoCompact: () => ipcRenderer.invoke('get-autocompact'),
   saveAutoCompact: (data: any) => ipcRenderer.invoke('save-autocompact', { data }),
   triggerCompact: () => ipcRenderer.invoke('trigger-compact'),
+  // ========== 记忆 ==========
+  listMemories: () => ipcRenderer.invoke('list-memories'),
+  saveMemories: (memories: any) => ipcRenderer.invoke('save-memories', { memories }),
+  addMemory: (text: string) => ipcRenderer.invoke('add-memory', { text }),
+  deleteMemory: (id: string) => ipcRenderer.invoke('delete-memory', { id }),
+  onMemoriesChanged: (cb: () => void) => {
+    ipcRenderer.on('shell-memories-changed', () => cb());
+  },
   // ========== 设置 ==========
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (data: any) => ipcRenderer.invoke('save-settings', { data }),

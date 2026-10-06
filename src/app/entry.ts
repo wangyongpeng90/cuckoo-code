@@ -58,6 +58,8 @@ import { injectAgentRunner, injectSubagentChecker } from '../tools/impl/run-agen
 import { injectGoalDonePusher } from '../tools/impl/goal-done.js';
 import { isSubagentWindow, pushGoalDone } from './goal.js';
 import { injectSessionTitleSetter } from '../tools/impl/name-conversation.js';
+import { injectMemoryStore } from '../tools/impl/remember.js';
+import { addMemory, removeMemory, listMemories } from '../infra/memories.js';
 import { pushUrlState } from './ipc/shell.js';
 import { pushHarnessState, stopGeneration } from './ipc/harness.js';
 import { injectWindowGroupDeps, requestShareFromWindow } from './ipc/window-groups.js';
@@ -656,6 +658,12 @@ injectSessionTitleSetter(async ({ windowId, title }: any) => {
   return r;
 });
 
+// 给 remember/forgetMemory 工具注入记忆存储（tools 层不依赖 app/infra 实现）
+injectMemoryStore({
+  add: (text: string) => { const m = addMemory(text); return m ? { id: m.id } : null; },
+  remove: (id: string) => removeMemory(id),
+  list: () => listMemories().map((m) => ({ id: m.id, text: m.text })),
+});
 // ========== 窗口组探测 ==========
 // 把目标窗口导航到 "首页?cuckoo-probe=1"，等其 bridge 上报探测结果。
 // 返回 'ok' | 'limited' | 'timeout' | 'error'

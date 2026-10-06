@@ -36,6 +36,12 @@ export interface ShellAPI {
   wgRename?: (groupId: string, name: string) => Promise<any>;
   wgDelete?: (groupId: string) => Promise<any>;
   wgSwitch?: (groupId: string) => Promise<any>;
+  // 记忆
+  listMemories?: () => Promise<any>;
+  saveMemories?: (memories: any[]) => Promise<any>;
+  addMemory?: (text: string) => Promise<any>;
+  deleteMemory?: (id: string) => Promise<any>;
+  onMemoriesChanged?: (cb: () => void) => void;
   /** 切换纯净对话模式（Harness） */
   toggleHarness?: () => Promise<any>;
   /** 纯净模式状态变化（harness=true 表示已进入纯净模式） */
