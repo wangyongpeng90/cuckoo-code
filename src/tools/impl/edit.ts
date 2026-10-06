@@ -1,7 +1,7 @@
 import { Tool } from '../core/Tool.js';
 import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
-import { normalizeLineEndings, detectLineEndings, restoreLineEndings } from '../../infra/eol.js';
+import { normalizeLineEndings, detectLineEndings } from '../../infra/eol.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -55,6 +55,82 @@ function parseEditArgs(filePath: any, oldString: any, newString: any, replaceAll
     replaceAll: replaceAll === true,
     dryRun: dryRun === true,
   };
+}
+
+/**
+ * 构建「LF 归一文本 → 原文索引」映射，用于局部替换时定位原始区间。
+ * 每个归一字符记录其在原文中的起始下标与长度（CRLF 占 2，其余占 1）。
+ */
+function buildNormIndexMap(raw: string): { norm: string; start: number[]; len: number[] } {
+  const start: number[] = [];
+  const len: number[] = [];
+  let norm = '';
+  let i = 0;
+  while (i < raw.length) {
+    if (raw[i] === '\r' && raw[i + 1] === '\n') {
+      norm += '\n';
+      start.push(i);
+      len.push(2);
+      i += 2;
+    } else {
+      norm += raw[i];
+      start.push(i);
+      len.push(1);
+      i += 1;
+    }
+  }
+  return { norm, start, len };
+}
+
+/** 统计 needle 在 haystack 中出现的次数（非重叠）。 */
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle.length === 0) return 0;
+  let count = 0;
+  let idx = 0;
+  while (true) {
+    const found = haystack.indexOf(needle, idx);
+    if (found === -1) break;
+    count++;
+    idx = found + needle.length;
+  }
+  return count;
+}
+
+/**
+ * 在保留原文换行符的前提下替换 oldNorm → newNorm。
+ * 只改写命中区间，未编辑区域逐字节保留；newText 的行尾风格跟随被替换处的原风格。
+ * @param raw 原文
+ * @param oldNorm LF 归一的待替换文本
+ * @param newNorm LF 归一的替换文本
+ * @param replaceAll 是否替换全部命中
+ * @returns 替换后的完整文本
+ */
+function applyEditPreservingEol(raw: string, oldNorm: string, newNorm: string, replaceAll: boolean, dominantEol: 'LF' | 'CRLF' = 'LF'): string {
+  const { norm, start, len } = buildNormIndexMap(raw);
+  const positions: number[] = [];
+  let idx = 0;
+  while (true) {
+    const found = norm.indexOf(oldNorm, idx);
+    if (found === -1) break;
+    positions.push(found);
+    idx = found + oldNorm.length;
+  }
+  if (positions.length === 0) return raw;
+  const targets = replaceAll ? positions : [positions[0]];
+  let out = raw;
+  // 从后往前替换，避免前面的改动影响后面的下标
+  for (let k = targets.length - 1; k >= 0; k--) {
+    const p = targets[k];
+    const oStart = start[p];
+    const lastK = p + oldNorm.length - 1;
+    const oEnd = start[lastK] + len[lastK];
+    const matched = raw.slice(oStart, oEnd);
+    // 匹配文本含 CRLF → 新文本用 CRLF；纯 LF → 用 LF；不含换行 → 跟随文件主导格式
+    const eol: 'LF' | 'CRLF' = matched.includes('\r\n') ? 'CRLF' : (matched.includes('\n') ? 'LF' : dominantEol);
+    const newText = eol === 'CRLF' ? newNorm.replace(/\n/g, '\r\n') : newNorm;
+    out = out.slice(0, oStart) + newText + out.slice(oEnd);
+  }
+  return out;
 }
 
 /**
@@ -159,23 +235,13 @@ class EditTool extends Tool {
         return ToolResult.error('不是文件: ' + resolvedPath);
       }
 
-      // 读取原始内容，记录换行符风格，内容归一成 LF（dsh 方案）
+      // 读取原始内容，在 LF 世界匹配（oldString / newString 归一成 LF）
       const raw = fs.readFileSync(resolvedPath, 'utf-8');
-      const lineEndings = detectLineEndings(raw);
       const content = normalizeLineEndings(raw);
-
-      // 在 LF 世界匹配（oldString / newString 也归一）
       const oldNorm = normalizeLineEndings(input.oldString);
       const newNorm = normalizeLineEndings(input.newString);
 
-      let occurrences = 0;
-      let idx = 0;
-      while (true) {
-        const found = content.indexOf(oldNorm, idx);
-        if (found === -1) break;
-        occurrences++;
-        idx = found + oldNorm.length;
-      }
+      const occurrences = countOccurrences(content, oldNorm);
       if (occurrences === 0) {
         return ToolResult.error('未找到要替换的文本，请检查 oldString 是否与文件内容精确匹配。文件路径: ' + resolvedPath);
       }
@@ -183,17 +249,14 @@ class EditTool extends Tool {
         return ToolResult.error('oldString 在文件中出现 ' + occurrences + ' 次。若要全部替换，请设置 replaceAll: true；若只替换其中一处，请提供更长的唯一片段（更多上下文）。');
       }
 
-      // 执行替换（LF 世界）
-      const editedLf = content.split(oldNorm).join(newNorm);
-
       // dry-run：只预览，不写文件
       if (input.dryRun) {
         console.log('[EditTool] dry-run 预览:', resolvedPath, '将替换', occurrences, '处');
         return ToolResult.success(formatDryRunOutput(input.filePath, input.oldString, input.newString, occurrences, input.replaceAll));
       }
 
-      // 写回：恢复文件原本的换行符风格
-      const newContent = restoreLineEndings(editedLf, lineEndings);
+      // 写回：只改写命中区间，未编辑区域的行尾原样保留
+      const newContent = applyEditPreservingEol(raw, oldNorm, newNorm, input.replaceAll, detectLineEndings(raw));
       fs.writeFileSync(resolvedPath, newContent, 'utf-8');
 
       console.log('[EditTool] 已编辑:', resolvedPath, '替换', occurrences, '处');
@@ -217,4 +280,4 @@ export function bootstrap(__call: any): void {
   };
 }
 
-export { EditTool, parseEditArgs, formatEditOutput, formatDryRunOutput };
+export { EditTool, parseEditArgs, formatEditOutput, formatDryRunOutput, applyEditPreservingEol, buildNormIndexMap, countOccurrences };

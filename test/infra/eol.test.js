@@ -92,7 +92,7 @@ test('edit: 纯 LF 文件 → 保持 LF', async () => {
   assert.strictEqual(countEol(after).crlf, 0);
 });
 
-test('edit: 混合文件被规整成主导格式（dsh 行为）', async () => {
+test('edit: 混合文件只改命中区间，未编辑区域行尾保留（需求 023）', async () => {
   // LF 主导（5 LF / 2 CRLF）
   const content = ['# t', '- a1', '- a2', '- b1', '- b2'].join(LF) + LF + '- c1' + LF + '- d1' + CR + LF + '- d2' + CR + LF;
   const f = tmpFile(content);
@@ -100,9 +100,10 @@ test('edit: 混合文件被规整成主导格式（dsh 行为）', async () => {
   const r = await tool.execute({ filePath: f, oldString: '- b1' + LF + '- b2', newString: '- b1x' + LF + '- b2x' });
   assert.strictEqual(r.success, true, r.error);
   const after = fs.readFileSync(f, 'utf8');
-  // 主导是 LF → 整个文件规整成纯 LF
-  assert.strictEqual(countEol(after).crlf, 0);
+  // 未编辑的两处 CRLF 原样保留，不再被规整成纯 LF
+  assert.strictEqual(countEol(after).crlf, 2);
   assert.ok(countEol(after).lf > 0);
+  assert.ok(after.indexOf('- b1x') !== -1);
 });
 
 test('edit: 单行编辑纯 CRLF 保持 CRLF', async () => {
