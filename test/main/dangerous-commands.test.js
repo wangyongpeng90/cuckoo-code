@@ -1,7 +1,7 @@
 'use strict';
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { DANGEROUS_CMDS, isDangerous, splitShellSegments } from '../../src/infra/dangerous-commands.js';
+import { DANGEROUS_CMDS, isDangerous, splitShellSegments, stripWrappers } from '../../src/infra/dangerous-commands.js';
 
 test('DANGEROUS_CMDS 非空数组', () => {
   assert.ok(Array.isArray(DANGEROUS_CMDS));
@@ -79,4 +79,44 @@ test('splitShellSegments 拆分复合命令', () => {
   assert.deepStrictEqual(splitShellSegments('a && b || c ; d | e & f'), ['a', 'b', 'c', 'd', 'e', 'f']);
   assert.deepStrictEqual(splitShellSegments('echo hi\nls'), ['echo hi', 'ls']);
   assert.deepStrictEqual(splitShellSegments('  '), []);
+});
+
+// ===== 022：前缀修饰 / 通配符 / 长选项 绕过（PR #30 的残留）=====
+test('isDangerous 拦截前缀修饰词包裹的危险命令', () => {
+  assert.strictEqual(isDangerous('sudo rm -rf /'), true);
+  assert.strictEqual(isDangerous('sudo -u root rm -rf /'), true);
+  assert.strictEqual(isDangerous('doas rm -rf /'), true);
+  assert.strictEqual(isDangerous('env FOO=1 rm -rf /'), true);
+  assert.strictEqual(isDangerous('nohup rm -rf /'), true);
+});
+
+test('isDangerous 拦截通配符根目录', () => {
+  assert.strictEqual(isDangerous('rm -rf /*'), true);
+  assert.strictEqual(isDangerous('rm -rf ~/*'), true);
+});
+
+test('isDangerous 拦截长选项与 --no-preserve-root', () => {
+  assert.strictEqual(isDangerous('rm -rf --no-preserve-root /'), true);
+  assert.strictEqual(isDangerous('rm --recursive --force /'), true);
+  assert.strictEqual(isDangerous('rm -r -f /'), true);
+});
+
+test('isDangerous 拦截复合形式的前缀绕过', () => {
+  assert.strictEqual(isDangerous('echo hi && sudo rm -rf /'), true);
+  assert.strictEqual(isDangerous('cd /tmp; sudo rm -rf /'), true);
+});
+
+test('isDangerous 不误伤常规 rm 与 sudo', () => {
+  assert.strictEqual(isDangerous('rm -rf ./dist'), false);
+  assert.strictEqual(isDangerous('rm -rf build'), false);
+  assert.strictEqual(isDangerous('rm -rf node_modules'), false);
+  assert.strictEqual(isDangerous('rm file.txt'), false);
+  assert.strictEqual(isDangerous('sudo npm test'), false);
+  assert.strictEqual(isDangerous('sudo apt install curl'), false);
+});
+
+test('stripWrappers 剥除前导修饰词', () => {
+  assert.strictEqual(stripWrappers('sudo rm -rf /'), 'rm -rf /');
+  assert.strictEqual(stripWrappers('sudo -u root rm -rf /'), 'rm -rf /');
+  assert.strictEqual(stripWrappers('npm install'), 'npm install');
 });

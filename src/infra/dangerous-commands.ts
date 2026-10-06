@@ -6,7 +6,8 @@
  *   `echo hi && rm -rf /`、`cd /tmp & format c:` 之类的复合命令可轻易绕过。
  *
  * 现统一为：先按 shell 控制符（&& || ; | & 换行）把命令拆成独立段，
- * 再对每一段分别匹配危险模式。bash / pwsh / 覆盖层均调用本模块。
+ * 剥除前导修饰词（sudo/env/nohup 等）后，再对每一段分别匹配危险模式。
+ * bash / pwsh / 覆盖层均调用本模块。
  *
  * 局限（黑名单固有）：无法可靠拦截 `cmd /c "rm -rf /"`、变量展开、
  * 脚本文件等间接方式。生产环境应叠加白名单或强制用户确认。
@@ -15,8 +16,8 @@
 // 危险命令列表 —— 匹配到的命令会额外警告 / 被拒绝
 const DANGEROUS_CMDS = [
   // —— Unix 风格 ——
-  /^rm\s+-[a-z]*r[a-z]*f[a-z]*\s+\/(?:\s|$)/i, // rm -rf /（根目录）
-  /^rm\s+-[a-z]*r[a-z]*f[a-z]*\s+~\//i, // rm -rf ~/
+  // rm 删除根目录或家目录本身：支持任意短/长选项、--no-preserve-root、通配符、前缀修饰词
+  /^rm\s+(?:-[a-z-]+\s+)*(?:\/(?:\s|$|\*)|~(?:$|\s|\/(?:\s|$|\*)))/i,
   /^mkfs(?:\.\w+)?\b/i,
   /^dd\s+[^|]*\bof=\/dev\//i,
   // —— Windows cmd ——
@@ -38,6 +39,10 @@ const DANGEROUS_CMDS = [
   /^remove-item\s+.*-recurse\b.*-force\b/i,
 ];
 
+// 前导修饰词：剥除后才对内部真实命令做危险判断（防 `sudo rm -rf /` 绕过）
+// 覆盖常见提权/包装命令，允许其后跟短选项（如 `sudo -u user`）
+const CMD_WRAPPERS = /^(?:sudo|doas|env|nohup|command|time|nice|setsid|stdbuf)(?:\s+-[ugpC]\s+\S+|\s+-\S+|\s+[A-Za-z_]\w*=\S+)*\s+/i;
+
 /**
  * 把一条复合命令按 shell 控制符拆成独立段。
  * 覆盖 cmd / bash / PowerShell 常见连接符：&& || ; | & 及换行。
@@ -53,6 +58,20 @@ function splitShellSegments(cmd: string): string[] {
 }
 
 /**
+ * 反复剥除前导修饰词（sudo/env/nohup...），返回内部真实命令。
+ * 例：`sudo -u root rm -rf /` → `rm -rf /`
+ * @param segment 单个命令片段
+ * @returns 剥除修饰词后的命令
+ */
+function stripWrappers(segment: string): string {
+  let s = segment;
+  while (CMD_WRAPPERS.test(s)) {
+    s = s.replace(CMD_WRAPPERS, '');
+  }
+  return s;
+}
+
+/**
  * 判断命令（或其任一分段）是否为危险命令。
  * @param cmd 原始命令（可为复合命令）
  * @returns 命中危险模式返回 true
@@ -61,9 +80,10 @@ function isDangerous(cmd: string): boolean {
   if (!cmd || typeof cmd !== 'string') return false;
   const segments = splitShellSegments(cmd);
   for (const seg of segments) {
-    if (DANGEROUS_CMDS.some((pattern) => pattern.test(seg))) return true;
+    const inner = stripWrappers(seg);
+    if (DANGEROUS_CMDS.some((pattern) => pattern.test(inner))) return true;
   }
   return false;
 }
 
-export { DANGEROUS_CMDS, isDangerous, splitShellSegments };
+export { DANGEROUS_CMDS, isDangerous, splitShellSegments, stripWrappers };
