@@ -83,6 +83,16 @@ const shellAPI = {
   onSnippetsChanged: (cb: () => void) => {
     ipcRenderer.on('shell-snippets-changed', () => cb());
   },
+  // ========== 长期记忆 ==========
+  listMemories: () => ipcRenderer.invoke('list-memories'),
+  saveMemory: (memory: any) => ipcRenderer.invoke('save-memory', { memory }),
+  updateMemory: (memory: any) => ipcRenderer.invoke('update-memory', { memory }),
+  deleteMemory: (id: number) => ipcRenderer.invoke('delete-memory', { id }),
+  exportMemories: () => ipcRenderer.invoke('export-memories'),
+  importMemories: (memories: any) => ipcRenderer.invoke('import-memories', { memories }),
+  onMemoriesChanged: (cb: () => void) => {
+    ipcRenderer.on('shell-memories-changed', () => cb());
+  },
   onPlatformMode: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-platform-mode', (_e: any, data: any) => cb(data));
   },

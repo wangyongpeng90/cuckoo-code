@@ -13,6 +13,7 @@ const TOOL_BOOTSTRAP = [
   "  globalThis.injectJS = async function (windowId, code) {\n      return await __call('injectJS', { windowId: windowId, code: code });\n  };",
   "  globalThis.mcpCall = async function (server, tool, args) {\n      return await __call('mcpCall', { server: server, tool: tool, args: args || {} });\n  };",
   "  globalThis.mcpListServers = async function () {\n      return await __call('mcpListServers', {});\n  };\n  globalThis.mcpGetTools = async function (serverName) {\n      return await __call('mcpGetTools', { server: serverName });\n  };",
+  "  globalThis.memorySave = async function (options) {\n      return await __call('memorySave', { options: options });\n  };",
   "  globalThis.mysql = async function (options) {\n      options = options || {};\n      return await __call('mysql', options);\n  };",
   "  globalThis.nameConversation = async function (title) {\n      return await __call('nameConversation', { title: title });\n  };",
   "  globalThis.openBrowserWindow = async function (url, options) {\n      options = options || {};\n      return await __call('openBrowserWindow', {\n          url: url,\n          id: options.id,\n          width: options.width,\n          height: options.height,\n      });\n  };",

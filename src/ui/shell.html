@@ -1051,6 +1051,9 @@
           <button class="ck-ab-item" data-tab="snippets" title="提示词">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </button>
+          <button class="ck-ab-item" data-tab="memory" title="长期记忆">
+            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 22h4"/></svg>
+          </button>
           <button class="ck-ab-item" data-tab="skills" title="技能">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
           </button>
@@ -1352,6 +1355,48 @@
                 </button>
               </div>
               <div class="ck-list" id="snip-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+            </div>
+
+            <!-- ===== 长期记忆 ===== -->
+            <div class="ck-tab" data-panel="memory">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">长期记忆</span>
+                <button class="ck-icon-btn" id="mem-export" title="导出 JSON">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                </button>
+                <button class="ck-icon-btn" id="mem-import" title="导入 JSON">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg>
+                </button>
+              </div>
+              <p class="ck-about-tip">AI 会在对话中<strong>自动保存</strong>关键信息（身份、偏好、决策等），下次对话按相关度自动注入。</p>
+              <div class="ck-actions" style="gap:6px;flex-wrap:wrap;">
+                <button class="ck-btn-sm" data-mem-filter="all">全部</button>
+                <button class="ck-btn-sm" data-mem-filter="user">画像</button>
+                <button class="ck-btn-sm" data-mem-filter="feedback">反馈</button>
+                <button class="ck-btn-sm" data-mem-filter="topic">话题</button>
+                <button class="ck-btn-sm" data-mem-filter="reference">资料</button>
+              </div>
+              <div id="mem-edit" class="ck-card" style="display:none;">
+                <input type="hidden" id="mem-edit-id" value="" />
+                <div class="ck-set-field"><span class="ck-set-key">类型</span>
+                  <select class="ck-set-input" id="mem-edit-type">
+                    <option value="user">用户画像</option>
+                    <option value="feedback">行为反馈</option>
+                    <option value="topic">话题上下文</option>
+                    <option value="reference">参考资料</option>
+                  </select>
+                </div>
+                <div class="ck-set-field"><span class="ck-set-key">标题</span><input type="text" class="ck-set-input" id="mem-edit-name" placeholder="如：用户职业" /></div>
+                <div class="ck-set-field" style="flex-direction:column;align-items:stretch;"><span class="ck-set-key">内容</span><textarea class="ck-set-input" id="mem-edit-content" rows="3" style="resize:vertical;"></textarea></div>
+                <div class="ck-set-field"><span class="ck-set-key">标签</span><input type="text" class="ck-set-input" id="mem-edit-tags" placeholder="逗号分隔，如：前端,React" /></div>
+                <div class="ck-actions">
+                  <button class="ck-btn-sm ck-btn-primary" id="mem-edit-save">保存</button>
+                  <button class="ck-btn-sm" id="mem-edit-cancel">取消</button>
+                </div>
+              </div>
+              <div class="ck-list" id="mem-list">
                 <div class="ck-list-empty">加载中…</div>
               </div>
             </div>
@@ -4063,6 +4108,148 @@
     loadScheduledTasks();
   });
 
+  // src/ui/shell/scripts/pages/memory.ts
+  var memories = [];
+  var filter = "all";
+  var TYPE_LABEL = {
+    user: "\u753B\u50CF",
+    feedback: "\u53CD\u9988",
+    topic: "\u8BDD\u9898",
+    reference: "\u8D44\u6599"
+  };
+  async function loadMemories() {
+    const listEl = document.getElementById("mem-list");
+    if (!listEl || !api.listMemories) return;
+    try {
+      const r = await api.listMemories();
+      memories = r && r.success && Array.isArray(r.memories) ? r.memories : [];
+      render2();
+    } catch (_) {
+      listEl.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u5931\u8D25</div>';
+    }
+  }
+  function render2() {
+    const listEl = document.getElementById("mem-list");
+    const shown = filter === "all" ? memories : memories.filter((m) => m.type === filter);
+    if (!shown.length) {
+      listEl.innerHTML = '<div class="ck-list-empty">\u6682\u65E0\u8BB0\u5FC6<br>AI \u4F1A\u5728\u5BF9\u8BDD\u4E2D\u81EA\u52A8\u4FDD\u5B58</div>';
+      return;
+    }
+    const sorted = [...shown].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.updatedAt - a.updatedAt);
+    listEl.innerHTML = sorted.map((m) => {
+      const pin = m.pinned ? "\u{1F4CC} " : "";
+      const tags = (m.tags || []).map((t) => "#" + escapeHtml(t)).join(" ");
+      return '<div class="ck-skill-item"><div class="ck-skill-top"><span class="ck-skill-name">' + pin + escapeHtml(m.name || "\u672A\u547D\u540D") + '</span><span style="font-size:11px;color:var(--ck-text-2);">' + (TYPE_LABEL[m.type] || m.type) + " \xB7 \u7528" + (m.accessCount || 0) + '\u6B21</span></div><div style="font-size:12px;color:var(--ck-text-dim);margin:4px 0;word-break:break-all;">' + escapeHtml((m.content || "").slice(0, 120)) + "</div>" + (tags ? '<div style="font-size:11px;color:var(--ck-accent);margin:2px 0;">' + tags + "</div>" : "") + '<div style="margin-top:6px;display:flex;gap:8px;"><button class="ck-btn-sm" data-mact="edit" data-id="' + m.id + '">\u7F16\u8F91</button><button class="ck-btn-sm" data-mact="pin" data-id="' + m.id + '">' + (m.pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876") + '</button><button class="ck-btn-sm" data-mact="del" data-id="' + m.id + '" style="color:var(--ck-danger);">\u5220\u9664</button></div></div>';
+    }).join("");
+    listEl.querySelectorAll("button[data-mact]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = Number(btn.dataset.id);
+        const act = btn.dataset.mact;
+        const m = memories.find((x) => x.id === id);
+        if (!m) return;
+        if (act === "pin") {
+          m.pinned = !m.pinned;
+          await api.updateMemory(m);
+          loadMemories();
+        } else if (act === "del") {
+          if (await ckConfirm("\u5220\u9664\u8BB0\u5FC6\u300C" + (m.name || "") + "\u300D\uFF1F")) {
+            await api.deleteMemory(id);
+            loadMemories();
+          }
+        } else if (act === "edit") openEdit2(m);
+      });
+    });
+  }
+  function openEdit2(m) {
+    document.getElementById("mem-edit-id").value = m ? String(m.id) : "";
+    document.getElementById("mem-edit-type").value = m ? m.type : "user";
+    document.getElementById("mem-edit-name").value = m ? m.name || "" : "";
+    document.getElementById("mem-edit-content").value = m ? m.content || "" : "";
+    document.getElementById("mem-edit-tags").value = m && m.tags ? m.tags.join(",") : "";
+    document.getElementById("mem-edit").style.display = "block";
+  }
+  function closeEdit2() {
+    document.getElementById("mem-edit").style.display = "none";
+  }
+  document.querySelectorAll("[data-mem-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      filter = btn.dataset.memFilter;
+      render2();
+    });
+  });
+  document.getElementById("mem-edit-cancel")?.addEventListener("click", closeEdit2);
+  document.getElementById("mem-edit-save")?.addEventListener("click", async () => {
+    const val = (id2) => (document.getElementById(id2).value || "").trim();
+    const id = val("mem-edit-id");
+    const type = document.getElementById("mem-edit-type").value;
+    const name = val("mem-edit-name");
+    const content = val("mem-edit-content");
+    const tags = val("mem-edit-tags").split(",").map((s) => s.trim()).filter(Boolean);
+    if (!name || !content) {
+      await ckAlert("\u6807\u9898\u3001\u5185\u5BB9\u4E0D\u80FD\u4E3A\u7A7A");
+      return;
+    }
+    if (id) {
+      const m = memories.find((x) => x.id === Number(id));
+      if (m) {
+        Object.assign(m, { type, name, content, tags });
+        await api.updateMemory(m);
+      }
+    } else {
+      await api.saveMemory({ type, name, content, tags });
+    }
+    closeEdit2();
+    loadMemories();
+  });
+  document.getElementById("mem-export")?.addEventListener("click", async () => {
+    const r = await api.exportMemories();
+    if (!r || !r.success) {
+      await ckAlert("\u5BFC\u51FA\u5931\u8D25");
+      return;
+    }
+    const blob = new Blob([JSON.stringify(r.memories, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "cuckoo-memories.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1e3);
+  });
+  document.getElementById("mem-import")?.addEventListener("click", () => {
+    const input2 = document.createElement("input");
+    input2.type = "file";
+    input2.accept = ".json";
+    input2.onchange = async () => {
+      const file = input2.files && input2.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const arr = JSON.parse(text);
+        if (!Array.isArray(arr)) {
+          await ckAlert("JSON \u683C\u5F0F\u9519\u8BEF\uFF08\u5E94\u4E3A\u6570\u7EC4\uFF09");
+          return;
+        }
+        const res = await api.importMemories(arr);
+        if (res && res.success) {
+          await ckAlert("\u5DF2\u5BFC\u5165 " + res.count + " \u6761\u8BB0\u5FC6");
+          loadMemories();
+        } else await ckAlert("\u5BFC\u5165\u5931\u8D25: " + (res && res.error || "\u672A\u77E5"));
+      } catch (e) {
+        await ckAlert("\u89E3\u6790\u5931\u8D25: " + e.message);
+      }
+    };
+    input2.click();
+  });
+  if (api.onMemoriesChanged) {
+    api.onMemoriesChanged(() => {
+      try {
+        loadMemories();
+      } catch (_) {
+      }
+    });
+  }
+
   // src/ui/shell/scripts/main.ts
   registerTab("workspaces", loadWorkspaces);
   registerTab("files", loadFiles);
@@ -4078,6 +4265,7 @@
   registerTab("conversations", loadConversations);
   registerTab("plugins", loadPlugins);
   registerTab("schedule", loadScheduledTasks);
+  registerTab("memory", loadMemories);
   try {
     loadWorkspaces();
   } catch (_) {

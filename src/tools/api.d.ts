@@ -257,6 +257,34 @@ interface MySQLOptions {
 declare function mysql(options: MySQLOptions): Promise<string>;
 
 
+// ================= 长期记忆 =================
+
+/** 记忆类型：用户画像 / 行为反馈 / 话题上下文 / 参考资料 */
+type MemoryType = 'user' | 'feedback' | 'topic' | 'reference';
+
+/** memorySave 的入参 */
+interface MemorySaveOptions {
+  /** 记忆类型 */
+  type: MemoryType;
+  /** 简短标题（如「用户职业」） */
+  name: string;
+  /** 记忆正文 */
+  content: string;
+  /** 补充描述 */
+  description?: string;
+  /** 标签（用于后续关键词匹配） */
+  tags?: string[];
+}
+
+/**
+ * 保存一条长期记忆。当用户透露身份/偏好、纠正你的行为、或出现重要决策时调用。
+ * @param options 记忆内容：type/name/content 必填，description/tags 可选
+ * @returns 保存确认消息，如 "已保存记忆 #3：[user] 用户职业"
+ * @throws name/content 为空、type 非法、写入失败时抛出异常
+ */
+declare function memorySave(options: MemorySaveOptions): Promise<string>;
+
+
 // ================= WebFetch =================
 
 /**

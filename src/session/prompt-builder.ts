@@ -14,6 +14,7 @@ import { scanRules, getUnscopedRules, buildUnscopedRulesSection } from '../rules
 // 直接引 roots 子模块（不走 plugins 的 barrel），避免把整个插件模块图拉进来
 import { getPluginScanRoots } from '../plugins/roots.js';
 import type { PluginScanRoots } from '../plugins/roots.js';
+import { listMemoriesSync, selectMemories, formatMemoriesBlock, getMemoryBudget, estimateTokens, touchMemories } from '../memory/index.js';
 
 // 提示词模板目录（D20：锚定应用根，与 dist 结构解耦）
 const PROMPT_DIR = resolveSrc('prompt');
@@ -180,7 +181,26 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   // 无 paths 的规则：始终注入（「## 项目规则」章节）
   const rulesSection = buildUnscopedRulesSection(getUnscopedRules(scanRules(selectedDir, pluginRoots.ruleDirs)));
 
+  // ===== 长期记忆注入 =====
+  let memoriesSection = '';
+  try {
+    // 方案 A：注入全局记忆 + 当前项目级记忆（selectedDir 作为 projectId）
+    const all = listMemoriesSync(selectedDir);
+    if (all.length) {
+      // 初始化时以"身份类优先"策略选取；后续对话中的动态匹配由 memory 工具 + 重注入补充
+      const selected = selectMemories('', all, { budget: getMemoryBudget(estimateTokens(tpl.content)), identityOnly: false });
+      if (selected.length) {
+        memoriesSection = '---\n## 已有记忆\n' + formatMemoriesBlock(selected);
+        // 记录被注入（异步，不阻塞）
+        touchMemories(selected.map((m) => m.id)).catch(() => {});
+      }
+    }
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 注入记忆失败:', err && err.message ? err.message : String(err));
+  }
+
   const placeholders: Record<string, string> = {
+    '{{MEMORIES_SECTION}}': memoriesSection,
     '{{TOOL_API_TYPES}}': toolApiTypes,
     '{{TOOLS_LIST}}': toolsDescription,
     '{{TOOL_SECTIONS}}': promptSections,

@@ -24,6 +24,7 @@ import { McpListServersTool, McpGetToolsTool } from './impl/mcp-query.js';
 import { RunAgentTool } from './impl/run-agent.js';
 import { GoalDoneTool } from './impl/goal-done.js';
 import { NameConversationTool } from './impl/name-conversation.js';
+import { MemorySaveTool } from './impl/memory-save.js';
 
 // 创建全局工具注册表
 const registry = new ToolRegistry();
@@ -50,6 +51,7 @@ registry.register(new McpGetToolsTool());
 registry.register(new RunAgentTool());
 registry.register(new GoalDoneTool());
 registry.register(new NameConversationTool());
+registry.register(new MemorySaveTool());
 
 // JS 工具脚本执行器（单例：AI 生成的 JS 代码调用工具函数）
 const jsRunner = new JsRunner(registry);
