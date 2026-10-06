@@ -25,5 +25,6 @@
 | 019 | feature | [飞书同步（手机收发对话）](./019-feishu-sync.md) | doing | feat/019-feishu-sync | 2026-09-30 |
 | 020 | feature | [插件市场（GitHub topic 自动发现与安装）](./020-plugin-market.md) | review | feat/020-plugin-market | 2026-10-02 |
 | 021 | feature | [窗口组（多账号限流轮换）](./021-window-groups.md) | done | feat/021-window-groups | 2026-10-05 |
+| 022 | feature | [长期记忆系统（对齐 DeepSeek++）](./022-memory-system.md) | draft | feat/022-memory-system | 2026-10-05 |
 
-共 20 个需求。
+共 21 个需求。

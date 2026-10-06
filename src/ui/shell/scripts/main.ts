@@ -22,6 +22,8 @@ import { loadSettings } from './pages/settings.js';
 import { renderRecent } from './recent.js';
 import { loadConversations } from './pages/conversations.js';
 import { loadPlugins } from './pages/plugins.js';
+import { loadScheduledTasks } from './pages/schedule.js';
+import { loadMemories } from './pages/memory.js';
 
 // 注册 tab → 加载函数（sidebar 点击时调用）
 registerTab('workspaces', loadWorkspaces);
@@ -37,6 +39,8 @@ registerTab('windows', renderWindowList);
 registerTab('settings', loadSettings);
 registerTab('conversations', loadConversations);
 registerTab('plugins', loadPlugins);
+registerTab('schedule', loadScheduledTasks);
+registerTab('memory', loadMemories);
 
 // 预加载：工作区（默认页）+ 提示词 + 自动压缩配置
 try { loadWorkspaces(); } catch (_) { /* ignore */ }
