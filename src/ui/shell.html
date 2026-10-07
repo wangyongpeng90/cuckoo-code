@@ -1467,9 +1467,13 @@
                   <span class="ck-token-hero-unit">tokens</span>
                 </div>
               </div>
+              <button class="ck-btn ck-btn-anim" id="tk-organize-memory">
+                <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 22h4"/></svg>
+                <span>整理长期记忆</span>
+              </button>
               <button class="ck-btn ck-btn-anim" id="tk-compact">
                 <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v4M8 7H4M8 7l-4-4"/><path d="M16 21v-4M16 17h4M16 17l4 4"/><path d="M4 14h16"/></svg>
-                <span>压缩上下文</span>
+                <span>压缩上下文（含整理记忆）</span>
               </button>
 
               <div class="ck-stat-list">
@@ -1493,7 +1497,7 @@
 
               <div class="ck-auto-block">
                 <div class="ck-auto-head">
-                  <span class="ck-stat-key">自动压缩</span>
+                  <span class="ck-stat-key">自动整理记忆+压缩</span>
                   <label class="ck-switch">
                     <input type="checkbox" id="tk-auto-enabled" />
                     <span class="ck-switch-track"></span>
@@ -1502,7 +1506,7 @@
                 <div class="ck-auto-body">
                   <span>超过</span>
                   <input type="number" id="tk-auto-threshold" value="80" min="1" />
-                  <span>万 tokens 时触发</span>
+                  <span>万 tokens 时触发（先整理记忆，再压缩）</span>
                 </div>
                 <button class="ck-btn ck-btn-anim" id="tk-auto-save">
                   <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
@@ -4047,9 +4051,18 @@
   var tkCompactBtn = document.getElementById("tk-compact");
   if (tkCompactBtn) tkCompactBtn.addEventListener("click", async () => {
     if (!api.triggerCompact) return;
-    if (!await ckConfirm("\u786E\u5B9A\u538B\u7F29\u4E0A\u4E0B\u6587\uFF1F\u5C06\u751F\u6210\u6458\u8981\u5E76\u5728\u65B0\u4F1A\u8BDD\u7EE7\u7EED\u3002", "\u538B\u7F29\u4E0A\u4E0B\u6587")) return;
+    if (!await ckConfirm("\u786E\u5B9A\u538B\u7F29\u4E0A\u4E0B\u6587\uFF1F\n\n\u4F1A\u5148\u6574\u7406\u957F\u671F\u8BB0\u5FC6\uFF0C\u518D\u751F\u6210\u6458\u8981\u5E76\u5728\u65B0\u4F1A\u8BDD\u7EE7\u7EED\u3002", "\u538B\u7F29\u4E0A\u4E0B\u6587")) return;
     try {
       await api.triggerCompact();
+    } catch (_) {
+    }
+  });
+  var tkOrganizeBtn = document.getElementById("tk-organize-memory");
+  if (tkOrganizeBtn) tkOrganizeBtn.addEventListener("click", async () => {
+    if (!api.triggerOrganizeMemory) return;
+    if (!await ckConfirm("\u786E\u5B9A\u6574\u7406\u957F\u671F\u8BB0\u5FC6\uFF1F\n\nAI \u4F1A\u5206\u6790\u5F53\u524D\u5BF9\u8BDD\uFF0C\u63D0\u70BC\u8981\u70B9\u4FDD\u5B58\u4E3A\u957F\u671F\u8BB0\u5FC6\uFF08\u4E0D\u538B\u7F29\u5BF9\u8BDD\uFF09\u3002", "\u6574\u7406\u957F\u671F\u8BB0\u5FC6")) return;
+    try {
+      await api.triggerOrganizeMemory();
     } catch (_) {
     }
   });

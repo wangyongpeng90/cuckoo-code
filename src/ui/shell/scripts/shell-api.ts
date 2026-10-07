@@ -120,6 +120,7 @@ export interface ShellAPI {
   getAutoCompact?: () => Promise<any>;
   saveAutoCompact?: (data: any) => Promise<any>;
   triggerCompact?: () => Promise<any>;
+  triggerOrganizeMemory?: () => Promise<any>;
   // 设置
   getSettings?: () => Promise<any>;
   saveSettings?: (data: any) => Promise<any>;

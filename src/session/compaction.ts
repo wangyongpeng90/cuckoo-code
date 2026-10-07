@@ -19,7 +19,7 @@
  *    'cuckoo-idb-history-written' 事件
  */
 import { sendToChat } from '../overlay/chat-input.js';
-import { onInterceptedResponse } from '../bridge/intercept/observer.js';
+import { onInterceptedResponse, onTaskIdle } from '../bridge/intercept/observer.js';
 import { showToast } from '../overlay/panel.js';
 import * as retryEngine from '../bridge/loop/retry.js';
 import * as watchdog from '../bridge/loop/watchdog.js';
@@ -28,6 +28,14 @@ const SUMMARY_INSTRUCTION =
   '请把以上对话总结成一份详细的摘要，尽可能完整地保留关键信息、背景上下文、' +
   '已完成的结论和未完成的事项，用中文，一次性输出全部内容，' +
   '直接输出摘要，不要输出其他解释。';
+
+// 整理长期记忆指令：让 AI 提炼对话要点并调用 memorySave
+const ORGANIZE_MEMORY_INSTRUCTION =
+  '请分析以上整段对话，提炼出值得【长期记住】的信息：我的身份/职业/角色、' +
+  '偏好习惯、纠正过的回答方式、重要技术决策、项目背景等。' +
+  '对每一条调用 memorySave 工具保存（type/name/content 必填）。' +
+  '如果没有值得长期记住的，直接回复"无需记录"。' +
+  '只调用工具，不要输出多余解释。';
 
 const COMPACT_URL_FLAG = 'cuckoo-compact';
 const COMPACT_DIR_KEY = 'cuckoo-compact-project-dir';
@@ -62,6 +70,38 @@ function waitForResponse(timeoutMs: number): Promise<{ text: string; meta: any }
       reject(new Error('等待 AI 回复超时（' + timeoutMs + 'ms）'));
     }, timeoutMs);
   });
+}
+
+/** 等待"任务空闲"（AI 给出普通文本回复 = 工具循环结束） */
+function waitForTaskIdle(timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    let done = false;
+    const off = onTaskIdle(() => {
+      if (done) return;
+      done = true;
+      off();
+      clearTimeout(timer);
+      resolve();
+    });
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      off();
+      resolve(); // 超时也继续，不阻塞压缩
+    }, timeoutMs);
+  });
+}
+
+/**
+ * 整理长期记忆：发指令给 AI，让它提炼要点并调用 memorySave。
+ * 等 AI 把工具调用跑完（任务空闲）或超时。
+ */
+async function organizeMemories(): Promise<void> {
+  logStep('memory', '发送整理记忆指令');
+  const wait = waitForTaskIdle(90000);
+  sendToChat(ORGANIZE_MEMORY_INSTRUCTION, '整理记忆', 300);
+  await wait;
+  logStep('memory', '记忆整理完成');
 }
 
 /** 从当前 URL 获取 chat_session_id */
@@ -251,6 +291,14 @@ async function runCompaction(projectDir?: string): Promise<void> {
     // 记下"压缩前的会话ID"（段3 初始化新会话时写入血缘）
     try { localStorage.setItem('cuckoo-compact-parent-session', sessionId); } catch (_) {}
 
+    // ① 先整理长期记忆（存好了再清历史，最安全）
+    try {
+      await organizeMemories();
+    } catch (err: any) {
+      logStep('memory', '整理记忆失败（忽略，继续压缩）: ' + (err && err.message));
+    }
+
+    // ② 再生成摘要
     logStep('summary', '发送摘要指令');
     const waitReply = waitForResponse(120000);
     sendToChat(SUMMARY_INSTRUCTION, '压缩-摘要', 300);
@@ -382,6 +430,22 @@ async function shareAllForSwitch(): Promise<{ shareId: string; sessionId: string
   return { shareId, sessionId };
 }
 
-export { runCompaction, checkPendingCompact, checkPendingInit, shareAllForSwitch };
+/** 手动触发"整理长期记忆"（不压缩） */
+async function runOrganizeMemory(): Promise<void> {
+  retryEngine.setCompacting(true);
+  watchdog.setSuspended(true);
+  try {
+    await organizeMemories();
+    showToast('长期记忆已整理', 3000);
+  } catch (err: any) {
+    console.error('[Cuckoo Memory] 整理失败:', err);
+    showToast('整理记忆失败: ' + err.message, 5000);
+  } finally {
+    retryEngine.setCompacting(false);
+    watchdog.setSuspended(false);
+  }
+}
+
+export { runCompaction, checkPendingCompact, checkPendingInit, shareAllForSwitch, runOrganizeMemory };
 // 纯函数导出（测试用）
 export { pickRecentPairedIds as _pickRecentPairedIds };
