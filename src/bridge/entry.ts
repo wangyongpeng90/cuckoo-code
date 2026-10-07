@@ -11,7 +11,7 @@ import './api.js';
 import { createRequire } from 'node:module';
 import * as ui from '../overlay/panel.js';
 import * as projectDir from '../overlay/project-dir.js';
-import { bindEvents, refreshTokenForCurrentSession, setIsSubagentWindow, getAutoCompactConfig, applyAutoCompactConfig, triggerCompaction, triggerOrganizeMemory } from '../overlay/events.js';
+import { bindEvents, refreshTokenForCurrentSession, setIsSubagentWindow, getAutoCompactConfig, applyAutoCompactConfig, triggerCompaction, triggerOrganizeMemory, triggerOrganizeTodayMemory } from '../overlay/events.js';
 import * as chatInput from '../overlay/chat-input.js';
 import * as settingsPanel from '../overlay/panels/settings.js';
 import { wireEvents } from '../overlay/events.js';
@@ -201,6 +201,15 @@ function init(): void {
     ipcRenderer.on('cuckoo-trigger-organize-memory', (_e: any, { reqId }: any) => {
       try {
         triggerOrganizeMemory();
+        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: true });
+      } catch (err: any) {
+        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });
+      }
+    });
+    // 手动触发"整理今天的记忆"
+    ipcRenderer.on('cuckoo-trigger-organize-today-memory', (_e: any, { reqId }: any) => {
+      try {
+        triggerOrganizeTodayMemory();
         ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: true });
       } catch (err: any) {
         ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });

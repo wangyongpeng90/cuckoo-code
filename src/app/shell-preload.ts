@@ -214,6 +214,7 @@ const shellAPI = {
   saveAutoCompact: (data: any) => ipcRenderer.invoke('save-autocompact', { data }),
   triggerCompact: () => ipcRenderer.invoke('trigger-compact'),
   triggerOrganizeMemory: () => ipcRenderer.invoke('trigger-organize-memory'),
+  triggerOrganizeTodayMemory: () => ipcRenderer.invoke('trigger-organize-today-memory'),
   // ========== 设置 ==========
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (data: any) => ipcRenderer.invoke('save-settings', { data }),

@@ -7,7 +7,7 @@ import { state } from './state.js';
 import { hideOverlay, showOverlay, renderHistory, commandHistory, showToast, hideFirstTimeDialog } from './panel.js';
 import { handleInitProject, renderSessions } from './session-list.js';
 import { sendToChat } from './chat-input.js';
-import { runCompaction, checkPendingCompact, checkPendingInit, runOrganizeMemory } from '../session/compaction.js';
+import { runCompaction, checkPendingCompact, checkPendingInit, runOrganizeMemory, runOrganizeTodayMemory } from '../session/compaction.js';
 import { renderWindowList, openWindowManager, closeWindowManager, handleGenerateDoc } from './panels/window-manager.js';
 import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
 import { openSettings, closeSettings, resetSettings, saveSettings } from './panels/settings.js';
@@ -657,4 +657,11 @@ function triggerOrganizeMemory(): void {
   });
 }
 
-export { bindEvents, wireEvents, refreshTokenForCurrentSession, setIsSubagentWindow, getAutoCompactConfig, applyAutoCompactConfig, triggerCompaction, triggerOrganizeMemory };
+/** 手动触发"整理今天的记忆"（不压缩） */
+function triggerOrganizeTodayMemory(): void {
+  runOrganizeTodayMemory().catch((e: any) => {
+    console.error('[Cuckoo Code] 整理今天记忆失败:', e && e.message);
+  });
+}
+
+export { bindEvents, wireEvents, refreshTokenForCurrentSession, setIsSubagentWindow, getAutoCompactConfig, applyAutoCompactConfig, triggerCompaction, triggerOrganizeMemory, triggerOrganizeTodayMemory };

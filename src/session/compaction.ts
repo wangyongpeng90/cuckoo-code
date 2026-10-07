@@ -37,6 +37,14 @@ const ORGANIZE_MEMORY_INSTRUCTION =
   '如果没有值得长期记住的，直接回复"无需记录"。' +
   '只调用工具，不要输出多余解释。';
 
+// 整理"今天"的记忆指令：聚焦最近的对话内容
+const ORGANIZE_TODAY_MEMORY_INSTRUCTION =
+  '请重点分析以上对话中【今天】发生的内容，提炼出值得【长期记住】的信息：' +
+  '今天的任务/进展、做出的决策、新的偏好或纠正、项目状态变化等。' +
+  '对每一条调用 memorySave 工具保存（type/name/content 必填，建议 tags 里带上今天的日期）。' +
+  '如果今天没有值得长期记住的，直接回复"无需记录"。' +
+  '只调用工具，不要输出多余解释。';
+
 const COMPACT_URL_FLAG = 'cuckoo-compact';
 const COMPACT_DIR_KEY = 'cuckoo-compact-project-dir';
 const PENDING_INIT_KEY = 'cuckoo-compact-pending-init';
@@ -96,10 +104,10 @@ function waitForTaskIdle(timeoutMs: number): Promise<void> {
  * 整理长期记忆：发指令给 AI，让它提炼要点并调用 memorySave。
  * 等 AI 把工具调用跑完（任务空闲）或超时。
  */
-async function organizeMemories(): Promise<void> {
-  logStep('memory', '发送整理记忆指令');
+async function organizeMemories(instruction: string = ORGANIZE_MEMORY_INSTRUCTION, tag: string = '整理记忆'): Promise<void> {
+  logStep('memory', '发送整理记忆指令: ' + tag);
   const wait = waitForTaskIdle(90000);
-  sendToChat(ORGANIZE_MEMORY_INSTRUCTION, '整理记忆', 300);
+  sendToChat(instruction, tag, 300);
   await wait;
   logStep('memory', '记忆整理完成');
 }
@@ -446,6 +454,22 @@ async function runOrganizeMemory(): Promise<void> {
   }
 }
 
-export { runCompaction, checkPendingCompact, checkPendingInit, shareAllForSwitch, runOrganizeMemory };
+/** 手动触发"整理今天的记忆"（不压缩） */
+async function runOrganizeTodayMemory(): Promise<void> {
+  retryEngine.setCompacting(true);
+  watchdog.setSuspended(true);
+  try {
+    await organizeMemories(ORGANIZE_TODAY_MEMORY_INSTRUCTION, '整理今天记忆');
+    showToast('今天的记忆已整理', 3000);
+  } catch (err: any) {
+    console.error('[Cuckoo Memory] 整理今天记忆失败:', err);
+    showToast('整理今天记忆失败: ' + err.message, 5000);
+  } finally {
+    retryEngine.setCompacting(false);
+    watchdog.setSuspended(false);
+  }
+}
+
+export { runCompaction, checkPendingCompact, checkPendingInit, shareAllForSwitch, runOrganizeMemory, runOrganizeTodayMemory };
 // 纯函数导出（测试用）
 export { pickRecentPairedIds as _pickRecentPairedIds };

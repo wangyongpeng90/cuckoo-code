@@ -118,6 +118,13 @@
     animation: ck-detail-in .38s cubic-bezier(.22,.61,.36,1);
     overflow: hidden;
   }
+  /* 记忆页：按日期分组 */
+  .ck-mem-group { margin-bottom: 10px; }
+  .ck-mem-group-head {
+    font-size: 12px; font-weight: 600; color: var(--ck-text-2);
+    padding: 6px 2px 4px; border-bottom: 1px solid var(--ck-border);
+    margin-bottom: 4px;
+  }
   /* 技能卡片（无边�?+ 分割�?+ 悬停浅底�?*/
   .ck-skill-item {
     display: flex; flex-direction: column; gap: 6px;

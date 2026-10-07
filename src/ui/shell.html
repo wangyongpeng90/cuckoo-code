@@ -392,6 +392,13 @@
     animation: ck-detail-in .38s cubic-bezier(.22,.61,.36,1);
     overflow: hidden;
   }
+  /* 记忆页：按日期分组 */
+  .ck-mem-group { margin-bottom: 10px; }
+  .ck-mem-group-head {
+    font-size: 12px; font-weight: 600; color: var(--ck-text-2);
+    padding: 6px 2px 4px; border-bottom: 1px solid var(--ck-border);
+    margin-bottom: 4px;
+  }
   /* 技能卡片（无边�?+ 分割�?+ 悬停浅底�?*/
   .ck-skill-item {
     display: flex; flex-direction: column; gap: 6px;
@@ -1577,11 +1584,17 @@
               </div>
               <p class="ck-about-tip">AI 会在对话中<strong>自动保存</strong>关键信息（身份、偏好、决策等），下次对话按相关度自动注入。</p>
               <div class="ck-actions" style="gap:6px;flex-wrap:wrap;">
+                <button class="ck-btn-sm" id="mem-organize-today">整理当天记忆</button>
+                <span style="flex:1;"></span>
                 <button class="ck-btn-sm" data-mem-filter="all">全部</button>
                 <button class="ck-btn-sm" data-mem-filter="user">画像</button>
                 <button class="ck-btn-sm" data-mem-filter="feedback">反馈</button>
                 <button class="ck-btn-sm" data-mem-filter="topic">话题</button>
                 <button class="ck-btn-sm" data-mem-filter="reference">资料</button>
+              </div>
+              <div class="ck-actions" style="gap:6px;flex-wrap:wrap;">
+                <button class="ck-btn-sm" data-mem-group="date">按日期分组</button>
+                <button class="ck-btn-sm" data-mem-group="none">不分组</button>
               </div>
               <div id="mem-edit" class="ck-card" style="display:none;">
                 <input type="hidden" id="mem-edit-id" value="" />
@@ -5301,6 +5314,45 @@
   init_shared();
   var memories = [];
   var filter = "all";
+  var groupByDate = true;
+  function dateGroupLabel(ts) {
+    const d = new Date(ts);
+    const now = /* @__PURE__ */ new Date();
+    const day0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const diffDays = Math.round((today0 - day0) / 864e5);
+    const md = d.getMonth() + 1 + "\u6708" + d.getDate() + "\u65E5";
+    if (diffDays === 0) return "\u4ECA\u5929 \xB7 " + md;
+    if (diffDays === 1) return "\u6628\u5929 \xB7 " + md;
+    if (diffDays < 7) return diffDays + " \u5929\u524D \xB7 " + md;
+    return d.getFullYear() + "\u5E74" + md;
+  }
+  function renderItem2(m) {
+    const pin = m.pinned ? "\u{1F4CC} " : "";
+    const tags = (m.tags || []).map((t) => "#" + escapeHtml(t)).join(" ");
+    return '<div class="ck-skill-item"><div class="ck-skill-top"><span class="ck-skill-name">' + pin + escapeHtml(m.name || "\u672A\u547D\u540D") + '</span><span style="font-size:11px;color:var(--ck-text-2);">' + (TYPE_LABEL[m.type] || m.type) + " \xB7 \u7528" + (m.accessCount || 0) + '\u6B21</span></div><div style="font-size:12px;color:var(--ck-text-dim);margin:4px 0;word-break:break-all;">' + escapeHtml((m.content || "").slice(0, 120)) + "</div>" + (tags ? '<div style="font-size:11px;color:var(--ck-accent);margin:2px 0;">' + tags + "</div>" : "") + '<div style="margin-top:6px;display:flex;gap:8px;"><button class="ck-btn-sm" data-mact="edit" data-id="' + m.id + '">\u7F16\u8F91</button><button class="ck-btn-sm" data-mact="pin" data-id="' + m.id + '">' + (m.pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876") + '</button><button class="ck-btn-sm" data-mact="del" data-id="' + m.id + '" style="color:var(--ck-danger);">\u5220\u9664</button></div></div>';
+  }
+  function bindItemEvents(listEl2) {
+    listEl2.querySelectorAll("button[data-mact]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = Number(btn.dataset.id);
+        const act = btn.dataset.mact;
+        const m = memories.find((x) => x.id === id);
+        if (!m) return;
+        if (act === "pin") {
+          m.pinned = !m.pinned;
+          await api.updateMemory(m);
+          loadMemories();
+        } else if (act === "del") {
+          if (await ckConfirm("\u5220\u9664\u8BB0\u5FC6\u300C" + (m.name || "") + "\u300D\uFF1F")) {
+            await api.deleteMemory(id);
+            loadMemories();
+          }
+        } else if (act === "edit") openEdit2(m);
+      });
+    });
+  }
   var TYPE_LABEL = {
     user: "\u753B\u50CF",
     feedback: "\u53CD\u9988",
@@ -5326,30 +5378,33 @@
       return;
     }
     const sorted = [...shown].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.updatedAt - a.updatedAt);
-    listEl2.innerHTML = sorted.map((m) => {
-      const pin = m.pinned ? "\u{1F4CC} " : "";
-      const tags = (m.tags || []).map((t) => "#" + escapeHtml(t)).join(" ");
-      return '<div class="ck-skill-item"><div class="ck-skill-top"><span class="ck-skill-name">' + pin + escapeHtml(m.name || "\u672A\u547D\u540D") + '</span><span style="font-size:11px;color:var(--ck-text-2);">' + (TYPE_LABEL[m.type] || m.type) + " \xB7 \u7528" + (m.accessCount || 0) + '\u6B21</span></div><div style="font-size:12px;color:var(--ck-text-dim);margin:4px 0;word-break:break-all;">' + escapeHtml((m.content || "").slice(0, 120)) + "</div>" + (tags ? '<div style="font-size:11px;color:var(--ck-accent);margin:2px 0;">' + tags + "</div>" : "") + '<div style="margin-top:6px;display:flex;gap:8px;"><button class="ck-btn-sm" data-mact="edit" data-id="' + m.id + '">\u7F16\u8F91</button><button class="ck-btn-sm" data-mact="pin" data-id="' + m.id + '">' + (m.pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876") + '</button><button class="ck-btn-sm" data-mact="del" data-id="' + m.id + '" style="color:var(--ck-danger);">\u5220\u9664</button></div></div>';
+    if (!groupByDate) {
+      listEl2.innerHTML = sorted.map(renderItem2).join("");
+      bindItemEvents(listEl2);
+      return;
+    }
+    const groups = [];
+    const map = /* @__PURE__ */ new Map();
+    const now = /* @__PURE__ */ new Date();
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    for (const m of sorted) {
+      const key = dateGroupLabel(m.createdAt || m.updatedAt || 0);
+      const d = new Date(m.createdAt || m.updatedAt || 0);
+      const day0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const order = -Math.round((today0 - day0) / 864e5);
+      let g = map.get(key);
+      if (!g) {
+        g = { key, order, items: [] };
+        map.set(key, g);
+        groups.push(g);
+      }
+      g.items.push(m);
+    }
+    groups.sort((a, b) => b.order - a.order);
+    listEl2.innerHTML = groups.map((g) => {
+      return '<div class="ck-mem-group"><div class="ck-mem-group-head">' + escapeHtml(g.key) + ' <span style="color:var(--ck-text-2);font-weight:normal;">\uFF08' + g.items.length + " \u6761\uFF09</span></div>" + g.items.map(renderItem2).join("") + "</div>";
     }).join("");
-    listEl2.querySelectorAll("button[data-mact]").forEach((btn) => {
-      btn.addEventListener("click", async (e) => {
-        e.stopPropagation();
-        const id = Number(btn.dataset.id);
-        const act = btn.dataset.mact;
-        const m = memories.find((x) => x.id === id);
-        if (!m) return;
-        if (act === "pin") {
-          m.pinned = !m.pinned;
-          await api.updateMemory(m);
-          loadMemories();
-        } else if (act === "del") {
-          if (await ckConfirm("\u5220\u9664\u8BB0\u5FC6\u300C" + (m.name || "") + "\u300D\uFF1F")) {
-            await api.deleteMemory(id);
-            loadMemories();
-          }
-        } else if (act === "edit") openEdit2(m);
-      });
-    });
+    bindItemEvents(listEl2);
   }
   function openEdit2(m) {
     document.getElementById("mem-edit-id").value = m ? String(m.id) : "";
@@ -5367,6 +5422,25 @@
       filter = btn.dataset.memFilter;
       render2();
     });
+  });
+  document.querySelectorAll("[data-mem-group]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      groupByDate = btn.dataset.memGroup === "date";
+      render2();
+    });
+  });
+  document.getElementById("mem-organize-today")?.addEventListener("click", async () => {
+    if (!api.triggerOrganizeTodayMemory) {
+      await ckAlert("\u5F53\u524D\u7248\u672C\u4E0D\u652F\u6301");
+      return;
+    }
+    if (!await ckConfirm("\u786E\u5B9A\u6574\u7406\u3010\u4ECA\u5929\u3011\u7684\u8BB0\u5FC6\uFF1F\n\nAI \u4F1A\u5206\u6790\u4ECA\u5929\u5BF9\u8BDD\uFF0C\u63D0\u70BC\u8981\u70B9\u4FDD\u5B58\u4E3A\u957F\u671F\u8BB0\u5FC6\u3002", "\u6574\u7406\u5F53\u5929\u8BB0\u5FC6")) return;
+    try {
+      await api.triggerOrganizeTodayMemory();
+      await ckAlert("\u5DF2\u53D1\u9001\u6574\u7406\u6307\u4EE4\uFF0C\u7A0D\u540E\u5237\u65B0\u67E5\u770B");
+    } catch (e) {
+      await ckAlert("\u5931\u8D25: " + (e.message || e));
+    }
   });
   document.getElementById("mem-edit-cancel")?.addEventListener("click", closeEdit2);
   document.getElementById("mem-edit-save")?.addEventListener("click", async () => {

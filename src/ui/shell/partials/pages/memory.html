@@ -11,11 +11,17 @@
               </div>
               <p class="ck-about-tip">AI 会在对话中<strong>自动保存</strong>关键信息（身份、偏好、决策等），下次对话按相关度自动注入。</p>
               <div class="ck-actions" style="gap:6px;flex-wrap:wrap;">
+                <button class="ck-btn-sm" id="mem-organize-today">整理当天记忆</button>
+                <span style="flex:1;"></span>
                 <button class="ck-btn-sm" data-mem-filter="all">全部</button>
                 <button class="ck-btn-sm" data-mem-filter="user">画像</button>
                 <button class="ck-btn-sm" data-mem-filter="feedback">反馈</button>
                 <button class="ck-btn-sm" data-mem-filter="topic">话题</button>
                 <button class="ck-btn-sm" data-mem-filter="reference">资料</button>
+              </div>
+              <div class="ck-actions" style="gap:6px;flex-wrap:wrap;">
+                <button class="ck-btn-sm" data-mem-group="date">按日期分组</button>
+                <button class="ck-btn-sm" data-mem-group="none">不分组</button>
               </div>
               <div id="mem-edit" class="ck-card" style="display:none;">
                 <input type="hidden" id="mem-edit-id" value="" />
