@@ -9,20 +9,25 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg>
                 </button>
               </div>
-              <p class="ck-about-tip">AI 会在对话中<strong>自动保存</strong>关键信息（身份、偏好、决策等），下次对话按相关度自动注入。</p>
-              <div class="ck-actions" style="gap:6px;flex-wrap:wrap;">
-                <button class="ck-btn-sm" id="mem-organize-today">整理当天记忆</button>
-                <span style="flex:1;"></span>
-                <button class="ck-btn-sm" data-mem-filter="all">全部</button>
-                <button class="ck-btn-sm" data-mem-filter="user">画像</button>
-                <button class="ck-btn-sm" data-mem-filter="feedback">反馈</button>
-                <button class="ck-btn-sm" data-mem-filter="topic">话题</button>
-                <button class="ck-btn-sm" data-mem-filter="reference">资料</button>
+              <button class="ck-btn-sm ck-btn-primary" id="mem-organize-today" style="width:100%;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 22h4"/></svg>
+                <span>整理当天记忆</span>
+              </button>
+              <div class="ck-seg" id="mem-filter-seg">
+                <button data-mem-filter="all" class="ck-seg-on">全部</button>
+                <button data-mem-filter="user">画像</button>
+                <button data-mem-filter="feedback">反馈</button>
+                <button data-mem-filter="topic">话题</button>
+                <button data-mem-filter="reference">资料</button>
               </div>
-              <div class="ck-actions" style="gap:6px;flex-wrap:wrap;">
-                <button class="ck-btn-sm" data-mem-group="date">按日期分组</button>
-                <button class="ck-btn-sm" data-mem-group="none">不分组</button>
+              <div class="ck-actions" style="justify-content:space-between;">
+                <div class="ck-seg" id="mem-group-seg">
+                  <button data-mem-group="date" class="ck-seg-on">按日期</button>
+                  <button data-mem-group="none">不分组</button>
+                </div>
+                <span class="ck-count" id="mem-count"></span>
               </div>
+              <p class="ck-about-tip" style="margin:0;">AI 会在对话中<strong>自动保存</strong>关键信息（身份、偏好、决策等），下次对话按相关度自动注入。</p>
               <div id="mem-edit" class="ck-card" style="display:none;">
                 <input type="hidden" id="mem-edit-id" value="" />
                 <div class="ck-set-field"><span class="ck-set-key">类型</span>

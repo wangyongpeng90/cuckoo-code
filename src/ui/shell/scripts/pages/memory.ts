@@ -30,10 +30,10 @@ function renderItem(m: any): string {
     '<span style="font-size:11px;color:var(--ck-text-2);">' + (TYPE_LABEL[m.type] || m.type) + ' · 用' + (m.accessCount || 0) + '次</span></div>' +
     '<div style="font-size:12px;color:var(--ck-text-dim);margin:4px 0;word-break:break-all;">' + escapeHtml((m.content || '').slice(0, 120)) + '</div>' +
     (tags ? '<div style="font-size:11px;color:var(--ck-accent);margin:2px 0;">' + tags + '</div>' : '') +
-    '<div style="margin-top:6px;display:flex;gap:8px;">' +
+    '<div class="ck-mem-actions">' +
       '<button class="ck-btn-sm" data-mact="edit" data-id="' + m.id + '">编辑</button>' +
       '<button class="ck-btn-sm" data-mact="pin" data-id="' + m.id + '">' + (m.pinned ? '取消置顶' : '置顶') + '</button>' +
-      '<button class="ck-btn-sm" data-mact="del" data-id="' + m.id + '" style="color:var(--ck-danger);">删除</button>' +
+      '<button class="ck-btn-sm ck-btn-danger" data-mact="del" data-id="' + m.id + '">删除</button>' +
     '</div></div>';
 }
 
@@ -69,6 +69,17 @@ export async function loadMemories(): Promise<void> {
 function render(): void {
   const listEl = document.getElementById('mem-list')!;
   const shown = filter === 'all' ? memories : memories.filter((m) => m.type === filter);
+  // 计数徽标
+  const countEl = document.getElementById('mem-count');
+  if (countEl) countEl.textContent = shown.length ? (shown.length + ' 条') : '';
+  // 分段控件选中态
+  document.querySelectorAll('#mem-filter-seg > button').forEach((b: any) => {
+    b.classList.toggle('ck-seg-on', b.dataset.memFilter === filter);
+  });
+  document.querySelectorAll('#mem-group-seg > button').forEach((b: any) => {
+    const on = (b.dataset.memGroup === 'date') === groupByDate;
+    b.classList.toggle('ck-seg-on', on);
+  });
   if (!shown.length) {
     listEl.innerHTML = '<div class="ck-list-empty">暂无记忆<br>AI 会在对话中自动保存</div>';
     return;

@@ -272,7 +272,8 @@
     color: #fff;
   }
 
-/* ===== 卡片 ===== */
+/* dev-expert · anti-slop: P5 H4 E5 S4 R5 V5 — 记忆页按钮重构（后台数据密集风，VARIANCE2/MOTION2/DENSITY7） */
+  /* ===== 卡片 ===== */
   .ck-card {
     background: var(--ck-bg);
     border: 1px solid var(--ck-border);
@@ -334,6 +335,50 @@
   /* 窗口页顶部：两行按钮（新建窗口+刷新 / 新建窗口组），行间留距 */
   .ck-tab[data-panel="windows"] .ck-actions { gap: 8px; }
   .ck-tab[data-panel="windows"] .ck-actions + .ck-actions { margin-top: 8px; }
+  /* 小号按钮（列表操作/筛选），此前只有类名无样式 → 浏览器默认按钮，故统一在此定义 */
+  .ck-btn-sm {
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    height: 26px; padding: 0 10px;
+    border: 1px solid var(--ck-border-strong); border-radius: 7px;
+    background: var(--ck-bg); color: var(--ck-text-2);
+    font-size: 12px; font-weight: 500; font-family: inherit;
+    cursor: pointer; white-space: nowrap;
+    transition: background .14s, color .14s, border-color .14s;
+  }
+  .ck-btn-sm:hover { background: var(--ck-surface-hover); color: var(--ck-text); border-color: transparent; }
+  .ck-btn-sm:active { transform: scale(0.97); }
+  .ck-btn-sm.ck-btn-primary {
+    background: var(--ck-primary); color: #fff; border-color: transparent;
+  }
+  .ck-btn-sm.ck-btn-primary:hover { background: var(--ck-primary-strong); color: #fff; }
+  /* 危险操作（删除）：默认低调，悬停变红 */
+  .ck-btn-sm.ck-btn-danger { color: var(--ck-text-dim); }
+  .ck-btn-sm.ck-btn-danger:hover { color: var(--ck-danger); background: color-mix(in srgb, var(--ck-danger) 10%, transparent); }
+
+  /* 分段控件（筛选/分组切换）：整体一个圆角容器，选中项高亮 */
+  .ck-seg {
+    display: inline-flex; align-items: center; padding: 2px;
+    background: var(--ck-surface); border-radius: 9px; gap: 2px;
+  }
+  .ck-seg > button {
+    height: 24px; padding: 0 10px; border: none; border-radius: 7px;
+    background: transparent; color: var(--ck-text-2);
+    font-size: 12px; font-weight: 500; font-family: inherit;
+    cursor: pointer; white-space: nowrap;
+    transition: background .14s, color .14s;
+  }
+  .ck-seg > button:hover { color: var(--ck-text); }
+  .ck-seg > button.ck-seg-on {
+    background: var(--ck-bg); color: var(--ck-primary); font-weight: 600;
+    box-shadow: var(--ck-shadow-sm);
+  }
+
+  /* 计数徽标 */
+  .ck-count {
+    font-size: 11px; color: var(--ck-text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
   /* 方形图标按钮 */
   .ck-icon-btn {
     flex: 0 0 32px; width: 32px; height: 32px;
@@ -392,6 +437,10 @@
     animation: ck-detail-in .38s cubic-bezier(.22,.61,.36,1);
     overflow: hidden;
   }
+  /* 记忆页：卡片操作按钮（悬停才浮现，克制的数据密集风） */
+  .ck-mem-actions { display: flex; gap: 6px; margin-top: 8px; opacity: 0; transition: opacity .15s; }
+  .ck-skill-item:hover .ck-mem-actions,
+  .ck-skill-item:focus-within .ck-mem-actions { opacity: 1; }
   /* 记忆页：按日期分组 */
   .ck-mem-group { margin-bottom: 10px; }
   .ck-mem-group-head {
@@ -1582,20 +1631,25 @@
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg>
                 </button>
               </div>
-              <p class="ck-about-tip">AI 会在对话中<strong>自动保存</strong>关键信息（身份、偏好、决策等），下次对话按相关度自动注入。</p>
-              <div class="ck-actions" style="gap:6px;flex-wrap:wrap;">
-                <button class="ck-btn-sm" id="mem-organize-today">整理当天记忆</button>
-                <span style="flex:1;"></span>
-                <button class="ck-btn-sm" data-mem-filter="all">全部</button>
-                <button class="ck-btn-sm" data-mem-filter="user">画像</button>
-                <button class="ck-btn-sm" data-mem-filter="feedback">反馈</button>
-                <button class="ck-btn-sm" data-mem-filter="topic">话题</button>
-                <button class="ck-btn-sm" data-mem-filter="reference">资料</button>
+              <button class="ck-btn-sm ck-btn-primary" id="mem-organize-today" style="width:100%;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 22h4"/></svg>
+                <span>整理当天记忆</span>
+              </button>
+              <div class="ck-seg" id="mem-filter-seg">
+                <button data-mem-filter="all" class="ck-seg-on">全部</button>
+                <button data-mem-filter="user">画像</button>
+                <button data-mem-filter="feedback">反馈</button>
+                <button data-mem-filter="topic">话题</button>
+                <button data-mem-filter="reference">资料</button>
               </div>
-              <div class="ck-actions" style="gap:6px;flex-wrap:wrap;">
-                <button class="ck-btn-sm" data-mem-group="date">按日期分组</button>
-                <button class="ck-btn-sm" data-mem-group="none">不分组</button>
+              <div class="ck-actions" style="justify-content:space-between;">
+                <div class="ck-seg" id="mem-group-seg">
+                  <button data-mem-group="date" class="ck-seg-on">按日期</button>
+                  <button data-mem-group="none">不分组</button>
+                </div>
+                <span class="ck-count" id="mem-count"></span>
               </div>
+              <p class="ck-about-tip" style="margin:0;">AI 会在对话中<strong>自动保存</strong>关键信息（身份、偏好、决策等），下次对话按相关度自动注入。</p>
               <div id="mem-edit" class="ck-card" style="display:none;">
                 <input type="hidden" id="mem-edit-id" value="" />
                 <div class="ck-set-field"><span class="ck-set-key">类型</span>
@@ -5330,7 +5384,7 @@
   function renderItem2(m) {
     const pin = m.pinned ? "\u{1F4CC} " : "";
     const tags = (m.tags || []).map((t) => "#" + escapeHtml(t)).join(" ");
-    return '<div class="ck-skill-item"><div class="ck-skill-top"><span class="ck-skill-name">' + pin + escapeHtml(m.name || "\u672A\u547D\u540D") + '</span><span style="font-size:11px;color:var(--ck-text-2);">' + (TYPE_LABEL[m.type] || m.type) + " \xB7 \u7528" + (m.accessCount || 0) + '\u6B21</span></div><div style="font-size:12px;color:var(--ck-text-dim);margin:4px 0;word-break:break-all;">' + escapeHtml((m.content || "").slice(0, 120)) + "</div>" + (tags ? '<div style="font-size:11px;color:var(--ck-accent);margin:2px 0;">' + tags + "</div>" : "") + '<div style="margin-top:6px;display:flex;gap:8px;"><button class="ck-btn-sm" data-mact="edit" data-id="' + m.id + '">\u7F16\u8F91</button><button class="ck-btn-sm" data-mact="pin" data-id="' + m.id + '">' + (m.pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876") + '</button><button class="ck-btn-sm" data-mact="del" data-id="' + m.id + '" style="color:var(--ck-danger);">\u5220\u9664</button></div></div>';
+    return '<div class="ck-skill-item"><div class="ck-skill-top"><span class="ck-skill-name">' + pin + escapeHtml(m.name || "\u672A\u547D\u540D") + '</span><span style="font-size:11px;color:var(--ck-text-2);">' + (TYPE_LABEL[m.type] || m.type) + " \xB7 \u7528" + (m.accessCount || 0) + '\u6B21</span></div><div style="font-size:12px;color:var(--ck-text-dim);margin:4px 0;word-break:break-all;">' + escapeHtml((m.content || "").slice(0, 120)) + "</div>" + (tags ? '<div style="font-size:11px;color:var(--ck-accent);margin:2px 0;">' + tags + "</div>" : "") + '<div class="ck-mem-actions"><button class="ck-btn-sm" data-mact="edit" data-id="' + m.id + '">\u7F16\u8F91</button><button class="ck-btn-sm" data-mact="pin" data-id="' + m.id + '">' + (m.pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876") + '</button><button class="ck-btn-sm ck-btn-danger" data-mact="del" data-id="' + m.id + '">\u5220\u9664</button></div></div>';
   }
   function bindItemEvents(listEl2) {
     listEl2.querySelectorAll("button[data-mact]").forEach((btn) => {
@@ -5373,6 +5427,15 @@
   function render2() {
     const listEl2 = document.getElementById("mem-list");
     const shown = filter === "all" ? memories : memories.filter((m) => m.type === filter);
+    const countEl = document.getElementById("mem-count");
+    if (countEl) countEl.textContent = shown.length ? shown.length + " \u6761" : "";
+    document.querySelectorAll("#mem-filter-seg > button").forEach((b) => {
+      b.classList.toggle("ck-seg-on", b.dataset.memFilter === filter);
+    });
+    document.querySelectorAll("#mem-group-seg > button").forEach((b) => {
+      const on = b.dataset.memGroup === "date" === groupByDate;
+      b.classList.toggle("ck-seg-on", on);
+    });
     if (!shown.length) {
       listEl2.innerHTML = '<div class="ck-list-empty">\u6682\u65E0\u8BB0\u5FC6<br>AI \u4F1A\u5728\u5BF9\u8BDD\u4E2D\u81EA\u52A8\u4FDD\u5B58</div>';
       return;
