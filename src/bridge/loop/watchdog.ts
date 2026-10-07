@@ -89,7 +89,48 @@ function setSuspended(v: any): void {
   suspended = !!v;
   if (suspended) {
     idleCount = 0;
+    clearToolLoopTimer();
   }
+}
+
+// ===== 工具循环超时 =====
+// 场景：工具结果回传后，若 DeepSeek 不再继续回复（未开始新请求/静默卡住），
+// 现有 SSE 流静默检测覆盖不到这段"响应间隙"。这里补一个定时器：
+//   - 回传工具结果后启动
+//   - 收到任何流/响应事件即取消（交回 SSE 流静默检测）
+//   - 超时则复用"催继续"逻辑（提示词/次数来自设置）
+// 超时时间复用设置里的 cuckoo-xhr-idle-timeout（毫秒）。
+let toolLoopTimer: any = null;
+
+/** 读工具循环超时（毫秒，<=0 禁用；默认 300000） */
+function readToolLoopTimeout(): number {
+  try {
+    const v = parseInt(localStorage.getItem('cuckoo-xhr-idle-timeout') || '', 10);
+    if (Number.isFinite(v)) return v;
+  } catch (_) { /* ignore */ }
+  return 300000;
+}
+
+/** 取消工具循环定时器 */
+function clearToolLoopTimer(): void {
+  if (toolLoopTimer) { clearTimeout(toolLoopTimer); toolLoopTimer = null; }
+}
+
+/** 启动工具循环定时器（工具结果回传后调用） */
+function armToolLoopTimer(): void {
+  if (suspended) return;
+  const timeout = readToolLoopTimeout();
+  if (timeout <= 0) return; // 禁用
+  clearToolLoopTimer();
+  toolLoopTimer = setTimeout(function () {
+    toolLoopTimer = null;
+    if (suspended) return;
+    console.log('[Cuckoo Code][看门狗] 工具循环超时（' + timeout + 'ms 无新回复），触发催继续');
+    onStreamIdle({}); // 复用催继续（含次数上限、提示词）
+    // 若仍未达次数上限，继续监听（AI 再次不回时再催）
+    const cfg = readConfig();
+    if (cfg.count < 0 || idleCount < cfg.count) armToolLoopTimer();
+  }, timeout);
 }
 
 // ===== 会话切换检测（由 bridge/entry 的 URL 变化事件驱动，不再高频轮询）=====
@@ -128,6 +169,8 @@ export {
   setSuspended,
   startSessionWatcher,
   checkSessionChange,
+  armToolLoopTimer,
+  clearToolLoopTimer,
   readConfig as _readConfig,
   getIdleCount as _getIdleCount,
 };

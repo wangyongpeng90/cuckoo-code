@@ -142,6 +142,8 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     const sent = await sendCombinedJsResultsToChat(results, hideToolMask);
     if (cancelled) return; // 用户已取消，不再处理
     if (!sent) hideToolMask();
+    // 工具结果已回传 → 启动"工具循环超时"定时器：若 AI 迟迟不继续回复，自动催继续
+    if (sent) { try { watchdog.armToolLoopTimer(); } catch (_) { /* ignore */ } }
     // 工具执行疑似出错 → 派发错误事件，交由自动重试引擎（cuckoo-retry-* 配置）恢复
     const failReason = detectToolFailure(results);
     if (failReason) {
@@ -328,6 +330,8 @@ function startInterceptObserver(): void {
       }
       if (!detail.finished) return;
       try { watchdog.onResponseReceived('finished'); } catch (_) { /* ignore */ }
+      // 收到新回复 → 取消"工具循环超时"定时器（已恢复响应）
+      try { watchdog.clearToolLoopTimer(); } catch (_) { /* ignore */ }
       // 对话记录：AI 回复落盘（按 responseMessageId 去重，缺失时用文本指纹）
       try {
         const rid = (detail.msgIds && detail.msgIds.responseMessageId) || '';
@@ -355,6 +359,8 @@ function startInterceptObserver(): void {
     try {
       const detail = ev && ev.detail;
       if (!detail) return;
+      // 收到流数据 → 取消"工具循环超时"定时器（AI 已开始/正在响应）
+      try { watchdog.clearToolLoopTimer(); } catch (_) { /* ignore */ }
       emitStream({
         think: detail.think || '',
         text: detail.text || '',
@@ -368,6 +374,8 @@ function startInterceptObserver(): void {
     try {
       const detail = ev && ev.detail;
       try { watchdog.onResponseReceived('error'); } catch (_) { /* ignore */ }
+      // 收到错误 → 取消"工具循环超时"定时器（错误由重试引擎处理）
+      try { watchdog.clearToolLoopTimer(); } catch (_) { /* ignore */ }
       for (const cb of errorListeners) {
         try { cb(detail || {}); } catch (_) { /* ignore */ }
       }
