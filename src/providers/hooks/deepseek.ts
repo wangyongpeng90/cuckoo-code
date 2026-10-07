@@ -55,6 +55,54 @@ function install(): void {
   }
 
   // 从当前 URL 提取会话 ID（用于错误事件的会话校验）
+  // 提取请求体里的用户消息文本（用于对话记录落盘）
+  function extractUserText(body) {
+    if (!body) return '';
+    try {
+      var raw = body;
+      if (typeof raw !== 'string') {
+        if (raw && typeof raw.toString === 'function') raw = raw.toString();
+        else return '';
+      }
+      var obj = null;
+      try { obj = JSON.parse(raw); } catch (e) { /* 非 JSON，忽略 */ }
+      if (obj && typeof obj === 'object') {
+        if (typeof obj.prompt === 'string' && obj.prompt.trim()) return obj.prompt;
+        if (typeof obj.content === 'string' && obj.content.trim()) return obj.content;
+        if (typeof obj.text === 'string' && obj.text.trim()) return obj.text;
+        if (Array.isArray(obj.messages)) {
+          for (var i = obj.messages.length - 1; i >= 0; i--) {
+            var m = obj.messages[i];
+            if (m && m.role === 'user') {
+              if (typeof m.content === 'string' && m.content.trim()) return m.content;
+              if (Array.isArray(m.content)) {
+                var acc = '';
+                for (var j = 0; j < m.content.length; j++) {
+                  var part = m.content[j];
+                  if (part && typeof part.text === 'string') acc += part.text;
+                  else if (typeof part === 'string') acc += part;
+                }
+                if (acc.trim()) return acc;
+              }
+            }
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return '';
+  }
+
+  // 派发"用户消息"事件（供对话记录落盘）
+  function dispatchUserMessage(text, sessionId) {
+    var t = String(text || '').trim();
+    if (!t) return;
+    try {
+      window.dispatchEvent(new CustomEvent('cuckoo-user-message', {
+        detail: { text: t, sessionId: sessionId || getSessionIdFromUrl(), ts: Date.now() }
+      }));
+    } catch (e) { /* ignore */ }
+  }
+
   function getSessionIdFromUrl() {
     try {
       var m = String(location.href).match(/\/chat\/s\/([a-f0-9-]+)/i);
@@ -450,6 +498,8 @@ function install(): void {
       if (!isCompletion(url, method)) return p;
       userStopped = false; // 新的 completion 开始：复位用户停止标志
       var fetchSessionId = getSessionIdFromUrl(); // 发起时记录会话
+      // 对话记录：派发用户消息（fetch 请求体）
+      try { dispatchUserMessage(extractUserText(init && init.body), fetchSessionId); } catch (e) { /* ignore */ }
       return p.then(function (response) {
         try {
           if (response && response.ok === false) {
@@ -543,6 +593,8 @@ function install(): void {
     if (info && isCompletion(info.url, info.method)) {
       // 新的 completion 开始：复位用户停止标志
       userStopped = false;
+      // 对话记录：派发用户消息（XHR 请求体）
+      try { dispatchUserMessage(extractUserText(body), getSessionIdFromUrl()); } catch (e) { /* ignore */ }
       try { observeXhr(this); } catch (e) { console.error('[Cuckoo Code][hook] observeXhr 异常: ' + e.message); }
     }
     return origSend.apply(this, arguments);

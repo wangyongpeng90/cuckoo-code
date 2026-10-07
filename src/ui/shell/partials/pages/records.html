@@ -1,0 +1,20 @@
+            <!-- ===== 对话记录 ===== -->
+            <div class="ck-tab" data-panel="records">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">对话记录</span>
+                <button class="ck-icon-btn" id="rec-refresh" title="刷新">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                </button>
+              </div>
+              <p class="ck-about-tip">同一项目的所有对话自动汇总。点文件查看完整内容。</p>
+              <div class="ck-list" id="rec-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+              <div id="rec-viewer" style="display:none;">
+                <div class="ck-actions">
+                  <button class="ck-btn ck-btn-secondary" id="rec-back">← 返回列表</button>
+                  <span class="ck-set-group-title" id="rec-viewer-title" style="flex:1;"></span>
+                </div>
+                <div id="rec-content" class="ck-card" style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.6;max-height:70vh;overflow:auto;padding:10px;"></div>
+              </div>
+            </div>

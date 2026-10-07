@@ -67,6 +67,41 @@
               </div>
             </div>
           </div>
+          <!-- 技能编辑弹窗 -->
+          <div class="ck-modal-mask cuckoo-hidden" id="skill-modal">
+            <div class="ck-modal">
+              <span class="ck-modal-title" id="skill-modal-title">编辑技能</span>
+              <div class="ck-field">
+                <span class="ck-field-label">名称</span>
+                <input class="ck-input" id="skill-f-name" placeholder="英文 id，如 dev-expert" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">显示名（中文）</span>
+                <input class="ck-input" id="skill-f-display" placeholder="如：编程专家.Skill P8级编程助手" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">描述</span>
+                <input class="ck-input" id="skill-f-desc" placeholder="一句话说明用途" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">许可证</span>
+                <input class="ck-input" id="skill-f-license" placeholder="如：MIT" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">工具（空格分隔）</span>
+                <input class="ck-input" id="skill-f-tools" placeholder="如：Read Grep Glob Bash Edit Write" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">正文</span>
+                <textarea class="ck-textarea" id="skill-f-content" placeholder="技能正文（Markdown）" style="min-height:140px;"></textarea>
+              </div>
+              <div class="ck-modal-foot">
+                <button class="ck-btn ck-btn-text" id="skill-f-delete" style="color:#ff6b7a;margin-right:auto;">删除</button>
+                <button class="ck-btn ck-btn-secondary" id="skill-f-cancel">取消</button>
+                <button class="ck-btn ck-btn-primary" id="skill-f-save">保存</button>
+              </div>
+            </div>
+          </div>
           <!-- 通用输入弹窗（重命名会话等） -->
           <div class="ck-modal-mask cuckoo-hidden" id="input-modal">
             <div class="ck-modal">

@@ -280,10 +280,41 @@ function onAiError(cb: (detail: any) => void): () => void {
   return () => errorListeners.delete(cb);
 }
 
+// ===== 对话记录落盘：已落盘的 AI 回复去重（按 responseMessageId，缺失时用文本）=====
+const savedResponseKeys = new Set<string>();
+
+/** 从当前 URL 提取会话 ID（与主世界 hook 同一规则） */
+function getSessionIdFromUrl(): string | null {
+  try {
+    const m = String(window.location.href).match(/\/chat\/s\/([a-f0-9-]+)/i);
+    return m ? m[1] : null;
+  } catch (_) { return null; }
+}
+
+/** 把一条消息交给主进程追加写入当前项目的「对话记录.md」 */
+function persistConversation(role: 'user' | 'assistant', text: string, sessionId: string | null, ts?: number): void {
+  const content = String(text || '').trim();
+  if (!content) return;
+  try {
+    const api = (window as any).electronAPI;
+    if (api && typeof api.saveConversation === 'function') {
+      api.saveConversation({ sessionId: sessionId || null, role: role, text: content, ts: ts || Date.now() }).catch(() => {});
+    }
+  } catch (_) { /* ignore */ }
+}
+
 /**
  * 启动拦截事件监听
  */
 function startInterceptObserver(): void {
+  // 对话记录：监听主世界派发的"用户消息"事件
+  window.addEventListener('cuckoo-user-message', (ev: any) => {
+    try {
+      const d = ev && ev.detail;
+      if (!d || !d.text) return;
+      persistConversation('user', d.text, d.sessionId || null, d.ts);
+    } catch (_) { /* ignore */ }
+  });
   window.addEventListener('cuckoo-ai-response', (ev: any) => {
     try {
       const detail = ev && ev.detail;
@@ -297,6 +328,17 @@ function startInterceptObserver(): void {
       }
       if (!detail.finished) return;
       try { watchdog.onResponseReceived('finished'); } catch (_) { /* ignore */ }
+      // 对话记录：AI 回复落盘（按 responseMessageId 去重，缺失时用文本指纹）
+      try {
+        const rid = (detail.msgIds && detail.msgIds.responseMessageId) || '';
+        const txt = String(detail.text || '');
+        const key = 'a:' + (rid || ('len:' + txt.length + ':' + txt.slice(0, 40)));
+        if (!savedResponseKeys.has(key)) {
+          if (savedResponseKeys.size > 2000) savedResponseKeys.clear();
+          savedResponseKeys.add(key);
+          persistConversation('assistant', txt, getSessionIdFromUrl(), Date.now());
+        }
+      } catch (_) { /* ignore */ }
       // 缓存最近一次完整回复文本，供手动解析复用（不依赖 DOM）
       lastInterceptedText = detail.text || '';
       // 通知监听器（每次成功回复都触发），携带服务端权威数据

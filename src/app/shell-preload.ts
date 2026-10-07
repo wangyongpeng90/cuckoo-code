@@ -122,6 +122,9 @@ const shellAPI = {
   onSnippetsChanged: (cb: () => void) => {
     ipcRenderer.on('shell-snippets-changed', () => cb());
   },
+  // ========== 对话记录 ==========
+  listConversationRecords: () => ipcRenderer.invoke('list-conversation-records'),
+  readConversationRecord: (path: string) => ipcRenderer.invoke('read-conversation-record', { path }),
   // ========== 长期记忆 ==========
   listMemories: () => ipcRenderer.invoke('list-memories'),
   saveMemory: (memory: any) => ipcRenderer.invoke('save-memory', { memory }),

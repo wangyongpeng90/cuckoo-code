@@ -192,7 +192,12 @@ function upsertSkill(skill: any): any {
   let id = skill.id ? safeId(skill.id) : idFromName(name);
   if (!id) id = 'skill-' + Date.now();
 
-  const lines: string[] = ['---', 'name: ' + name, 'description: ' + description];
+  const lines: string[] = ['---', 'name: ' + name];
+  const displayName = String(skill.displayName || '').trim();
+  if (displayName && displayName !== name) {
+    lines.push('display_name: ' + displayName);
+  }
+  lines.push('description: ' + description);
   if (skill.license && String(skill.license).trim()) {
     lines.push('license: ' + String(skill.license).trim());
   }

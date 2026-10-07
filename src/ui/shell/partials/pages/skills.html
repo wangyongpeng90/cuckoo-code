@@ -1,12 +1,42 @@
             <!-- ===== 技能 ===== -->
+            <style>
+              .skill-row { padding: 10px 12px; border-bottom: 1px solid var(--ck-border, #e6e6e6); }
+              .skill-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+              .skill-row-name { font-size: 13px; font-weight: 500; flex: 1; word-break: break-all; }
+              .skill-row-dot { width: 8px; height: 8px; border-radius: 50%; background: #c9c9c9; flex-shrink: 0; }
+              .skill-row-dot.on { background: #4ade80; }
+              .skill-row-actions { display: flex; gap: 8px; }
+              .skill-row-btn { padding: 4px 14px; border-radius: 4px; border: 1px solid #d0d0d0; background: #fff; color: #333; cursor: pointer; font-size: 12px; font-family: inherit; }
+              .skill-row-btn:hover { background: #f2f2f2; }
+              .skill-row-btn.primary { background: #4d6bfe; color: #fff; border-color: #4d6bfe; }
+              .skill-row-btn.primary:hover { background: #3a58f0; }
+            </style>
             <div class="ck-tab" data-panel="skills">
-              <div class="ck-actions">
-                <span class="ck-set-group-title" style="flex:1;">技能</span>
-                <button class="ck-icon-btn" id="skill-refresh" title="刷新">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                </button>
+              <!-- 已安装视图 -->
+              <div id="skill-view-installed">
+                <div class="ck-actions">
+                  <span class="ck-set-group-title" style="flex:1;">技能</span>
+                  <button class="skill-row-btn" id="skill-goto-market" style="padding:5px 14px;">市场</button>
+                  <button class="ck-icon-btn" id="skill-new" title="新建技能">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
+                  <button class="ck-icon-btn" id="skill-refresh" title="刷新">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                  </button>
+                </div>
+                <div class="ck-list" id="skill-list">
+                  <div class="ck-list-empty">加载中…</div>
+                </div>
               </div>
-              <div class="ck-list" id="skill-list">
-                <div class="ck-list-empty">加载中…</div>
+              <!-- 市场视图 -->
+              <div id="skill-view-market" style="display:none;">
+                <div class="ck-actions">
+                  <button class="skill-row-btn" id="skill-back" style="padding:5px 12px;">← 返回</button>
+                  <input class="ck-input" id="skill-search-input" type="text" placeholder="搜索 SkillHub…" style="flex:1;" />
+                  <button class="skill-row-btn primary" id="skill-search-btn" style="padding:5px 14px;">搜索</button>
+                </div>
+                <div class="ck-list" id="skill-market-list">
+                  <div class="ck-list-empty">输入关键词搜索</div>
+                </div>
               </div>
             </div>

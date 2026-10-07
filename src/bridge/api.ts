@@ -181,6 +181,9 @@ let electronAPI: any = {
   updateWindowName: (displayName: any) => {
     return ipcRenderer.invoke('update-window-name', { displayName });
   },
+  saveConversation: (payload: any) => {
+    return ipcRenderer.invoke('save-conversation', payload);
+  },
   showAiNotification: () => {
     return ipcRenderer.invoke('show-ai-notification');
   },
