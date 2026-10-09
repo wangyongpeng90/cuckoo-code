@@ -80,8 +80,27 @@ export interface ShellAPI {
   triggerSnippet?: (content: string, autoSend?: boolean) => Promise<any>;
   appendSnippet?: (text: string) => Promise<any>;
   onSnippetsChanged?: (cb: () => void) => void;
+  // 对话记录（左侧「对话记录」页）
+  listConversationRecords?: () => Promise<any>;
+  readConversationRecord?: (path: string) => Promise<any>;
+  // 长期记忆
+  listMemories?: () => Promise<any>;
+  saveMemory?: (memory: any) => Promise<any>;
+  updateMemory?: (memory: any) => Promise<any>;
+  deleteMemory?: (id: number) => Promise<any>;
+  exportMemories?: () => Promise<any>;
+  importMemories?: (memories: any) => Promise<any>;
+  onMemoriesChanged?: (cb: () => void) => void;
   // 技能 / 子代理
   listSkills?: () => Promise<any>;
+  // ===== 技能市场与管理（SkillHub）=====
+  listAppSkills?: () => Promise<any>;
+  upsertSkill?: (skill: any) => Promise<any>;
+  removeSkill?: (id: any) => Promise<any>;
+  setSkillEnabled?: (id: any, enabled: any) => Promise<any>;
+  searchSkills?: (keyword: any, page: any, pageSize: any) => Promise<any>;
+  getSkillDetail?: (slug: any, namespace: any) => Promise<any>;
+  installSkill?: (slug: any, namespace: any, displayName?: any) => Promise<any>;
   listAgents?: () => Promise<any>;
   createAgentFile?: (name: string, scope: string) => Promise<any>;
   openAgentFile?: (agentPath: string) => Promise<any>;
@@ -101,6 +120,8 @@ export interface ShellAPI {
   getAutoCompact?: () => Promise<any>;
   saveAutoCompact?: (data: any) => Promise<any>;
   triggerCompact?: () => Promise<any>;
+  triggerOrganizeMemory?: () => Promise<any>;
+  triggerOrganizeTodayMemory?: () => Promise<any>;
   // 设置
   getSettings?: () => Promise<any>;
   saveSettings?: (data: any) => Promise<any>;

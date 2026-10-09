@@ -1,0 +1,9 @@
+{
+  "id": "cuckoo-memory",
+  "name": "长期记忆",
+  "version": "1.0.0",
+  "description": "长期记忆系统：AI 自动提炼要点保存，跨对话复用。提供 memorySave 工具与「长期记忆」页。",
+  "builtin": true,
+  "author": "cuckoo",
+  "license": "GPL-3.0-only"
+}

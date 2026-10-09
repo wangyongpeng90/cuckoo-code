@@ -11,12 +11,12 @@ import './api.js';
 import { createRequire } from 'node:module';
 import * as ui from '../overlay/panel.js';
 import * as projectDir from '../overlay/project-dir.js';
-import { bindEvents, refreshTokenForCurrentSession, setIsSubagentWindow, getAutoCompactConfig, applyAutoCompactConfig, triggerCompaction } from '../overlay/events.js';
+import { bindEvents, refreshTokenForCurrentSession, setIsSubagentWindow, getAutoCompactConfig, applyAutoCompactConfig, triggerCompaction, triggerOrganizeMemory, triggerOrganizeTodayMemory } from '../overlay/events.js';
 import * as chatInput from '../overlay/chat-input.js';
 import * as settingsPanel from '../overlay/panels/settings.js';
 import { wireEvents } from '../overlay/events.js';
 import { getProviderByUrl } from '../providers/registry.js';
-import { startInterceptObserver, onInterceptedResponse, onTaskIdle, onStream } from './intercept/observer.js';
+import { startInterceptObserver, onInterceptedResponse, onTaskIdle, onStream, onToolCall } from './intercept/observer.js';
 import { shareAllForSwitch } from '../session/compaction.js';
 import { startRetryEngine } from './loop/retry.js';
 import { startSessionWatcher, startWatchdog, checkSessionChange } from './loop/watchdog.js';
@@ -24,6 +24,7 @@ import { initSubagentIfNeeded } from './subagent.js';
 import { initHarnessBridge } from './harness-bridge.js';
 import { initProbeIfNeeded } from './probe.js';
 import { initFeishuBridge } from './feishu-bridge.js';
+import { initMessageFold } from '../overlay/message-fold.js';
 import { initPlugins, bindPluginReload } from './plugin-system.js';
 
 const require = createRequire(import.meta.url);
@@ -196,6 +197,24 @@ function init(): void {
         ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });
       }
     });
+    // 手动触发"整理长期记忆"
+    ipcRenderer.on('cuckoo-trigger-organize-memory', (_e: any, { reqId }: any) => {
+      try {
+        triggerOrganizeMemory();
+        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: true });
+      } catch (err: any) {
+        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });
+      }
+    });
+    // 手动触发"整理今天的记忆"
+    ipcRenderer.on('cuckoo-trigger-organize-today-memory', (_e: any, { reqId }: any) => {
+      try {
+        triggerOrganizeTodayMemory();
+        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: true });
+      } catch (err: any) {
+        ipcRenderer.send('cuckoo-autocompact-result', { reqId, ok: false, error: err.message });
+      }
+    });
     // 窗口组切换：主进程请求"全量分享当前会话"，回执 shareId
     ipcRenderer.on('cuckoo-switch-share', async (_e: any, { reqId }: any) => {
       try {
@@ -280,6 +299,17 @@ function init(): void {
       checkSessionChange();
     } catch (_) {}
   }, 15000);
+
+  // 消息折叠：把「【JS 执行结果汇总】」等渲染成工具卡片
+  try { initMessageFold(); } catch (err) { console.error('[Cuckoo Code] initMessageFold 失败:', err); }
+
+  // 实时工具状态：订阅工具开始/结束 → 更新小窗
+  try {
+    onToolCall((ev: any) => {
+      if (ev.phase === 'start') ui.showToolMask(undefined, ev.code || '');
+      else if (ev.phase === 'end') ui.setToolMaskDone(!!ev.success);
+    });
+  } catch (err) { console.error('[Cuckoo Code] onToolCall 订阅失败:', err); }
 }
 
 if (document.readyState === 'loading') {

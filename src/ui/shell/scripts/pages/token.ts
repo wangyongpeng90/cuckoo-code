@@ -86,8 +86,14 @@ export async function loadAutoCompact(): Promise<void> {
 const tkCompactBtn = document.getElementById('tk-compact');
 if (tkCompactBtn) tkCompactBtn.addEventListener('click', async () => {
   if (!api.triggerCompact) return;
-  if (!(await ckConfirm('确定压缩上下文？将生成摘要并在新会话继续。', '压缩上下文'))) return;
+  if (!(await ckConfirm('确定压缩上下文？\n\n会先整理长期记忆，再生成摘要并在新会话继续。', '压缩上下文'))) return;
   try { await api.triggerCompact(); } catch (_) { /* ignore */ }
+});
+const tkOrganizeBtn = document.getElementById('tk-organize-memory');
+if (tkOrganizeBtn) tkOrganizeBtn.addEventListener('click', async () => {
+  if (!api.triggerOrganizeMemory) return;
+  if (!(await ckConfirm('确定整理长期记忆？\n\nAI 会分析当前对话，提炼要点保存为长期记忆（不压缩对话）。', '整理长期记忆'))) return;
+  try { await api.triggerOrganizeMemory(); } catch (_) { /* ignore */ }
 });
 const tkAutoSaveBtn = document.getElementById('tk-auto-save') as any;
 if (tkAutoSaveBtn) tkAutoSaveBtn.addEventListener('click', async () => {

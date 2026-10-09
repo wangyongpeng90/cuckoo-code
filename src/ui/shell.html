@@ -272,7 +272,8 @@
     color: #fff;
   }
 
-/* ===== 卡片 ===== */
+/* dev-expert · anti-slop: P5 H4 E5 S4 R5 V5 — 记忆页按钮重构（后台数据密集风，VARIANCE2/MOTION2/DENSITY7） */
+  /* ===== 卡片 ===== */
   .ck-card {
     background: var(--ck-bg);
     border: 1px solid var(--ck-border);
@@ -334,6 +335,50 @@
   /* 窗口页顶部：两行按钮（新建窗口+刷新 / 新建窗口组），行间留距 */
   .ck-tab[data-panel="windows"] .ck-actions { gap: 8px; }
   .ck-tab[data-panel="windows"] .ck-actions + .ck-actions { margin-top: 8px; }
+  /* 小号按钮（列表操作/筛选），此前只有类名无样式 → 浏览器默认按钮，故统一在此定义 */
+  .ck-btn-sm {
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+    height: 26px; padding: 0 10px;
+    border: 1px solid var(--ck-border-strong); border-radius: 7px;
+    background: var(--ck-bg); color: var(--ck-text-2);
+    font-size: 12px; font-weight: 500; font-family: inherit;
+    cursor: pointer; white-space: nowrap;
+    transition: background .14s, color .14s, border-color .14s;
+  }
+  .ck-btn-sm:hover { background: var(--ck-surface-hover); color: var(--ck-text); border-color: transparent; }
+  .ck-btn-sm:active { transform: scale(0.97); }
+  .ck-btn-sm.ck-btn-primary {
+    background: var(--ck-primary); color: #fff; border-color: transparent;
+  }
+  .ck-btn-sm.ck-btn-primary:hover { background: var(--ck-primary-strong); color: #fff; }
+  /* 危险操作（删除）：默认低调，悬停变红 */
+  .ck-btn-sm.ck-btn-danger { color: var(--ck-text-dim); }
+  .ck-btn-sm.ck-btn-danger:hover { color: var(--ck-danger); background: color-mix(in srgb, var(--ck-danger) 10%, transparent); }
+
+  /* 分段控件（筛选/分组切换）：整体一个圆角容器，选中项高亮 */
+  .ck-seg {
+    display: inline-flex; align-items: center; padding: 2px;
+    background: var(--ck-surface); border-radius: 9px; gap: 2px;
+  }
+  .ck-seg > button {
+    height: 24px; padding: 0 10px; border: none; border-radius: 7px;
+    background: transparent; color: var(--ck-text-2);
+    font-size: 12px; font-weight: 500; font-family: inherit;
+    cursor: pointer; white-space: nowrap;
+    transition: background .14s, color .14s;
+  }
+  .ck-seg > button:hover { color: var(--ck-text); }
+  .ck-seg > button.ck-seg-on {
+    background: var(--ck-bg); color: var(--ck-primary); font-weight: 600;
+    box-shadow: var(--ck-shadow-sm);
+  }
+
+  /* 计数徽标 */
+  .ck-count {
+    font-size: 11px; color: var(--ck-text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
   /* 方形图标按钮 */
   .ck-icon-btn {
     flex: 0 0 32px; width: 32px; height: 32px;
@@ -391,6 +436,17 @@
     display: block;
     animation: ck-detail-in .38s cubic-bezier(.22,.61,.36,1);
     overflow: hidden;
+  }
+  /* 记忆页：卡片操作按钮（悬停才浮现，克制的数据密集风） */
+  .ck-mem-actions { display: flex; gap: 6px; margin-top: 8px; opacity: 0; transition: opacity .15s; }
+  .ck-skill-item:hover .ck-mem-actions,
+  .ck-skill-item:focus-within .ck-mem-actions { opacity: 1; }
+  /* 记忆页：按日期分组 */
+  .ck-mem-group { margin-bottom: 10px; }
+  .ck-mem-group-head {
+    font-size: 12px; font-weight: 600; color: var(--ck-text-2);
+    padding: 6px 2px 4px; border-bottom: 1px solid var(--ck-border);
+    margin-bottom: 4px;
   }
   /* 技能卡片（无边�?+ 分割�?+ 悬停浅底�?*/
   .ck-skill-item {
@@ -1164,8 +1220,14 @@
           <button class="ck-ab-item" data-tab="snippets" title="提示词">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           </button>
+          <button class="ck-ab-item" data-tab="memory" title="长期记忆">
+            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 22h4"/></svg>
+          </button>
           <button class="ck-ab-item" data-tab="skills" title="技能">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+          </button>
+          <button class="ck-ab-item" data-tab="records" title="对话记录">
+            <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>
           </button>
           <button class="ck-ab-item" data-tab="plugins" title="插件">
             <svg class="ck-ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 11H19V7a2 2 0 0 0-2-2h-4V3.5a2.5 2.5 0 0 0-5 0V5H4a2 2 0 0 0-2 2v3.8h1.5a2.2 2.2 0 0 1 0 4.4H2V19a2 2 0 0 0 2 2h3.8v-1.5a2.2 2.2 0 0 1 4.4 0V21H18a2 2 0 0 0 2-2v-4h1.5a2.5 2.5 0 0 0 0-5z"/></svg>
@@ -1186,6 +1248,9 @@
           </button>
           <button class="ck-ab-item" data-tab="token" title="Token（词元）">
             <span class="ck-ab-text">元</span>
+          </button>
+          <button class="ck-ab-item" data-tab="schedule" title="定时任务">
+            <span class="ck-ab-text">定</span>
           </button>
           <div class="ck-ab-spacer"></div>
           <button class="ck-ab-item" data-tab="about" title="关于">
@@ -1266,6 +1331,41 @@
               <div class="ck-modal-foot">
                 <button class="ck-btn ck-btn-secondary" id="wg-modal-cancel">取消</button>
                 <button class="ck-btn ck-btn-primary" id="wg-modal-save">保存</button>
+              </div>
+            </div>
+          </div>
+          <!-- 技能编辑弹窗 -->
+          <div class="ck-modal-mask cuckoo-hidden" id="skill-modal">
+            <div class="ck-modal">
+              <span class="ck-modal-title" id="skill-modal-title">编辑技能</span>
+              <div class="ck-field">
+                <span class="ck-field-label">名称</span>
+                <input class="ck-input" id="skill-f-name" placeholder="英文 id，如 dev-expert" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">显示名（中文）</span>
+                <input class="ck-input" id="skill-f-display" placeholder="如：编程专家.Skill P8级编程助手" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">描述</span>
+                <input class="ck-input" id="skill-f-desc" placeholder="一句话说明用途" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">许可证</span>
+                <input class="ck-input" id="skill-f-license" placeholder="如：MIT" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">工具（空格分隔）</span>
+                <input class="ck-input" id="skill-f-tools" placeholder="如：Read Grep Glob Bash Edit Write" />
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">正文</span>
+                <textarea class="ck-textarea" id="skill-f-content" placeholder="技能正文（Markdown）" style="min-height:140px;"></textarea>
+              </div>
+              <div class="ck-modal-foot">
+                <button class="ck-btn ck-btn-text" id="skill-f-delete" style="color:#ff6b7a;margin-right:auto;">删除</button>
+                <button class="ck-btn ck-btn-secondary" id="skill-f-cancel">取消</button>
+                <button class="ck-btn ck-btn-primary" id="skill-f-save">保存</button>
               </div>
             </div>
           </div>
@@ -1357,6 +1457,27 @@
               </div>
             </div>
 
+            <!-- ===== 对话记录 ===== -->
+            <div class="ck-tab" data-panel="records">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">对话记录</span>
+                <button class="ck-icon-btn" id="rec-refresh" title="刷新">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                </button>
+              </div>
+              <p class="ck-about-tip">同一项目的所有对话自动汇总。点文件查看完整内容。</p>
+              <div class="ck-list" id="rec-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+              <div id="rec-viewer" style="display:none;">
+                <div class="ck-actions">
+                  <button class="ck-btn ck-btn-secondary" id="rec-back">← 返回列表</button>
+                  <span class="ck-set-group-title" id="rec-viewer-title" style="flex:1;"></span>
+                </div>
+                <div id="rec-content" class="ck-card" style="white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.6;max-height:70vh;overflow:auto;padding:10px;"></div>
+              </div>
+            </div>
+
             <!-- ===== 插件 ===== -->
             <div class="ck-tab" data-panel="plugins">
               <div class="ck-actions">
@@ -1402,9 +1523,13 @@
                   <span class="ck-token-hero-unit">tokens</span>
                 </div>
               </div>
+              <button class="ck-btn ck-btn-anim" id="tk-organize-memory">
+                <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 22h4"/></svg>
+                <span>整理长期记忆</span>
+              </button>
               <button class="ck-btn ck-btn-anim" id="tk-compact">
                 <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v4M8 7H4M8 7l-4-4"/><path d="M16 21v-4M16 17h4M16 17l4 4"/><path d="M4 14h16"/></svg>
-                <span>压缩上下文</span>
+                <span>压缩上下文（含整理记忆）</span>
               </button>
 
               <div class="ck-stat-list">
@@ -1428,7 +1553,7 @@
 
               <div class="ck-auto-block">
                 <div class="ck-auto-head">
-                  <span class="ck-stat-key">自动压缩</span>
+                  <span class="ck-stat-key">自动整理记忆+压缩</span>
                   <label class="ck-switch">
                     <input type="checkbox" id="tk-auto-enabled" />
                     <span class="ck-switch-track"></span>
@@ -1437,7 +1562,7 @@
                 <div class="ck-auto-body">
                   <span>超过</span>
                   <input type="number" id="tk-auto-threshold" value="80" min="1" />
-                  <span>万 tokens 时触发</span>
+                  <span>万 tokens 时触发（先整理记忆，再压缩）</span>
                 </div>
                 <button class="ck-btn ck-btn-anim" id="tk-auto-save">
                   <svg class="ck-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
@@ -1495,16 +1620,99 @@
               </div>
             </div>
 
-            <!-- ===== 技能 ===== -->
-            <div class="ck-tab" data-panel="skills">
+            <!-- ===== 长期记忆 ===== -->
+            <div class="ck-tab" data-panel="memory">
               <div class="ck-actions">
-                <span class="ck-set-group-title" style="flex:1;">技能</span>
-                <button class="ck-icon-btn" id="skill-refresh" title="刷新">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                <span class="ck-set-group-title" style="flex:1;">长期记忆</span>
+                <button class="ck-icon-btn" id="mem-export" title="导出 JSON">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
+                </button>
+                <button class="ck-icon-btn" id="mem-import" title="导入 JSON">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 8l5-5 5 5"/><path d="M12 3v12"/></svg>
                 </button>
               </div>
-              <div class="ck-list" id="skill-list">
+              <button class="ck-btn-sm ck-btn-primary" id="mem-organize-today" style="width:100%;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 0-4 12.7V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.3A7 7 0 0 0 12 2z"/><path d="M10 22h4"/></svg>
+                <span>整理当天记忆</span>
+              </button>
+              <div class="ck-seg" id="mem-filter-seg">
+                <button data-mem-filter="all" class="ck-seg-on">全部</button>
+                <button data-mem-filter="user">画像</button>
+                <button data-mem-filter="feedback">反馈</button>
+                <button data-mem-filter="topic">话题</button>
+                <button data-mem-filter="reference">资料</button>
+              </div>
+              <div class="ck-actions" style="justify-content:space-between;">
+                <div class="ck-seg" id="mem-group-seg">
+                  <button data-mem-group="date" class="ck-seg-on">按日期</button>
+                  <button data-mem-group="none">不分组</button>
+                </div>
+                <span class="ck-count" id="mem-count"></span>
+              </div>
+              <p class="ck-about-tip" style="margin:0;">AI 会在对话中<strong>自动保存</strong>关键信息（身份、偏好、决策等），下次对话按相关度自动注入。</p>
+              <div id="mem-edit" class="ck-card" style="display:none;">
+                <input type="hidden" id="mem-edit-id" value="" />
+                <div class="ck-set-field"><span class="ck-set-key">类型</span>
+                  <select class="ck-set-input" id="mem-edit-type">
+                    <option value="user">用户画像</option>
+                    <option value="feedback">行为反馈</option>
+                    <option value="topic">话题上下文</option>
+                    <option value="reference">参考资料</option>
+                  </select>
+                </div>
+                <div class="ck-set-field"><span class="ck-set-key">标题</span><input type="text" class="ck-set-input" id="mem-edit-name" placeholder="如：用户职业" /></div>
+                <div class="ck-set-field" style="flex-direction:column;align-items:stretch;"><span class="ck-set-key">内容</span><textarea class="ck-set-input" id="mem-edit-content" rows="3" style="resize:vertical;"></textarea></div>
+                <div class="ck-set-field"><span class="ck-set-key">标签</span><input type="text" class="ck-set-input" id="mem-edit-tags" placeholder="逗号分隔，如：前端,React" /></div>
+                <div class="ck-actions">
+                  <button class="ck-btn-sm ck-btn-primary" id="mem-edit-save">保存</button>
+                  <button class="ck-btn-sm" id="mem-edit-cancel">取消</button>
+                </div>
+              </div>
+              <div class="ck-list" id="mem-list">
                 <div class="ck-list-empty">加载中…</div>
+              </div>
+            </div>
+
+            <!-- ===== 技能 ===== -->
+            <style>
+              .skill-row { padding: 10px 12px; border-bottom: 1px solid var(--ck-border, #e6e6e6); }
+              .skill-row-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+              .skill-row-name { font-size: 13px; font-weight: 500; flex: 1; word-break: break-all; }
+              .skill-row-dot { width: 8px; height: 8px; border-radius: 50%; background: #c9c9c9; flex-shrink: 0; }
+              .skill-row-dot.on { background: #4ade80; }
+              .skill-row-actions { display: flex; gap: 8px; }
+              .skill-row-btn { padding: 4px 14px; border-radius: 4px; border: 1px solid #d0d0d0; background: #fff; color: #333; cursor: pointer; font-size: 12px; font-family: inherit; }
+              .skill-row-btn:hover { background: #f2f2f2; }
+              .skill-row-btn.primary { background: #4d6bfe; color: #fff; border-color: #4d6bfe; }
+              .skill-row-btn.primary:hover { background: #3a58f0; }
+            </style>
+            <div class="ck-tab" data-panel="skills">
+              <!-- 已安装视图 -->
+              <div id="skill-view-installed">
+                <div class="ck-actions">
+                  <span class="ck-set-group-title" style="flex:1;">技能</span>
+                  <button class="skill-row-btn" id="skill-goto-market" style="padding:5px 14px;">市场</button>
+                  <button class="ck-icon-btn" id="skill-new" title="新建技能">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+                  </button>
+                  <button class="ck-icon-btn" id="skill-refresh" title="刷新">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                  </button>
+                </div>
+                <div class="ck-list" id="skill-list">
+                  <div class="ck-list-empty">加载中…</div>
+                </div>
+              </div>
+              <!-- 市场视图 -->
+              <div id="skill-view-market" style="display:none;">
+                <div class="ck-actions">
+                  <button class="skill-row-btn" id="skill-back" style="padding:5px 12px;">← 返回</button>
+                  <input class="ck-input" id="skill-search-input" type="text" placeholder="搜索 SkillHub…" style="flex:1;" />
+                  <button class="skill-row-btn primary" id="skill-search-btn" style="padding:5px 14px;">搜索</button>
+                </div>
+                <div class="ck-list" id="skill-market-list">
+                  <div class="ck-list-empty">输入关键词搜索</div>
+                </div>
               </div>
             </div>
 
@@ -1673,15 +1881,15 @@
                   <textarea class="ck-set-textarea" id="st-retry-prompt" rows="3"></textarea>
                 </div>
                 <div class="ck-set-field">
-                  <span class="ck-set-key">AI 回复超时后重试（秒）</span>
+                  <span class="ck-set-key">AI 回复/工具循环超时（秒）</span>
                   <input type="number" class="ck-set-input" id="st-xhr-idle-timeout" min="0" step="1" />
                 </div>
                 <div class="ck-set-field">
-                  <span class="ck-set-key">超时重试提示词</span>
+                  <span class="ck-set-key">超时催继续提示词</span>
                   <input type="text" class="ck-set-input" id="st-watchdog-prompt" />
                 </div>
                 <div class="ck-set-field">
-                  <span class="ck-set-key">超时重试次数（负数=无限）</span>
+                  <span class="ck-set-key">超时催继续次数（负数=无限）</span>
                   <input type="number" class="ck-set-input" id="st-watchdog-count" step="1" />
                 </div>
               </div>
@@ -1728,6 +1936,28 @@
                 <button class="ck-icon-btn" id="st-refresh" title="刷新（重新读取当前设置）">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
                 </button>
+              </div>
+            </div>
+
+            <!-- ===== 定时任务 ===== -->
+            <div class="ck-tab" data-panel="schedule">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">定时任务</span>
+                <button class="ck-btn-sm ck-btn-primary" id="sched-add">＋ 新建</button>
+              </div>
+              <p class="ck-about-tip">到点后自动给<strong>当前活跃窗口</strong>的 AI 发送提示词（应用未运行时，下次启动补跑）。</p>
+              <div id="sched-edit" class="ck-card" style="display:none;">
+                <input type="hidden" id="sched-edit-idx" value="-1" />
+                <div class="ck-set-field"><span class="ck-set-key">名称</span><input type="text" class="ck-set-input" id="sched-edit-name" placeholder="如：每日待办" /></div>
+                <div class="ck-set-field"><span class="ck-set-key">时间</span><input type="text" class="ck-set-input" id="sched-edit-time" placeholder="09:00（HH:MM）" /></div>
+                <div class="ck-set-field" style="flex-direction:column;align-items:stretch;"><span class="ck-set-key">提示词</span><textarea class="ck-set-input" id="sched-edit-prompt" rows="3" style="resize:vertical;"></textarea></div>
+                <div class="ck-actions">
+                  <button class="ck-btn-sm ck-btn-primary" id="sched-edit-save">保存</button>
+                  <button class="ck-btn-sm" id="sched-edit-cancel">取消</button>
+                </div>
+              </div>
+              <div class="ck-list" id="sched-list">
+                <div class="ck-list-empty">加载中…</div>
               </div>
             </div>
 
@@ -3373,39 +3603,260 @@
 
   // src/ui/shell/scripts/pages/skills.ts
   init_shared();
+  var cachedInstalled = [];
+  var cachedMarket = [];
+  var editingId = null;
   async function loadSkills() {
+    showInstalledView();
+    await renderInstalledList();
+  }
+  function showInstalledView() {
+    const ins = document.getElementById("skill-view-installed");
+    const mkt = document.getElementById("skill-view-market");
+    if (ins) ins.style.display = "";
+    if (mkt) mkt.style.display = "none";
+  }
+  function showMarketView() {
+    const ins = document.getElementById("skill-view-installed");
+    const mkt = document.getElementById("skill-view-market");
+    if (ins) ins.style.display = "none";
+    if (mkt) mkt.style.display = "";
+    renderMarketList();
+  }
+  var tipEl = null;
+  function ensureTip() {
+    if (tipEl) return tipEl;
+    tipEl = document.createElement("div");
+    tipEl.style.cssText = "position:fixed;z-index:99999;max-width:300px;padding:8px 10px;background:#f5f5f5;border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.12);font-size:12px;line-height:1.5;color:#333;white-space:pre-wrap;pointer-events:none;display:none;";
+    document.body.appendChild(tipEl);
+    return tipEl;
+  }
+  function showTip(target, text) {
+    if (!text) return;
+    const t = ensureTip();
+    t.textContent = text;
+    t.style.display = "block";
+    const r = target.getBoundingClientRect();
+    let top = r.bottom + 6;
+    let left = r.left;
+    const maxLeft = window.innerWidth - t.offsetWidth - 12;
+    if (left > maxLeft) left = maxLeft;
+    if (left < 8) left = 8;
+    if (top + t.offsetHeight > window.innerHeight - 8) top = r.top - t.offsetHeight - 6;
+    t.style.top = top + "px";
+    t.style.left = left + "px";
+  }
+  function hideTip() {
+    if (tipEl) tipEl.style.display = "none";
+  }
+  async function renderInstalledList() {
     const listEl2 = document.getElementById("skill-list");
-    if (!listEl2 || !api.listSkills) return;
+    if (!listEl2 || !api.listAppSkills) return;
+    listEl2.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u4E2D\u2026</div>';
     try {
-      const r = await api.listSkills();
+      const r = await api.listAppSkills();
       const skills = r && r.success ? r.skills : [];
-      if (!skills || skills.length === 0) {
-        listEl2.innerHTML = '<div class="ck-list-empty">\u672A\u53D1\u73B0\u6280\u80FD<br>\uFF08.cuckoo/skills/ \u6216 ~/.cuckoo/skills/\uFF09</div>';
+      cachedInstalled = skills;
+      if (!skills.length) {
+        listEl2.innerHTML = '<div class="ck-list-empty">\u8FD8\u6CA1\u6709\u5B89\u88C5\u6280\u80FD<br>\u70B9\u4E0A\u65B9\u300C\u5E02\u573A\u300D\u641C\u7D22\u5B89\u88C5\uFF0C\u6216\u70B9 + \u65B0\u5EFA</div>';
         return;
       }
-      const skillCard = (s) => '<div class="ck-skill-item" data-name="' + escapeHtml(s.name) + '"><div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.name) + '</span></div><div class="ck-skill-desc">' + escapeHtml(s.description || "\uFF08\u65E0\u63CF\u8FF0\uFF09") + "</div></div>";
-      const userSkills = skills.filter((s) => s.source !== "project");
-      const projSkills = skills.filter((s) => s.source === "project");
-      let html = "";
-      if (userSkills.length) html += '<div class="ck-mcp-group-title">\u7528\u6237\u7EA7</div>' + userSkills.map(skillCard).join("");
-      if (projSkills.length) html += '<div class="ck-mcp-group-title">\u9879\u76EE\u7EA7</div>' + projSkills.map(skillCard).join("");
-      listEl2.innerHTML = html;
-      listEl2.querySelectorAll(".ck-skill-item").forEach((el) => {
-        el.addEventListener("click", async () => {
+      listEl2.innerHTML = skills.map((s) => {
+        const name = s.displayName || s.name || s.id;
+        return '<div class="skill-row" data-skill="' + escapeAttr(s.id) + '"><div class="skill-row-head"><span class="skill-row-name" data-tip="' + escapeAttr(s.description || "") + '">' + escapeHtml(name) + '</span><span class="skill-row-dot' + (s.enabled ? " on" : "") + '" title="' + (s.enabled ? "\u5DF2\u542F\u7528" : "\u5DF2\u7981\u7528") + '"></span></div><div class="skill-row-actions"><button class="skill-row-btn primary" data-send="' + escapeAttr(s.id) + '">\u53D1\u9001</button><button class="skill-row-btn" data-toggle="' + escapeAttr(s.id) + '">' + (s.enabled ? "\u7981\u7528" : "\u542F\u7528") + '</button><button class="skill-row-btn" data-edit="' + escapeAttr(s.id) + '">\u7F16\u8F91</button></div></div>';
+      }).join("");
+      listEl2.querySelectorAll("[data-tip]").forEach((el) => {
+        el.addEventListener("mouseenter", () => showTip(el, el.dataset.tip));
+        el.addEventListener("mouseleave", hideTip);
+      });
+      listEl2.querySelectorAll("[data-send]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.send;
+          const s = cachedInstalled.filter((x) => x.id === id)[0];
+          if (!s) return;
+          const name = s.displayName || s.name || s.id;
           if (api.appendSnippet) {
             try {
-              await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el.dataset.name + " \u6280\u80FD");
+              await api.appendSnippet("\u8BF7\u4F7F\u7528 " + name + " \u6280\u80FD");
             } catch (_) {
             }
           }
-          addRecent("skill", el.dataset.name);
+        });
+      });
+      listEl2.querySelectorAll("[data-toggle]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.toggle;
+          const s = cachedInstalled.filter((x) => x.id === id)[0];
+          if (!s || !api.setSkillEnabled) return;
+          const r2 = await api.setSkillEnabled(id, !s.enabled);
+          if (!r2 || !r2.success) {
+            await ckAlert(r2 && r2.error || "\u64CD\u4F5C\u5931\u8D25");
+            return;
+          }
+          await renderInstalledList();
+        });
+      });
+      listEl2.querySelectorAll("[data-edit]").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.edit;
+          const s = cachedInstalled.filter((x) => x.id === id)[0];
+          if (s) openSkillModal(s);
         });
       });
     } catch (_) {
       listEl2.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u5931\u8D25</div>';
     }
   }
-  document.getElementById("skill-refresh")?.addEventListener("click", loadSkills);
+  function openSkillModal(s) {
+    editingId = s.id;
+    const mask = document.getElementById("skill-modal");
+    if (!mask) return;
+    const titleEl = document.getElementById("skill-modal-title");
+    if (titleEl) titleEl.textContent = "\u7F16\u8F91\u6280\u80FD";
+    document.getElementById("skill-f-name").value = s.name || "";
+    document.getElementById("skill-f-display").value = s.displayName || "";
+    document.getElementById("skill-f-desc").value = s.description || "";
+    document.getElementById("skill-f-license").value = s.license || "";
+    document.getElementById("skill-f-tools").value = Array.isArray(s.allowedTools) ? s.allowedTools.join(" ") : "";
+    document.getElementById("skill-f-content").value = s.content || "";
+    const delBtn = document.getElementById("skill-f-delete");
+    if (delBtn) delBtn.style.display = s.id ? "" : "none";
+    mask.classList.remove("cuckoo-hidden");
+  }
+  function closeSkillModal() {
+    const mask = document.getElementById("skill-modal");
+    if (mask) mask.classList.add("cuckoo-hidden");
+    editingId = null;
+  }
+  async function saveSkillModal() {
+    const name = String(document.getElementById("skill-f-name").value || "").trim();
+    const displayName = String(document.getElementById("skill-f-display").value || "").trim();
+    const description = String(document.getElementById("skill-f-desc").value || "").trim();
+    const license = String(document.getElementById("skill-f-license").value || "").trim();
+    const toolsRaw = String(document.getElementById("skill-f-tools").value || "").trim();
+    const content = String(document.getElementById("skill-f-content").value || "").trim();
+    if (!name) {
+      await ckAlert("\u540D\u79F0\u4E0D\u80FD\u4E3A\u7A7A");
+      return;
+    }
+    if (!description) {
+      await ckAlert("\u63CF\u8FF0\u4E0D\u80FD\u4E3A\u7A7A");
+      return;
+    }
+    if (!content) {
+      await ckAlert("\u6B63\u6587\u4E0D\u80FD\u4E3A\u7A7A");
+      return;
+    }
+    const allowedTools = toolsRaw ? toolsRaw.split(/\s+/).filter(Boolean) : [];
+    if (!api.upsertSkill) return;
+    const r = await api.upsertSkill({ id: editingId, name, displayName, description, license, allowedTools, content });
+    if (!r || !r.success) {
+      await ckAlert(r && r.error || "\u4FDD\u5B58\u5931\u8D25");
+      return;
+    }
+    closeSkillModal();
+    await renderInstalledList();
+  }
+  async function deleteSkillModal() {
+    if (!editingId) return;
+    if (!await ckConfirm("\u786E\u5B9A\u5220\u9664\u6280\u80FD\u300C" + editingId + "\u300D\uFF1F\n\n\u6280\u80FD\u76EE\u5F55\u4E0E\u542F\u7528\u72B6\u6001\u90FD\u4F1A\u88AB\u5220\u9664\u3002", "\u5220\u9664\u6280\u80FD")) return;
+    if (!api.removeSkill) return;
+    const r = await api.removeSkill(editingId);
+    if (!r || !r.success) {
+      await ckAlert(r && r.error || "\u5220\u9664\u5931\u8D25");
+      return;
+    }
+    closeSkillModal();
+    await renderInstalledList();
+  }
+  function renderMarketList() {
+    const listEl2 = document.getElementById("skill-market-list");
+    if (!listEl2) return;
+    if (!cachedMarket.length) {
+      listEl2.innerHTML = '<div class="ck-list-empty">\u8F93\u5165\u5173\u952E\u8BCD\u641C\u7D22</div>';
+      return;
+    }
+    listEl2.innerHTML = cachedMarket.map((s) => {
+      const name = s.displayName || s.name || s.slug;
+      return '<div class="skill-row"><div class="skill-row-head" style="margin-bottom:0;"><span class="skill-row-name" data-tip="' + escapeAttr(s.summary || "") + '">' + escapeHtml(name) + '</span><button class="skill-row-btn primary" data-install="' + escapeAttr(s.namespace + "|" + s.slug + "|" + name) + '">\u5B89\u88C5</button></div></div>';
+    }).join("");
+    listEl2.querySelectorAll("[data-tip]").forEach((el) => {
+      el.addEventListener("mouseenter", () => showTip(el, el.dataset.tip));
+      el.addEventListener("mouseleave", hideTip);
+    });
+    listEl2.querySelectorAll("[data-install]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const parts = String(btn.dataset.install).split("|");
+        await installFromMarket(parts[0], parts[1], parts[2]);
+      });
+    });
+  }
+  async function installFromMarket(namespace, slug, displayName) {
+    const ok = await ckConfirm("\u786E\u5B9A\u5B89\u88C5\u6280\u80FD\u300C" + displayName + "\u300D\uFF1F\n\n\u4ECE SkillHub \u4E0B\u8F7D\u5230\u672C\u5730\u6280\u80FD\u76EE\u5F55\u3002", "\u5B89\u88C5\u6280\u80FD");
+    if (!ok) return;
+    if (!api.installSkill) return;
+    const listEl2 = document.getElementById("skill-market-list");
+    if (listEl2) listEl2.innerHTML = '<div class="ck-list-empty">\u5B89\u88C5\u4E2D\u2026</div>';
+    try {
+      const r = await api.installSkill(slug, namespace, displayName);
+      if (!r || !r.success) {
+        await ckAlert(r && r.error || "\u5B89\u88C5\u5931\u8D25", "\u5B89\u88C5\u5931\u8D25");
+        renderMarketList();
+        return;
+      }
+      await ckAlert("\u5DF2\u5B89\u88C5\uFF1A" + displayName, "\u5B89\u88C5\u5B8C\u6210");
+      renderMarketList();
+    } catch (err) {
+      await ckAlert("\u5B89\u88C5\u5931\u8D25: " + (err && err.message), "\u5B89\u88C5\u5931\u8D25");
+      renderMarketList();
+    }
+  }
+  async function doSearch() {
+    const input2 = document.getElementById("skill-search-input");
+    const listEl2 = document.getElementById("skill-market-list");
+    const keyword = input2 ? String(input2.value || "").trim() : "";
+    if (!listEl2 || !api.searchSkills) return;
+    listEl2.innerHTML = '<div class="ck-list-empty">\u641C\u7D22\u4E2D\u2026</div>';
+    try {
+      const r = await api.searchSkills(keyword, 1, 50);
+      if (!r || !r.success) {
+        cachedMarket = [];
+        listEl2.innerHTML = '<div class="ck-list-empty">' + escapeHtml(r && r.error || "\u641C\u7D22\u5931\u8D25") + "</div>";
+        return;
+      }
+      cachedMarket = r.skills || [];
+      renderMarketList();
+    } catch (err) {
+      cachedMarket = [];
+      listEl2.innerHTML = '<div class="ck-list-empty">\u641C\u7D22\u5931\u8D25: ' + escapeHtml(err && err.message) + "</div>";
+    }
+  }
+  function createSkill() {
+    openSkillModal({ id: "", name: "", displayName: "", description: "", license: "", allowedTools: [], content: "" });
+    const titleEl = document.getElementById("skill-modal-title");
+    if (titleEl) titleEl.textContent = "\u65B0\u5EFA\u6280\u80FD";
+    const delBtn = document.getElementById("skill-f-delete");
+    if (delBtn) delBtn.style.display = "none";
+  }
+  document.getElementById("skill-refresh")?.addEventListener("click", () => {
+    loadSkills();
+  });
+  document.getElementById("skill-new")?.addEventListener("click", createSkill);
+  document.getElementById("skill-goto-market")?.addEventListener("click", showMarketView);
+  document.getElementById("skill-back")?.addEventListener("click", showInstalledView);
+  document.getElementById("skill-search-btn")?.addEventListener("click", doSearch);
+  document.getElementById("skill-search-input")?.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      doSearch();
+    }
+  });
+  document.getElementById("skill-f-save")?.addEventListener("click", saveSkillModal);
+  document.getElementById("skill-f-cancel")?.addEventListener("click", closeSkillModal);
+  document.getElementById("skill-f-delete")?.addEventListener("click", deleteSkillModal);
+  document.getElementById("skill-modal")?.addEventListener("click", (e) => {
+    if (e.target && e.target.id === "skill-modal") closeSkillModal();
+  });
 
   // src/ui/shell/scripts/pages/agents.ts
   init_shared();
@@ -3667,9 +4118,18 @@
   var tkCompactBtn = document.getElementById("tk-compact");
   if (tkCompactBtn) tkCompactBtn.addEventListener("click", async () => {
     if (!api.triggerCompact) return;
-    if (!await ckConfirm("\u786E\u5B9A\u538B\u7F29\u4E0A\u4E0B\u6587\uFF1F\u5C06\u751F\u6210\u6458\u8981\u5E76\u5728\u65B0\u4F1A\u8BDD\u7EE7\u7EED\u3002", "\u538B\u7F29\u4E0A\u4E0B\u6587")) return;
+    if (!await ckConfirm("\u786E\u5B9A\u538B\u7F29\u4E0A\u4E0B\u6587\uFF1F\n\n\u4F1A\u5148\u6574\u7406\u957F\u671F\u8BB0\u5FC6\uFF0C\u518D\u751F\u6210\u6458\u8981\u5E76\u5728\u65B0\u4F1A\u8BDD\u7EE7\u7EED\u3002", "\u538B\u7F29\u4E0A\u4E0B\u6587")) return;
     try {
       await api.triggerCompact();
+    } catch (_) {
+    }
+  });
+  var tkOrganizeBtn = document.getElementById("tk-organize-memory");
+  if (tkOrganizeBtn) tkOrganizeBtn.addEventListener("click", async () => {
+    if (!api.triggerOrganizeMemory) return;
+    if (!await ckConfirm("\u786E\u5B9A\u6574\u7406\u957F\u671F\u8BB0\u5FC6\uFF1F\n\nAI \u4F1A\u5206\u6790\u5F53\u524D\u5BF9\u8BDD\uFF0C\u63D0\u70BC\u8981\u70B9\u4FDD\u5B58\u4E3A\u957F\u671F\u8BB0\u5FC6\uFF08\u4E0D\u538B\u7F29\u5BF9\u8BDD\uFF09\u3002", "\u6574\u7406\u957F\u671F\u8BB0\u5FC6")) return;
+    try {
+      await api.triggerOrganizeMemory();
     } catch (_) {
     }
   });
@@ -4345,6 +4805,65 @@
     }
   });
 
+  // src/ui/shell/scripts/pages/records.ts
+  init_shared();
+  async function loadRecords() {
+    showListView();
+    const listEl2 = document.getElementById("rec-list");
+    if (!listEl2 || !api.listConversationRecords) return;
+    listEl2.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u4E2D\u2026</div>';
+    try {
+      const r = await api.listConversationRecords();
+      const items = r && r.success && Array.isArray(r.items) ? r.items : [];
+      if (!items.length) {
+        listEl2.innerHTML = '<div class="ck-list-empty">\u6682\u65E0\u5BF9\u8BDD\u8BB0\u5F55<br>\u5728 DeepSeek \u91CC\u5BF9\u8BDD\u540E\u81EA\u52A8\u751F\u6210</div>';
+        return;
+      }
+      listEl2.innerHTML = items.map((it) => {
+        const kb = Math.round((it.size || 0) / 1024);
+        const time = it.mtime ? new Date(it.mtime).toLocaleString("zh-CN") : "";
+        return '<div class="ck-conv-item" data-path="' + escapeAttr(it.path) + '" data-label="' + escapeAttr(it.file) + '"><span class="ck-conv-title">' + escapeHtml(it.file) + '</span><span style="font-size:11px;color:var(--ck-text-dim);">' + escapeHtml(it.label) + " \xB7 " + kb + "KB \xB7 " + escapeHtml(time) + "</span></div>";
+      }).join("");
+      listEl2.querySelectorAll(".ck-conv-item").forEach((el) => {
+        el.addEventListener("click", () => openRecord(el.getAttribute("data-path") || "", el.getAttribute("data-label") || ""));
+      });
+    } catch (_) {
+      listEl2.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u5931\u8D25</div>';
+    }
+  }
+  async function openRecord(path, label) {
+    const viewer = document.getElementById("rec-viewer");
+    const listEl2 = document.getElementById("rec-list");
+    const titleEl = document.getElementById("rec-viewer-title");
+    const contentEl = document.getElementById("rec-content");
+    if (!viewer || !contentEl) return;
+    if (titleEl) titleEl.textContent = label || "";
+    contentEl.textContent = "\u52A0\u8F7D\u4E2D\u2026";
+    if (listEl2) listEl2.style.display = "none";
+    viewer.style.display = "";
+    try {
+      const r = await api.readConversationRecord(path);
+      if (!r || !r.success) {
+        contentEl.textContent = "\u8BFB\u53D6\u5931\u8D25: " + (r && r.error || "\u672A\u77E5");
+        return;
+      }
+      contentEl.textContent = r.content || "(\u7A7A)";
+      if (r.truncated) contentEl.textContent = "\uFF08\u6587\u4EF6\u8F83\u5927\uFF0C\u4EC5\u663E\u793A\u672B\u5C3E\u90E8\u5206\uFF09\n\n" + contentEl.textContent;
+    } catch (err) {
+      contentEl.textContent = "\u8BFB\u53D6\u5931\u8D25: " + (err && err.message);
+    }
+  }
+  function showListView() {
+    const viewer = document.getElementById("rec-viewer");
+    const listEl2 = document.getElementById("rec-list");
+    if (viewer) viewer.style.display = "none";
+    if (listEl2) listEl2.style.display = "";
+  }
+  document.getElementById("rec-refresh")?.addEventListener("click", () => {
+    loadRecords();
+  });
+  document.getElementById("rec-back")?.addEventListener("click", showListView);
+
   // src/ui/shell/scripts/pages/plugins.ts
   init_shared();
   var pluginMarketItems = [];
@@ -4761,6 +5280,303 @@
     if (r && !r.success) await ckAlert(r.error || "\u6253\u5F00\u76EE\u5F55\u5931\u8D25");
   });
 
+  // src/ui/shell/scripts/pages/schedule.ts
+  init_shared();
+  var tasks = [];
+  async function loadScheduledTasks() {
+    const listEl2 = document.getElementById("sched-list");
+    if (!listEl2 || !api.listScheduledTasks) return;
+    try {
+      const r = await api.listScheduledTasks();
+      tasks = r && r.success && Array.isArray(r.tasks) ? r.tasks : [];
+      render();
+    } catch (_) {
+      listEl2.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u5931\u8D25</div>';
+    }
+  }
+  function render() {
+    const listEl2 = document.getElementById("sched-list");
+    if (!tasks.length) {
+      listEl2.innerHTML = '<div class="ck-list-empty">\u6682\u65E0\u5B9A\u65F6\u4EFB\u52A1<br>\u70B9\u300C\uFF0B \u65B0\u5EFA\u300D\u6DFB\u52A0</div>';
+      return;
+    }
+    listEl2.innerHTML = tasks.map((t, i) => {
+      const dot = t.enabled ? "var(--ck-green)" : "var(--ck-text-dim)";
+      return '<div class="ck-skill-item"><div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(t.name || "\u672A\u547D\u540D") + '</span><span style="font-size:12px;color:var(--ck-text-2);">' + escapeHtml(t.time || "") + '</span><span style="width:8px;height:8px;border-radius:50%;background:' + dot + ';flex-shrink:0;"></span></div><div style="font-size:12px;color:var(--ck-text-dim);margin:4px 0;word-break:break-all;">' + escapeHtml((t.prompt || "").slice(0, 80)) + '</div><div style="margin-top:6px;display:flex;gap:8px;"><button class="ck-btn-sm" data-sact="edit" data-idx="' + i + '">\u7F16\u8F91</button><button class="ck-btn-sm" data-sact="toggle" data-idx="' + i + '">' + (t.enabled ? "\u7981\u7528" : "\u542F\u7528") + '</button><button class="ck-btn-sm" data-sact="del" data-idx="' + i + '" style="color:var(--ck-danger);">\u5220\u9664</button></div></div>';
+    }).join("");
+    listEl2.querySelectorAll("button[data-sact]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const i = parseInt(btn.dataset.idx, 10);
+        const act = btn.dataset.sact;
+        if (act === "toggle") {
+          tasks[i].enabled = !tasks[i].enabled;
+          await save();
+          loadScheduledTasks();
+        } else if (act === "del") {
+          if (await ckConfirm("\u5220\u9664\u5B9A\u65F6\u4EFB\u52A1\u300C" + (tasks[i].name || "") + "\u300D\uFF1F")) {
+            tasks.splice(i, 1);
+            await save();
+            loadScheduledTasks();
+          }
+        } else if (act === "edit") openEdit(i);
+      });
+    });
+  }
+  async function save() {
+    try {
+      await api.saveScheduledTasks(tasks);
+    } catch (_) {
+    }
+  }
+  function openEdit(idx) {
+    const t = idx >= 0 ? tasks[idx] : { id: "task_" + Date.now(), name: "", time: "09:00", enabled: true, prompt: "", lastRun: "" };
+    document.getElementById("sched-edit-idx").value = String(idx);
+    document.getElementById("sched-edit-name").value = t.name || "";
+    document.getElementById("sched-edit-time").value = t.time || "09:00";
+    document.getElementById("sched-edit-prompt").value = t.prompt || "";
+    document.getElementById("sched-edit").style.display = "block";
+  }
+  function closeEdit() {
+    document.getElementById("sched-edit").style.display = "none";
+  }
+  document.getElementById("sched-add")?.addEventListener("click", () => openEdit(-1));
+  document.getElementById("sched-edit-cancel")?.addEventListener("click", closeEdit);
+  document.getElementById("sched-edit-save")?.addEventListener("click", async () => {
+    const val = (id) => (document.getElementById(id).value || "").trim();
+    const idx = parseInt(val("sched-edit-idx"), 10);
+    const name = val("sched-edit-name");
+    const time = val("sched-edit-time");
+    const pr = val("sched-edit-prompt");
+    if (!name || !/^\d{1,2}:\d{2}$/.test(time) || !pr) {
+      alert("\u8BF7\u586B\u540D\u79F0\u3001\u6B63\u786E\u65F6\u95F4(HH:MM)\u3001\u63D0\u793A\u8BCD");
+      return;
+    }
+    const t = idx >= 0 ? tasks[idx] : { id: "task_" + Date.now(), lastRun: "" };
+    t.name = name;
+    t.time = time;
+    t.prompt = pr;
+    t.enabled = true;
+    if (idx >= 0) tasks[idx] = t;
+    else tasks.push(t);
+    await save();
+    closeEdit();
+    loadScheduledTasks();
+  });
+
+  // src/ui/shell/scripts/pages/memory.ts
+  init_shared();
+  var memories = [];
+  var filter = "all";
+  var groupByDate = true;
+  function dateGroupLabel(ts) {
+    const d = new Date(ts);
+    const now = /* @__PURE__ */ new Date();
+    const day0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const diffDays = Math.round((today0 - day0) / 864e5);
+    const md = d.getMonth() + 1 + "\u6708" + d.getDate() + "\u65E5";
+    if (diffDays === 0) return "\u4ECA\u5929 \xB7 " + md;
+    if (diffDays === 1) return "\u6628\u5929 \xB7 " + md;
+    if (diffDays < 7) return diffDays + " \u5929\u524D \xB7 " + md;
+    return d.getFullYear() + "\u5E74" + md;
+  }
+  function renderItem2(m) {
+    const pin = m.pinned ? "\u{1F4CC} " : "";
+    const tags = (m.tags || []).map((t) => "#" + escapeHtml(t)).join(" ");
+    return '<div class="ck-skill-item"><div class="ck-skill-top"><span class="ck-skill-name">' + pin + escapeHtml(m.name || "\u672A\u547D\u540D") + '</span><span style="font-size:11px;color:var(--ck-text-2);">' + (TYPE_LABEL[m.type] || m.type) + " \xB7 \u7528" + (m.accessCount || 0) + '\u6B21</span></div><div style="font-size:12px;color:var(--ck-text-dim);margin:4px 0;word-break:break-all;">' + escapeHtml((m.content || "").slice(0, 120)) + "</div>" + (tags ? '<div style="font-size:11px;color:var(--ck-accent);margin:2px 0;">' + tags + "</div>" : "") + '<div class="ck-mem-actions"><button class="ck-btn-sm" data-mact="edit" data-id="' + m.id + '">\u7F16\u8F91</button><button class="ck-btn-sm" data-mact="pin" data-id="' + m.id + '">' + (m.pinned ? "\u53D6\u6D88\u7F6E\u9876" : "\u7F6E\u9876") + '</button><button class="ck-btn-sm ck-btn-danger" data-mact="del" data-id="' + m.id + '">\u5220\u9664</button></div></div>';
+  }
+  function bindItemEvents(listEl2) {
+    listEl2.querySelectorAll("button[data-mact]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = Number(btn.dataset.id);
+        const act = btn.dataset.mact;
+        const m = memories.find((x) => x.id === id);
+        if (!m) return;
+        if (act === "pin") {
+          m.pinned = !m.pinned;
+          await api.updateMemory(m);
+          loadMemories();
+        } else if (act === "del") {
+          if (await ckConfirm("\u5220\u9664\u8BB0\u5FC6\u300C" + (m.name || "") + "\u300D\uFF1F")) {
+            await api.deleteMemory(id);
+            loadMemories();
+          }
+        } else if (act === "edit") openEdit2(m);
+      });
+    });
+  }
+  var TYPE_LABEL = {
+    user: "\u753B\u50CF",
+    feedback: "\u53CD\u9988",
+    topic: "\u8BDD\u9898",
+    reference: "\u8D44\u6599"
+  };
+  async function loadMemories() {
+    const listEl2 = document.getElementById("mem-list");
+    if (!listEl2 || !api.listMemories) return;
+    try {
+      const r = await api.listMemories();
+      memories = r && r.success && Array.isArray(r.memories) ? r.memories : [];
+      render2();
+    } catch (_) {
+      listEl2.innerHTML = '<div class="ck-list-empty">\u52A0\u8F7D\u5931\u8D25</div>';
+    }
+  }
+  function render2() {
+    const listEl2 = document.getElementById("mem-list");
+    const shown = filter === "all" ? memories : memories.filter((m) => m.type === filter);
+    const countEl = document.getElementById("mem-count");
+    if (countEl) countEl.textContent = shown.length ? shown.length + " \u6761" : "";
+    document.querySelectorAll("#mem-filter-seg > button").forEach((b) => {
+      b.classList.toggle("ck-seg-on", b.dataset.memFilter === filter);
+    });
+    document.querySelectorAll("#mem-group-seg > button").forEach((b) => {
+      const on = b.dataset.memGroup === "date" === groupByDate;
+      b.classList.toggle("ck-seg-on", on);
+    });
+    if (!shown.length) {
+      listEl2.innerHTML = '<div class="ck-list-empty">\u6682\u65E0\u8BB0\u5FC6<br>AI \u4F1A\u5728\u5BF9\u8BDD\u4E2D\u81EA\u52A8\u4FDD\u5B58</div>';
+      return;
+    }
+    const sorted = [...shown].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.updatedAt - a.updatedAt);
+    if (!groupByDate) {
+      listEl2.innerHTML = sorted.map(renderItem2).join("");
+      bindItemEvents(listEl2);
+      return;
+    }
+    const groups = [];
+    const map = /* @__PURE__ */ new Map();
+    const now = /* @__PURE__ */ new Date();
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    for (const m of sorted) {
+      const key = dateGroupLabel(m.createdAt || m.updatedAt || 0);
+      const d = new Date(m.createdAt || m.updatedAt || 0);
+      const day0 = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+      const order = -Math.round((today0 - day0) / 864e5);
+      let g = map.get(key);
+      if (!g) {
+        g = { key, order, items: [] };
+        map.set(key, g);
+        groups.push(g);
+      }
+      g.items.push(m);
+    }
+    groups.sort((a, b) => b.order - a.order);
+    listEl2.innerHTML = groups.map((g) => {
+      return '<div class="ck-mem-group"><div class="ck-mem-group-head">' + escapeHtml(g.key) + ' <span style="color:var(--ck-text-2);font-weight:normal;">\uFF08' + g.items.length + " \u6761\uFF09</span></div>" + g.items.map(renderItem2).join("") + "</div>";
+    }).join("");
+    bindItemEvents(listEl2);
+  }
+  function openEdit2(m) {
+    document.getElementById("mem-edit-id").value = m ? String(m.id) : "";
+    document.getElementById("mem-edit-type").value = m ? m.type : "user";
+    document.getElementById("mem-edit-name").value = m ? m.name || "" : "";
+    document.getElementById("mem-edit-content").value = m ? m.content || "" : "";
+    document.getElementById("mem-edit-tags").value = m && m.tags ? m.tags.join(",") : "";
+    document.getElementById("mem-edit").style.display = "block";
+  }
+  function closeEdit2() {
+    document.getElementById("mem-edit").style.display = "none";
+  }
+  document.querySelectorAll("[data-mem-filter]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      filter = btn.dataset.memFilter;
+      render2();
+    });
+  });
+  document.querySelectorAll("[data-mem-group]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      groupByDate = btn.dataset.memGroup === "date";
+      render2();
+    });
+  });
+  document.getElementById("mem-organize-today")?.addEventListener("click", async () => {
+    if (!api.triggerOrganizeTodayMemory) {
+      await ckAlert("\u5F53\u524D\u7248\u672C\u4E0D\u652F\u6301");
+      return;
+    }
+    if (!await ckConfirm("\u786E\u5B9A\u6574\u7406\u3010\u4ECA\u5929\u3011\u7684\u8BB0\u5FC6\uFF1F\n\nAI \u4F1A\u5206\u6790\u4ECA\u5929\u5BF9\u8BDD\uFF0C\u63D0\u70BC\u8981\u70B9\u4FDD\u5B58\u4E3A\u957F\u671F\u8BB0\u5FC6\u3002", "\u6574\u7406\u5F53\u5929\u8BB0\u5FC6")) return;
+    try {
+      await api.triggerOrganizeTodayMemory();
+      await ckAlert("\u5DF2\u53D1\u9001\u6574\u7406\u6307\u4EE4\uFF0C\u7A0D\u540E\u5237\u65B0\u67E5\u770B");
+    } catch (e) {
+      await ckAlert("\u5931\u8D25: " + (e.message || e));
+    }
+  });
+  document.getElementById("mem-edit-cancel")?.addEventListener("click", closeEdit2);
+  document.getElementById("mem-edit-save")?.addEventListener("click", async () => {
+    const val = (id2) => (document.getElementById(id2).value || "").trim();
+    const id = val("mem-edit-id");
+    const type = document.getElementById("mem-edit-type").value;
+    const name = val("mem-edit-name");
+    const content = val("mem-edit-content");
+    const tags = val("mem-edit-tags").split(",").map((s) => s.trim()).filter(Boolean);
+    if (!name || !content) {
+      await ckAlert("\u6807\u9898\u3001\u5185\u5BB9\u4E0D\u80FD\u4E3A\u7A7A");
+      return;
+    }
+    if (id) {
+      const m = memories.find((x) => x.id === Number(id));
+      if (m) {
+        Object.assign(m, { type, name, content, tags });
+        await api.updateMemory(m);
+      }
+    } else {
+      await api.saveMemory({ type, name, content, tags });
+    }
+    closeEdit2();
+    loadMemories();
+  });
+  document.getElementById("mem-export")?.addEventListener("click", async () => {
+    const r = await api.exportMemories();
+    if (!r || !r.success) {
+      await ckAlert("\u5BFC\u51FA\u5931\u8D25");
+      return;
+    }
+    const blob = new Blob([JSON.stringify(r.memories, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "cuckoo-memories.json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1e3);
+  });
+  document.getElementById("mem-import")?.addEventListener("click", () => {
+    const input2 = document.createElement("input");
+    input2.type = "file";
+    input2.accept = ".json";
+    input2.onchange = async () => {
+      const file = input2.files && input2.files[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const arr = JSON.parse(text);
+        if (!Array.isArray(arr)) {
+          await ckAlert("JSON \u683C\u5F0F\u9519\u8BEF\uFF08\u5E94\u4E3A\u6570\u7EC4\uFF09");
+          return;
+        }
+        const res = await api.importMemories(arr);
+        if (res && res.success) {
+          await ckAlert("\u5DF2\u5BFC\u5165 " + res.count + " \u6761\u8BB0\u5FC6");
+          loadMemories();
+        } else await ckAlert("\u5BFC\u5165\u5931\u8D25: " + (res && res.error || "\u672A\u77E5"));
+      } catch (e) {
+        await ckAlert("\u89E3\u6790\u5931\u8D25: " + e.message);
+      }
+    };
+    input2.click();
+  });
+  if (api.onMemoriesChanged) {
+    api.onMemoriesChanged(() => {
+      try {
+        loadMemories();
+      } catch (_) {
+      }
+    });
+  }
+
   // src/ui/shell/scripts/plugin-shell.ts
   init_shared();
   var mountedStatus = /* @__PURE__ */ new Set();
@@ -5052,7 +5868,10 @@
   registerTab("windows", renderWindowList);
   registerTab("settings", loadSettings);
   registerTab("conversations", loadConversations);
+  registerTab("records", loadRecords);
   registerTab("plugins", loadPlugins);
+  registerTab("schedule", loadScheduledTasks);
+  registerTab("memory", loadMemories);
   try {
     loadWorkspaces();
   } catch (_) {

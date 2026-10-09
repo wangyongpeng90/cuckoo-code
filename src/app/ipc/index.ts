@@ -17,6 +17,10 @@ import { registerPluginIpc } from './plugin.js';
 import { registerWebServerIpc } from './webserver.js';
 import { registerThemeIpc } from './theme.js';
 import { registerWindowGroupsIpc, onSwitchShareResult } from './window-groups.js';
+import { registerSchedulerIpc } from './scheduler.js';
+import { registerMemoryIpc } from './memory.js';
+import { registerConversationIpc } from './conversation.js';
+import { registerPluginFsIpc } from './plugin-fs.js';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -40,6 +44,10 @@ function registerIpcHandlers(): void {
   registerWebServerIpc();
   registerThemeIpc();
   registerWindowGroupsIpc();
+  registerSchedulerIpc();
+  registerMemoryIpc();
+  registerConversationIpc();
+  registerPluginFsIpc();
 }
 
 export { registerIpcHandlers };

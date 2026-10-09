@@ -7,7 +7,7 @@ import { state } from './state.js';
 import { hideOverlay, showOverlay, renderHistory, commandHistory, showToast, hideFirstTimeDialog } from './panel.js';
 import { handleInitProject, renderSessions } from './session-list.js';
 import { sendToChat } from './chat-input.js';
-import { runCompaction, checkPendingCompact, checkPendingInit } from '../session/compaction.js';
+import { runCompaction, checkPendingCompact, checkPendingInit, runOrganizeMemory, runOrganizeTodayMemory } from '../session/compaction.js';
 import { renderWindowList, openWindowManager, closeWindowManager, handleGenerateDoc } from './panels/window-manager.js';
 import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
 import { openSettings, closeSettings, resetSettings, saveSettings } from './panels/settings.js';
@@ -367,7 +367,7 @@ function checkAutoCompact() {
   // 触发
   autoCompactTriggering = true;
   console.log('[Cuckoo Compact] 自动触发：当前 ' + server.accumulatedTokens + ' >= 阈值 ' + thresholdTokens);
-  showToast('Token 超阈值（' + autoCompactThresholdWan + '万），自动压缩中...', 4000);
+  showToast('Token 超阈值（' + autoCompactThresholdWan + '万），自动整理记忆并压缩中...', 4000);
   runCompaction(state.currentProjectDir || undefined).finally(() => {
     // 压缩会跳转页面；若未跳转（失败），重置标志允许下次重试
     autoCompactTriggering = false;
@@ -650,4 +650,18 @@ function triggerCompaction(): void {
   });
 }
 
-export { bindEvents, wireEvents, refreshTokenForCurrentSession, setIsSubagentWindow, getAutoCompactConfig, applyAutoCompactConfig, triggerCompaction };
+/** 手动触发"整理长期记忆"（不压缩） */
+function triggerOrganizeMemory(): void {
+  runOrganizeMemory().catch((e: any) => {
+    console.error('[Cuckoo Code] 整理记忆失败:', e && e.message);
+  });
+}
+
+/** 手动触发"整理今天的记忆"（不压缩） */
+function triggerOrganizeTodayMemory(): void {
+  runOrganizeTodayMemory().catch((e: any) => {
+    console.error('[Cuckoo Code] 整理今天记忆失败:', e && e.message);
+  });
+}
+
+export { bindEvents, wireEvents, refreshTokenForCurrentSession, setIsSubagentWindow, getAutoCompactConfig, applyAutoCompactConfig, triggerCompaction, triggerOrganizeMemory, triggerOrganizeTodayMemory };

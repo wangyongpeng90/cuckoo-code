@@ -92,6 +92,16 @@ function registerSettingsIpc(): void {
     const r = await requestFromAiPage(event, 'cuckoo-trigger-compact');
     return r.ok ? { success: true } : { success: false, error: r.error };
   });
+  // 手动触发"整理长期记忆"
+  ipcMain.handle('trigger-organize-memory', async (event: any) => {
+    const r = await requestFromAiPage(event, 'cuckoo-trigger-organize-memory');
+    return r.ok ? { success: true } : { success: false, error: r.error };
+  });
+  // 手动触发"整理今天的记忆"
+  ipcMain.handle('trigger-organize-today-memory', async (event: any) => {
+    const r = await requestFromAiPage(event, 'cuckoo-trigger-organize-today-memory');
+    return r.ok ? { success: true } : { success: false, error: r.error };
+  });
 }
 
 export { registerSettingsIpc };

@@ -8,6 +8,7 @@ yarn.lock
 # Electron
 out/
 dist/
+dist*/
 release/
 
 # OS

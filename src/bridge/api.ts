@@ -154,6 +154,15 @@ let electronAPI: any = {
   readPluginAsset: (pluginId: string, relPath: string) => {
     return ipcRenderer.invoke('plugin-read-asset', { pluginId, relPath });
   },
+  // ========== 插件文件系统（ctx.fs 底层）==========
+  pluginFsRead: (path: string) => ipcRenderer.invoke('plugin-fs-read', { path }),
+  pluginFsWrite: (path: string, content: string) => ipcRenderer.invoke('plugin-fs-write', { path, content }),
+  pluginFsAppend: (path: string, content: string) => ipcRenderer.invoke('plugin-fs-append', { path, content }),
+  pluginFsExists: (path: string) => ipcRenderer.invoke('plugin-fs-exists', { path }),
+  pluginFsMkdir: (path: string) => ipcRenderer.invoke('plugin-fs-mkdir', { path }),
+  pluginFsReaddir: (path: string) => ipcRenderer.invoke('plugin-fs-readdir', { path }),
+  pluginSessionProjectDir: (sessionId: string) => ipcRenderer.invoke('plugin-session-project-dir', { sessionId }),
+  pluginUserDataDir: () => ipcRenderer.invoke('plugin-user-data-dir'),
   /** 监听"插件需要重载"通知 */
   onPluginReloadNeeded: (cb: () => void) => {
     const handler = () => { try { cb(); } catch (_) {} };
@@ -181,6 +190,9 @@ let electronAPI: any = {
   updateWindowName: (displayName: any) => {
     return ipcRenderer.invoke('update-window-name', { displayName });
   },
+  saveConversation: (payload: any) => {
+    return ipcRenderer.invoke('save-conversation', payload);
+  },
   showAiNotification: () => {
     return ipcRenderer.invoke('show-ai-notification');
   },
@@ -195,6 +207,14 @@ let electronAPI: any = {
   refreshSkills: () => {
     return ipcRenderer.invoke('refresh-skills');
   },
+  dumpDom: (data: any) => ipcRenderer.invoke('ck-dump-dom', { data }),
+  listAppSkills: () => ipcRenderer.invoke('list-app-skills'),
+  upsertSkill: (skill: any) => ipcRenderer.invoke('upsert-skill', { skill }),
+  removeSkill: (id: any) => ipcRenderer.invoke('remove-skill', { id }),
+  setSkillEnabled: (id: any, enabled: any) => ipcRenderer.invoke('set-skill-enabled', { id, enabled }),
+  searchSkills: (keyword: any, page: any, pageSize: any) => ipcRenderer.invoke('search-skills', { keyword, page, pageSize }),
+  getSkillDetail: (slug: any, namespace: any) => ipcRenderer.invoke('get-skill-detail', { slug, namespace }),
+  installSkill: (slug: any, namespace: any) => ipcRenderer.invoke('install-skill', { slug, namespace }),
   // ========== MCP 相关 API ==========
   listMcpServers: (opts: any) => {
     return ipcRenderer.invoke('list-mcp-servers', opts || {});

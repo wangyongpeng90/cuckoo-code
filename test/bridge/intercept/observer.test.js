@@ -52,7 +52,7 @@ function setupGlobals(idMap) {
   return listeners;
 }
 
-// 极简假元素：只保留遮罩用到的 classList 语义
+// 极简假元素：遮罩用到的 classList 语义 + querySelector（新版会查子元素）
 function makeFakeMask() {
   const classes = new Set(['cuckoo-hidden']);
   return {
@@ -61,6 +61,7 @@ function makeFakeMask() {
       remove: (c) => classes.delete(c),
       contains: (c) => classes.has(c),
     },
+    querySelector: () => null,
   };
 }
 

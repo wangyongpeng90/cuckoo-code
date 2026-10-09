@@ -21,7 +21,10 @@ import { renderWindowList } from './pages/windows.js';
 import { loadSettings } from './pages/settings.js';
 import { renderRecent } from './recent.js';
 import { loadConversations } from './pages/conversations.js';
+import { loadRecords } from './pages/records.js';
 import { loadPlugins } from './pages/plugins.js';
+import { loadScheduledTasks } from './pages/schedule.js';
+import { loadMemories } from './pages/memory.js';
 import { initPluginShell } from './plugin-shell.js';
 import { initThemePresenter } from './theme-presenter.js';
 
@@ -38,7 +41,10 @@ registerTab('feishu', loadFeishu);
 registerTab('windows', renderWindowList);
 registerTab('settings', loadSettings);
 registerTab('conversations', loadConversations);
+registerTab('records', loadRecords);
 registerTab('plugins', loadPlugins);
+registerTab('schedule', loadScheduledTasks);
+registerTab('memory', loadMemories);
 
 // 预加载：工作区（默认页）+ 提示词 + 自动压缩配置
 try { loadWorkspaces(); } catch (_) { /* ignore */ }

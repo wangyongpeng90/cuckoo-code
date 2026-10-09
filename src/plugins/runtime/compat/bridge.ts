@@ -56,6 +56,8 @@ export interface CuckooEventSource {
   onToolCall?(cb: (ev: any) => void): () => void;
   /** AI 错误事件（可选） */
   onAiError?(cb: (ev: any) => void): () => void;
+  /** 用户消息事件（可选，供对话记录插件） */
+  onUserMessage?(cb: (ev: { text: string; sessionId: string | null; ts: number }) => void): () => void;
 }
 
 export function bindCuckooEvents(src: CuckooEventSource): () => void {
@@ -115,10 +117,24 @@ export function bindCuckooEvents(src: CuckooEventSource): () => void {
     });
   }
 
+  // 用户消息（可选事件源）：桥接为 session/event type='user/message'
+  let d6: (() => void) | null = null;
+  if (typeof src.onUserMessage === 'function') {
+    d6 = src.onUserMessage((ev) => {
+      broadcast('session/event', {
+        type: 'user/message',
+        text: ev && ev.text,
+        sessionId: (ev && ev.sessionId) || null,
+        ts: (ev && ev.ts) || Date.now(),
+      });
+    });
+  }
+
   return () => {
     d1(); d2(); d3();
     if (d4) d4();
     if (d5) d5();
+    if (d6) d6();
   };
 }
 

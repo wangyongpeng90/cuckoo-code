@@ -1,0 +1,21 @@
+            <!-- ===== 定时任务 ===== -->
+            <div class="ck-tab" data-panel="schedule">
+              <div class="ck-actions">
+                <span class="ck-set-group-title" style="flex:1;">定时任务</span>
+                <button class="ck-btn-sm ck-btn-primary" id="sched-add">＋ 新建</button>
+              </div>
+              <p class="ck-about-tip">到点后自动给<strong>当前活跃窗口</strong>的 AI 发送提示词（应用未运行时，下次启动补跑）。</p>
+              <div id="sched-edit" class="ck-card" style="display:none;">
+                <input type="hidden" id="sched-edit-idx" value="-1" />
+                <div class="ck-set-field"><span class="ck-set-key">名称</span><input type="text" class="ck-set-input" id="sched-edit-name" placeholder="如：每日待办" /></div>
+                <div class="ck-set-field"><span class="ck-set-key">时间</span><input type="text" class="ck-set-input" id="sched-edit-time" placeholder="09:00（HH:MM）" /></div>
+                <div class="ck-set-field" style="flex-direction:column;align-items:stretch;"><span class="ck-set-key">提示词</span><textarea class="ck-set-input" id="sched-edit-prompt" rows="3" style="resize:vertical;"></textarea></div>
+                <div class="ck-actions">
+                  <button class="ck-btn-sm ck-btn-primary" id="sched-edit-save">保存</button>
+                  <button class="ck-btn-sm" id="sched-edit-cancel">取消</button>
+                </div>
+              </div>
+              <div class="ck-list" id="sched-list">
+                <div class="ck-list-empty">加载中…</div>
+              </div>
+            </div>

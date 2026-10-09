@@ -33,6 +33,38 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * 判断工具执行结果是否"疑似出错"——用于触发自动恢复（重发提示词）。
+ * 覆盖两类：
+ *  1. 脚本抛异常（result.success === false）
+ *  2. 脚本"成功"但输出含高可靠错误信号（bash 非零退出、常见错误字样）
+ * @returns 命中则返回简要原因，否则返回 null
+ */
+function detectToolFailure(results: any[]): string | null {
+  if (!Array.isArray(results) || results.length === 0) return null;
+  // 高可靠错误信号（宁可漏判，不误判：只匹配明确的错误特征）
+  const ERR_PATTERNS: RegExp[] = [
+    /\[exit code:\s*[1-9]\d*\]/,      // bash/pwsh 非零退出
+    /\bcommand not found\b/i,
+    /\bNo such file or directory\b/i,
+    /\bCannot find (?:module|path)\b/i,
+    /^\s*Error[:\s]/m,                    // 行首 Error:
+    /\bTypeError\b|\bReferenceError\b|\bSyntaxError\b/,
+  ];
+  for (const item of results) {
+    const res = item && item.result;
+    if (!res) continue;
+    if (res.success === false) {
+      return (res.error || '脚本执行失败').slice(0, 120);
+    }
+    const out = String(res.output || '');
+    for (const re of ERR_PATTERNS) {
+      if (re.test(out)) return ('输出疑似错误: ' + out.slice(0, 100)).replace(/\s+/g, ' ');
+    }
+  }
+  return null;
+}
+
+/**
  * 执行 JS 代码块，遇到"代码不完整"错误时自动重试。
  * 拦截模式下文本已完整（finished），无需重新提取，简单重试执行即可。
  */
@@ -84,8 +116,9 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   if (jsBlocks.length > 0) {
     console.log('[Cuckoo Code][拦截] 检测到 JS 工具代码块（' + jsBlocks.length + ' 个），开始执行');
     formatHintCount = 0;
-    // 从检测到工具调用到结果发送完成，全程遮盖页面，禁止用户额外操作
-    showToolMask();
+    // 从检测到工具调用到结果发送完成，显示执行小窗
+    const firstLine = String(jsBlocks[0] || '').split('\n')[0].trim();
+    showToolMask(undefined, firstLine);
     let results: any[] = [];
     try {
       results = await executeJsBlocksWithRetry(jsBlocks);
@@ -103,12 +136,24 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
       cancelled = true;
       cancelPendingSend();
       hideToolMask();
-    });
+    }, firstLine);
     if (abortRequested) { abortRequested = false; hideToolMask(); console.log('[Cuckoo Code][拦截] 已请求中止，不回传工具结果'); return; }
     // afterSent 在"结果已发出"时触发隐藏；发送失败（找不到输入框等）则立即隐藏兜底
     const sent = await sendCombinedJsResultsToChat(results, hideToolMask);
     if (cancelled) return; // 用户已取消，不再处理
     if (!sent) hideToolMask();
+    // 工具结果已回传 → 启动"工具循环超时"定时器：若 AI 迟迟不继续回复，自动催继续
+    if (sent) { try { watchdog.armToolLoopTimer(); } catch (_) { /* ignore */ } }
+    // 工具执行疑似出错 → 派发错误事件，交由自动重试引擎（cuckoo-retry-* 配置）恢复
+    const failReason = detectToolFailure(results);
+    if (failReason) {
+      console.log('[Cuckoo Code][拦截] 工具疑似失败，触发自动恢复: ' + failReason);
+      try {
+        window.dispatchEvent(new CustomEvent('cuckoo-ai-error', {
+          detail: { reason: 'tool_failure', message: failReason },
+        }));
+      } catch (_) { /* ignore */ }
+    }
     return;
   }
 
@@ -189,6 +234,23 @@ function emitTaskIdle(): void {
   }
 }
 
+// 用户消息监听器（供对话记录插件订阅）
+const userMessageListeners = new Set<(ev: any) => void>();
+
+/** 注册"用户消息"监听器 */
+function onUserMessage(cb: (ev: any) => void): () => void {
+  userMessageListeners.add(cb);
+  return () => userMessageListeners.delete(cb);
+}
+
+/** 派发"用户消息"（无监听者时直接返回） */
+function emitUserMessage(ev: any): void {
+  if (userMessageListeners.size === 0) return;
+  for (const cb of userMessageListeners) {
+    try { cb(ev); } catch (_) { /* ignore */ }
+  }
+}
+
 // 工具调用监听器（供纯净模式等上报工具开始/结束；无监听者时零开销）
 const toolCallListeners = new Set<(ev: any) => void>();
 
@@ -237,10 +299,43 @@ function onAiError(cb: (detail: any) => void): () => void {
   return () => errorListeners.delete(cb);
 }
 
+// ===== 对话记录落盘：已落盘的 AI 回复去重（按 responseMessageId，缺失时用文本）=====
+const savedResponseKeys = new Set<string>();
+
+/** 从当前 URL 提取会话 ID（与主世界 hook 同一规则） */
+function getSessionIdFromUrl(): string | null {
+  try {
+    const m = String(window.location.href).match(/\/chat\/s\/([a-f0-9-]+)/i);
+    return m ? m[1] : null;
+  } catch (_) { return null; }
+}
+
+/** 把一条消息交给主进程追加写入当前项目的「对话记录.md」 */
+function persistConversation(role: 'user' | 'assistant', text: string, sessionId: string | null, ts?: number): void {
+  const content = String(text || '').trim();
+  if (!content) return;
+  try {
+    const api = (window as any).electronAPI;
+    if (api && typeof api.saveConversation === 'function') {
+      api.saveConversation({ sessionId: sessionId || null, role: role, text: content, ts: ts || Date.now() }).catch(() => {});
+    }
+  } catch (_) { /* ignore */ }
+}
+
 /**
  * 启动拦截事件监听
  */
 function startInterceptObserver(): void {
+  // 对话记录：监听主世界派发的"用户消息"事件
+  window.addEventListener('cuckoo-user-message', (ev: any) => {
+    try {
+      const d = ev && ev.detail;
+      if (!d || !d.text) return;
+      persistConversation('user', d.text, d.sessionId || null, d.ts);
+      // 派发给监听器（对话记录插件订阅）
+      emitUserMessage({ text: d.text, sessionId: d.sessionId || null, ts: d.ts || Date.now() });
+    } catch (_) { /* ignore */ }
+  });
   window.addEventListener('cuckoo-ai-response', (ev: any) => {
     try {
       const detail = ev && ev.detail;
@@ -254,6 +349,19 @@ function startInterceptObserver(): void {
       }
       if (!detail.finished) return;
       try { watchdog.onResponseReceived('finished'); } catch (_) { /* ignore */ }
+      // 收到新回复 → 取消"工具循环超时"定时器（已恢复响应）
+      try { watchdog.clearToolLoopTimer(); } catch (_) { /* ignore */ }
+      // 对话记录：AI 回复落盘（按 responseMessageId 去重，缺失时用文本指纹）
+      try {
+        const rid = (detail.msgIds && detail.msgIds.responseMessageId) || '';
+        const txt = String(detail.text || '');
+        const key = 'a:' + (rid || ('len:' + txt.length + ':' + txt.slice(0, 40)));
+        if (!savedResponseKeys.has(key)) {
+          if (savedResponseKeys.size > 2000) savedResponseKeys.clear();
+          savedResponseKeys.add(key);
+          persistConversation('assistant', txt, getSessionIdFromUrl(), Date.now());
+        }
+      } catch (_) { /* ignore */ }
       // 缓存最近一次完整回复文本，供手动解析复用（不依赖 DOM）
       lastInterceptedText = detail.text || '';
       // 通知监听器（每次成功回复都触发），携带服务端权威数据
@@ -270,6 +378,8 @@ function startInterceptObserver(): void {
     try {
       const detail = ev && ev.detail;
       if (!detail) return;
+      // 收到流数据 → 取消"工具循环超时"定时器（AI 已开始/正在响应）
+      try { watchdog.clearToolLoopTimer(); } catch (_) { /* ignore */ }
       emitStream({
         think: detail.think || '',
         text: detail.text || '',
@@ -283,6 +393,8 @@ function startInterceptObserver(): void {
     try {
       const detail = ev && ev.detail;
       try { watchdog.onResponseReceived('error'); } catch (_) { /* ignore */ }
+      // 收到错误 → 取消"工具循环超时"定时器（错误由重试引擎处理）
+      try { watchdog.clearToolLoopTimer(); } catch (_) { /* ignore */ }
       for (const cb of errorListeners) {
         try { cb(detail || {}); } catch (_) { /* ignore */ }
       }
@@ -298,4 +410,4 @@ function getLastInterceptedText(): string {
   return lastInterceptedText;
 }
 
-export { startInterceptObserver, processInterceptedResponse, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, requestAbort, clearAbort };
+export { startInterceptObserver, processInterceptedResponse, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, onUserMessage, requestAbort, clearAbort };

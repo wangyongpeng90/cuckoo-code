@@ -26,5 +26,6 @@
 | 020 | feature | [插件市场（GitHub topic 自动发现与安装）](./020-plugin-market.md) | review | feat/020-plugin-market | 2026-10-02 |
 | 021 | feature | [窗口组（多账号限流轮换）](./021-window-groups.md) | done | feat/021-window-groups | 2026-10-05 |
 | 022 | feature | [DSH 插件兼容（Cuckoo 里安装/运行 DSH 插件）](./022-dsh-plugin-compat.md) | in_progress | direct-on-master（直接 master 提交） | 2026-10-08 |
+| 022 | feature | [长期记忆系统（对齐 DeepSeek++）](./022-memory-system.md) | draft | feat/022-memory-system | 2026-10-05 |
 
-共 21 个需求。
+共 22 个需求。
