@@ -37,6 +37,29 @@ test('插件工具：dynamic 标记 + jsApi 生成', () => {
   assert.ok(tool.getPromptSection().text.includes('greet'));
 });
 
+test('插件工具：jsApi 展开嵌套（数组元素/枚举）', () => {
+  const tool = new DshPluginTool({
+    name: 'todo_write',
+    description: 'd',
+    parameters: {
+      type: 'object',
+      properties: {
+        todos: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { content: { type: 'string' }, status: { type: 'string', enum: ['pending', 'done'] } },
+            required: ['content', 'status'],
+          },
+        },
+      },
+      required: ['todos'],
+    },
+    execute: async () => 'ok',
+  });
+  assert.match(tool.jsApi, /todos: \(\{content: string, status: "pending"\|"done"\}\)\[\]/);
+});
+
 test('插件工具：非法标识符名不注入（防注入）', async () => {
   const registry = new ToolRegistry();
   const tool = new DshPluginTool({

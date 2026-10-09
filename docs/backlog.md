@@ -132,6 +132,84 @@
 
 ---
 
+### 12. DSH 插件兼容（长期工程，需求 022）
+
+> **目标**："鸿蒙兼容 Android"——DSH 插件**原样**在 Cuckoo 跑（不依赖 DSH 代码）。
+> **进度**：P1 + C1 + C2 已交付（详见 `docs/requirements/022-dsh-plugin-compat.md`）。
+> **本清单列出"DSH 每一项能力"在 Cuckoo 的状态。**
+
+#### 12.1 核心机制
+
+| 能力 | Cuckoo | 状态 |
+|---|---|---|
+| 工具定义 `defineTool` | shim 实现 | ✅ |
+| 工具注册 `ctx.tools.register` | 转 Cuckoo Tool | ✅ |
+| 工具列表 `ctx.tools.list` | registry.listNames | ✅ |
+| 参数 schema（schemastery/zod）| 递归转 JSON Schema | ✅ |
+| 服务注入 `ctx.inject/provide/get` | 简化（inject 回调传 ctx）| ⚠️ 部分 |
+| 可逆副作用 `ctx.effect/scope` | 空转（不真清理）| ⚠️ 空 |
+| **事件总线 `ctx.on/emit`** | EventBus（接 Cuckoo 事件）| ✅ |
+| 会话投影 `ctx.sessionProjections` | 内存实现 | ✅ |
+| 会话事件流 `session.append` | 内存实现 | ✅ |
+| 落盘 `ctx.storage` | 无 | ❌ |
+| Service 基类 | 简化占位 | ⚠️ 简化 |
+| 模块解析 | esbuild 劫持 + 通配 stub | ✅（够用）|
+| TS 支持 | 只 JS | ❌（价值低）|
+
+#### 12.2 DSH 的 ctx 服务逐项对照
+
+> 状态：✅ 已接真 / 🟡 简化-stub（不崩，功能空）/ ❌ 无（stub 兜底）
+> 优先级：🔴 高（常用）/ 🟡 中 / 🟢 低（特定场景，或**不做**）
+
+| 服务 | 用途 | Cuckoo | 状态 | 优先级 |
+|---|---|---|---|---|
+| **tools** | 工具注册/列表 | registry | ✅ | — |
+| **sessions** | 会话信息 | sessionStore | ✅ | — |
+| **sessionProjections** | 会话投影 | 内存实现 | ✅ | — |
+| **settings** | 插件配置 | plugins-config | ✅ | — |
+| **events**（on/emit）| 事件订阅/广播 | EventBus | ✅ | — |
+| **fs** | 文件读写 | fs-service（node:fs）| ✅ | — |
+| **systemPrompt** | 系统提示词段 | prompt-sections | ✅ | — |
+| **agents** | 子代理 | agents-service（会话视图）| ✅ | — |
+| **skills** | 技能 | Cuckoo skills | ✅ | — |
+| **commands** | 命令 | snippets | ✅ | — |
+| **storage / storageDomain** | 持久化 | plugin-storage（JSONL）| ✅ | — |
+| **sessionQuery** | 会话查询 | ❌ | ❌ | 🟡 |
+| **sessionTitle** | 会话标题 | sessionStore | ✅ | — |
+| **compaction** | 上下文压缩 | Cuckoo 压缩 | ✅ | — |
+| **subagents** | 子代理管理 | runAgent | ❌ | 🟡 |
+| **goals / planMode** | 目标/计划 | Goal/Plan 面板 | ✅ | — |
+| **shell / shellEnv** | 命令/环境 | bash/pwsh | ❌ | 🟡 |
+| **workspaceFiles / Registry / Changes** | 工作区 | 文件树 | ✅ | — |
+| **tokenMeter** | token 统计 | token-stats | ✅ | — |
+| **mcpResources** | MCP 资源 | Cuckoo MCP | ❌ | 🟢 |
+| **web / webServer** | 网络/HTTP | webFetch | ❌ | 🟢 |
+| **terminals / ssh / lsp** | 终端/SSH/LSP | ❌ | ❌ | 🟢 |
+| **browserUse / computerUse** | 浏览器/电脑 | openBrowserWindow | ❌ | 🟢 |
+| **attachments / approval / userQuestions** | 附件/审批/询问 | attachFile | ❌ | 🟢 |
+| **sandbox / jobs / schedule / spillStore** | 沙箱/任务/调度 | ❌ | ❌ | 🟢 |
+| **llm** | LLM 调用 | **Cuckoo 用网页**（无此层）| ❌ | 🟢 **不适用** |
+| **telemetry / otel / hmr / typert / …** | 遥测/框架内部 | ❌ | ❌ | 🟢 **不做** |
+
+#### 12.3 分期计划
+
+| 阶段 | 内容 | 状态 |
+|---|---|---|
+| **P1** | 工具类插件 | ✅ |
+| **C1** | settings/tools/sessions 接真 | ✅ |
+| **C2** | 内存流水 + 投影 | ✅ |
+| **C3** | **事件总线**（`ctx.on/emit` 接 Cuckoo 事件）| ✅ **已完成（2026-10-08）** |
+| **C4-A** | **systemPrompt**（提示词段）| ✅ **已完成（2026-10-08）** |
+| **C4-B** | **fs**（文件读写）| ✅ **已完成（2026-10-08）** |
+| **C4-C** | **agents**（子代理）| ✅ **已完成（2026-10-08）** |
+| **C5** | **storage 落盘**（JSONL + 重放）| ✅ **已完成（2026-10-08）** |
+| **C6** | skills / commands / goals / compaction 等（7 个）| ✅ **已完成（2026-10-08）** |
+| **P3** | UI/主题等 DSH 客户端能力 | 🟢 待做 |
+
+**完成标准**：主流 DSH 插件（工具/事件/存储类）**原样能跑、行为一致**（对照测试验证）。
+
+---
+
 ## 已完成
 
 - [x] 架构重构 P0–P5

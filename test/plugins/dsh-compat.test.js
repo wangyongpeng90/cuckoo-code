@@ -26,6 +26,28 @@ test('dshParamsToJsonSchema：空参数 → 空 object', () => {
   assert.deepStrictEqual(schema.required, []);
 });
 
+test('dshParamsToJsonSchema：嵌套 required 递归提取', () => {
+  const schema = dshParamsToJsonSchema({
+    todos: {
+      type: 'array', required: true,
+      items: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          content: { type: 'string', required: true },
+          status: { type: 'string', required: true, enum: ['pending', 'done'] },
+        },
+      },
+    },
+  });
+  assert.deepStrictEqual(schema.required, ['todos']);
+  const item = schema.properties.todos.items;
+  assert.deepStrictEqual(item.required, ['content', 'status']);
+  assert.strictEqual(item.additionalProperties, false);
+  assert.deepStrictEqual(item.properties.status.enum, ['pending', 'done']);
+  // required 不应残留在属性节点上
+  assert.strictEqual(item.properties.content.required, undefined);
+});
+
 test('defineTool：转成 Cuckoo 工具（name/description/parameters/execute）', async () => {
   const tool = defineTool({
     name: 'greet',

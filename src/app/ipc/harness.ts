@@ -213,6 +213,10 @@ function registerHarnessIpc(): void {
   ipcMain.handle('harness-event-report', (event: any, payload: any) => {
     const ctx = findContext(event.sender);
     if (!ctx) return { success: false };
+    // C3：把 AI 事件广播给已加载的 DSH 插件（事件总线）
+    try {
+      import('../../plugins/cuckoo-plugins/event-bridge.js').then((m: any) => m.dispatchHarnessPayload(payload)).catch(() => {});
+    } catch (_) { /* ignore */ }
     const hv = (ctx as any).harnessView;
     if (hv && !hv.webContents.isDestroyed()) {
       hv.webContents.send('harness-event', payload);

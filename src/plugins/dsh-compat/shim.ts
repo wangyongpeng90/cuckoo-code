@@ -34,26 +34,69 @@ interface CuckooTool {
   execute: (args: any) => Promise<any>;
 }
 
-/** DSH 参数映射 → JSON Schema（隐式 open object，required 是每属性的标注）*/
-function dshParamsToJsonSchema(params: Record<string, DshParamProp> | undefined): any {
+/**
+ * 把 DSH 的"值 schema"（每层可有 required:true 方言）递归转成标准 JSON Schema。
+ * 关键：每层的 required:true 提取到该层的 required: [] 数组；去掉非标准字段。
+ */
+function dshValueToJsonSchema(spec: any): any {
+  if (!spec || typeof spec !== 'object') return {};
+  const t = spec.type || 'string';
+  const node: any = { type: t === 'json' ? 'object' : t };
+  if (spec.description) node.description = spec.description;
+  if (spec.title) node.title = spec.title;
+  if (spec.default !== undefined) node.default = spec.default;
+  if (spec.examples !== undefined) node.examples = spec.examples;
+  if (Array.isArray(spec.enum)) node.enum = spec.enum;
+  if (spec.const !== undefined) node.const = spec.const;
+  if (t === 'array') {
+    node.items = spec.items ? dshValueToJsonSchema(spec.items) : {};
+  } else if (t === 'object') {
+    const inner = dshParamsToJsonSchema(spec.properties, spec.additionalProperties);
+    node.properties = inner.properties;
+    node.required = inner.required;
+    node.additionalProperties = inner.additionalProperties;
+  } else if (spec.oneOf) {
+    node.oneOf = spec.oneOf.map((s: any) => dshValueToJsonSchema(s));
+  }
+  return node;
+}
+
+/** DSH 参数映射 → JSON Schema（隐式 open object；required 是每属性标注 → 提取为数组）*/
+function dshParamsToJsonSchema(params: Record<string, DshParamProp> | undefined, additionalProperties?: boolean): any {
   const properties: Record<string, any> = {};
   const required: string[] = [];
   for (const [key, spec] of Object.entries(params || {})) {
-    const t = spec.type || 'string';
-    const node: any = { type: t === 'json' ? 'object' : t };
-    if (spec.description) node.description = spec.description;
-    if (spec.title) node.title = spec.title;
-    if (spec.default !== undefined) node.default = spec.default;
-    if (spec.enum) node.enum = spec.enum;
-    if (t === 'array' && spec.items) node.items = spec.items;
-    if (t === 'object') {
-      node.properties = spec.properties || {};
-      node.additionalProperties = spec.additionalProperties !== false;
-    }
-    properties[key] = node;
+    properties[key] = dshValueToJsonSchema(spec);
     if (spec.required) required.push(key);
   }
-  return { type: 'object', properties, required, additionalProperties: true };
+  return {
+    type: 'object',
+    properties,
+    required,
+    additionalProperties: additionalProperties !== false,
+  };
+}
+
+/**
+ * 当前 DSH 运行时会话（由 loader 在加载插件前注入）。
+ * 让插件的 exec.agent.session.append(...) 真写进内存会话（C2）。
+ *
+ * 用 globalThis 而非模块变量：esbuild 打包会把本 shim 内联进插件 bundle，
+ * 模块变量是"独立副本"，与 loader 侧不共享；全局才共享。
+ */
+function setDshSession(session: any): void { (globalThis as any).__dshSession = session; }
+function getDshSession(): any { return (globalThis as any).__dshSession || null; }
+
+/** 构造 exec：agent.session 用真会话，其余属性用 stub 兜底 */
+function buildExec(): any {
+  const base: any = { agent: { session: getDshSession() || makeStub('session') } };
+  return new Proxy(base, {
+    get(t, prop) {
+      if (prop in t) return (t as any)[prop];
+      if (typeof prop === 'symbol') return undefined;
+      return makeStub('exec.' + String(prop));
+    },
+  });
 }
 
 /** DSH defineTool → Cuckoo 工具描述 */
@@ -72,8 +115,8 @@ function defineTool(options: DshDefineToolOptions): CuckooTool {
     description: options.description,
     parameters: dshParamsToJsonSchema(options.parameters),
     execute: async (args: any) => {
-      // exec 用 stub 兜底：插件调 exec.agent.session.append(...) 等不抛错（副作用空转）
-      const value = await options.execute(args || {}, makeStub('exec'));
+      // exec.agent.session 接内存会话（C2）：插件 append 的事件真写进内存流水
+      const value = await options.execute(args || {}, buildExec());
       // DSH 的 output.render 把值转成 ContentBlock[]；Cuckoo 工具返回字符串即可
       if (options.output && typeof options.output.render === 'function') {
         try {
@@ -122,5 +165,5 @@ class Service {
   }
 }
 
-export { defineTool, dshParamsToJsonSchema, Service, makeStub, z };
+export { defineTool, dshParamsToJsonSchema, dshValueToJsonSchema, Service, makeStub, z, setDshSession, getDshSession };
 export type { DshDefineToolOptions, DshParamProp, CuckooTool };

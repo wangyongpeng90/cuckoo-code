@@ -1250,12 +1250,14 @@ if (!gotSingleInstanceLock) {
     // 加载已启用的 Cuckoo 插件（DSH 兼容；注册其工具到全局工具表）
     import('../plugins/cuckoo-plugins/index.js').then((m: any) => {
       import('../tools/index.js').then((t: any) => {
-        m.loadEnabledPlugins(t.registry).then((r: any) => {
+        import('./cuckoo-host.js').then((h: any) => {
+        m.loadEnabledPlugins(t.registry, h.buildCuckooHost()).then((r: any) => {
           if (r.loaded.length || r.failed.length) {
             console.log('[Cuckoo Plugin] 已加载: ' + (r.loaded.join(' | ') || '(无)') +
               (r.failed.length ? '；失败: ' + r.failed.map((f: any) => f.id + ':' + f.error).join(' | ') : ''));
           }
         }).catch((e: any) => console.error('[Cuckoo Plugin] 加载失败:', e && e.message));
+        }).catch(() => {});
       });
     }).catch(() => {});
     // 清理子代理窗口遗留的 session 存储文件（历史 bug：子代理不需要持久化）

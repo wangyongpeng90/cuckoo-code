@@ -15,6 +15,8 @@ import { scanRules, getUnscopedRules, buildUnscopedRulesSection } from '../rules
 import { getPluginScanRoots } from '../plugins/roots.js';
 import type { PluginScanRoots } from '../plugins/roots.js';
 import { listMemoriesSync, selectMemories, formatMemoriesBlock, getMemoryBudget, estimateTokens, touchMemories } from '../memory/index.js';
+// DSH 插件注册的提示词段（C4）
+import { getPromptSections as getDshPromptSections } from '../plugins/dsh-compat/prompt-sections.js';
 
 // 提示词模板目录（D20：锚定应用根，与 dist 结构解耦）
 const PROMPT_DIR = resolveSrc('prompt');
@@ -156,7 +158,14 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   }
 
   const toolsDescription = toolRegistry.getFormattedJsApiForPrompt();
-  const promptSections = toolRegistry.getFormattedPromptSections();
+  // C4：DSH 插件注册的提示词段（与工具 section 合并）
+  let dshSections = '';
+  try {
+    const secs = getDshPromptSections();
+    if (secs.length > 0) dshSections = secs.map((s) => s.text).join('\n\n');
+  } catch (_) { /* ignore */ }
+  const toolSections = toolRegistry.getFormattedPromptSections();
+  const promptSections = dshSections ? (toolSections + '\n\n' + dshSections) : toolSections;
 
   // 后台异步连接已启用的 MCP server，不阻塞初始化（按当前项目）
   mcpClient.connectEnabledServers(selectedDir).catch((err: any) => {
