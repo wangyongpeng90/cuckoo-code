@@ -1,0 +1,9 @@
+{
+  "id": "cuckoo-conversation-records",
+  "name": "对话记录",
+  "version": "1.0.0",
+  "description": "把 DeepSeek 网页对话的用户消息与 AI 回复实时落盘为 Markdown，按项目汇总。提供「对话记录」页。",
+  "builtin": true,
+  "author": "cuckoo",
+  "license": "GPL-3.0-only"
+}

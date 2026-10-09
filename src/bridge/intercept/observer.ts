@@ -234,6 +234,23 @@ function emitTaskIdle(): void {
   }
 }
 
+// 用户消息监听器（供对话记录插件订阅）
+const userMessageListeners = new Set<(ev: any) => void>();
+
+/** 注册"用户消息"监听器 */
+function onUserMessage(cb: (ev: any) => void): () => void {
+  userMessageListeners.add(cb);
+  return () => userMessageListeners.delete(cb);
+}
+
+/** 派发"用户消息"（无监听者时直接返回） */
+function emitUserMessage(ev: any): void {
+  if (userMessageListeners.size === 0) return;
+  for (const cb of userMessageListeners) {
+    try { cb(ev); } catch (_) { /* ignore */ }
+  }
+}
+
 // 工具调用监听器（供纯净模式等上报工具开始/结束；无监听者时零开销）
 const toolCallListeners = new Set<(ev: any) => void>();
 
@@ -315,6 +332,8 @@ function startInterceptObserver(): void {
       const d = ev && ev.detail;
       if (!d || !d.text) return;
       persistConversation('user', d.text, d.sessionId || null, d.ts);
+      // 派发给监听器（对话记录插件订阅）
+      emitUserMessage({ text: d.text, sessionId: d.sessionId || null, ts: d.ts || Date.now() });
     } catch (_) { /* ignore */ }
   });
   window.addEventListener('cuckoo-ai-response', (ev: any) => {
@@ -391,4 +410,4 @@ function getLastInterceptedText(): string {
   return lastInterceptedText;
 }
 
-export { startInterceptObserver, processInterceptedResponse, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, requestAbort, clearAbort };
+export { startInterceptObserver, processInterceptedResponse, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, onUserMessage, requestAbort, clearAbort };

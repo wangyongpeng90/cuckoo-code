@@ -11,7 +11,7 @@ import type { HostCapabilities, CuckooEventSource, PendingPluginSource } from '.
 import { bindCuckooEvents } from '../plugins/runtime/index.js';
 import { sendToChat } from '../overlay/chat-input.js';
 import { getProviderByUrl } from '../providers/registry.js';
-import { onInterceptedResponse, onStream, onTaskIdle, onToolCall, onAiError } from './intercept/observer.js';
+import { onInterceptedResponse, onStream, onTaskIdle, onToolCall, onAiError, onUserMessage } from './intercept/observer.js';
 
 /** 写调试日志（console + 文件） */
 function plog(msg: string): void {
@@ -257,7 +257,7 @@ export async function initPlugins(): Promise<void> {
 
   // 事件桥只绑一次
   if (!eventBound) {
-    const src: CuckooEventSource = { onInterceptedResponse, onStream, onTaskIdle, onToolCall, onAiError };
+    const src: CuckooEventSource = { onInterceptedResponse, onStream, onTaskIdle, onToolCall, onAiError, onUserMessage };
     bindCuckooEvents(src);
     eventBound = true;
   }

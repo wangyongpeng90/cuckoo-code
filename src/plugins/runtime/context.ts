@@ -15,7 +15,7 @@ import { EventBus } from './events.js';
 import { createThemeProxy } from './theme-proxy.js';
 import type {
   PluginContext, AgentsService, AgentHandle, ToolsService, SessionsService, SettingsService,
-  ServiceRegistry, PluginScope, PluginToolDefinition,
+  ServiceRegistry, PluginScope, PluginToolDefinition, FsService,
 } from './types.js';
 
 /** 宿主能力（由 bridge/entry 注入，避免本模块反向依赖上层） */
@@ -124,6 +124,90 @@ function createContext(name: string, host: HostCapabilities, registry?: ServiceR
       const found = all.find((s) => s.id === id);
       return found || null;
     },
+    async projectDir(sessionId: string): Promise<string | null> {
+      try {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.pluginSessionProjectDir === 'function') {
+          const r = await api.pluginSessionProjectDir(sessionId || '');
+          if (r && r.success) return r.dir || null;
+        }
+      } catch (_) { /* ignore */ }
+      return host.getProjectDir();
+    },
+  };
+
+  // ===== 服务：fs（插件文件系统，主进程代理）=====
+  const fsSvc: FsService = {
+    async read(p: string): Promise<string | null> {
+      try {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.pluginFsRead === 'function') {
+          const r = await api.pluginFsRead(p);
+          if (r && r.success) return r.content;
+        }
+      } catch (_) {}
+      return null;
+    },
+    async write(p: string, content: string): Promise<boolean> {
+      try {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.pluginFsWrite === 'function') {
+          const r = await api.pluginFsWrite(p, content);
+          return !!(r && r.success);
+        }
+      } catch (_) {}
+      return false;
+    },
+    async append(p: string, content: string): Promise<boolean> {
+      try {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.pluginFsAppend === 'function') {
+          const r = await api.pluginFsAppend(p, content);
+          return !!(r && r.success);
+        }
+      } catch (_) {}
+      return false;
+    },
+    async exists(p: string): Promise<boolean> {
+      try {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.pluginFsExists === 'function') {
+          const r = await api.pluginFsExists(p);
+          return !!(r && r.success && r.exists);
+        }
+      } catch (_) {}
+      return false;
+    },
+    async mkdir(p: string): Promise<boolean> {
+      try {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.pluginFsMkdir === 'function') {
+          const r = await api.pluginFsMkdir(p);
+          return !!(r && r.success);
+        }
+      } catch (_) {}
+      return false;
+    },
+    async readdir(p: string): Promise<Array<{ name: string; isDir: boolean }>> {
+      try {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.pluginFsReaddir === 'function') {
+          const r = await api.pluginFsReaddir(p);
+          if (r && r.success && Array.isArray(r.items)) return r.items;
+        }
+      } catch (_) {}
+      return [];
+    },
+    async userDataDir(): Promise<string | null> {
+      try {
+        const api = (window as any).electronAPI;
+        if (api && typeof api.pluginUserDataDir === 'function') {
+          const r = await api.pluginUserDataDir();
+          if (r && r.success) return r.dir || null;
+        }
+      } catch (_) {}
+      return null;
+    },
   };
 
   // ===== 服务：settings =====
@@ -141,6 +225,7 @@ function createContext(name: string, host: HostCapabilities, registry?: ServiceR
     command,
     sessions,
     settings,
+    fs: fsSvc,
 
     // 本地 HTTP 服务（静态资源）
     webServer: {

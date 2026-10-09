@@ -946,6 +946,15 @@ ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
 // ========== IPC 处理器 ==========
 registerIpcHandlers();
 
+// ========== 内置插件同步（把随应用分发的插件复制到 ~/.cuckoo/plugins）==========
+try {
+  const { syncBuiltinPlugins } = await import('../plugins/builtin.js');
+  const synced = syncBuiltinPlugins();
+  if (synced.length) console.log('[builtin-plugin] 已同步内置插件: ' + synced.join(', '));
+} catch (err: any) {
+  console.error('[builtin-plugin] 同步失败:', err && err.message ? err.message : err);
+}
+
 // ========== 飞书同步（若已配置启用则自动连接）==========
 try { initFeishu(); } catch (err: any) { console.error('[Feishu] 初始化失败:', err.message); }
 

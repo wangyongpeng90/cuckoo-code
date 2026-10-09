@@ -154,6 +154,15 @@ let electronAPI: any = {
   readPluginAsset: (pluginId: string, relPath: string) => {
     return ipcRenderer.invoke('plugin-read-asset', { pluginId, relPath });
   },
+  // ========== 插件文件系统（ctx.fs 底层）==========
+  pluginFsRead: (path: string) => ipcRenderer.invoke('plugin-fs-read', { path }),
+  pluginFsWrite: (path: string, content: string) => ipcRenderer.invoke('plugin-fs-write', { path, content }),
+  pluginFsAppend: (path: string, content: string) => ipcRenderer.invoke('plugin-fs-append', { path, content }),
+  pluginFsExists: (path: string) => ipcRenderer.invoke('plugin-fs-exists', { path }),
+  pluginFsMkdir: (path: string) => ipcRenderer.invoke('plugin-fs-mkdir', { path }),
+  pluginFsReaddir: (path: string) => ipcRenderer.invoke('plugin-fs-readdir', { path }),
+  pluginSessionProjectDir: (sessionId: string) => ipcRenderer.invoke('plugin-session-project-dir', { sessionId }),
+  pluginUserDataDir: () => ipcRenderer.invoke('plugin-user-data-dir'),
   /** 监听"插件需要重载"通知 */
   onPluginReloadNeeded: (cb: () => void) => {
     const handler = () => { try { cb(); } catch (_) {} };

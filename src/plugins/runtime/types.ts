@@ -102,6 +102,20 @@ export interface SessionsService {
   list(): Array<{ id: string; title?: string }>;
   /** 按 id 取会话（找不到返回 null） */
   get(id: string): { id: string; title?: string } | null;
+  /** 按 sessionId 取项目目录（异步，查主进程会话存储） */
+  projectDir(sessionId: string): Promise<string | null>;
+}
+
+/** fs 服务（插件文件系统，主进程代理；路径受限于 userData/项目目录/插件目录） */
+export interface FsService {
+  read(path: string): Promise<string | null>;
+  write(path: string, content: string): Promise<boolean>;
+  append(path: string, content: string): Promise<boolean>;
+  exists(path: string): Promise<boolean>;
+  mkdir(path: string): Promise<boolean>;
+  readdir(path: string): Promise<Array<{ name: string; isDir: boolean }>>;
+  /** 当前 userData 目录 */
+  userDataDir(): Promise<string | null>;
 }
 
 /** settings 服务 */
@@ -122,6 +136,7 @@ export interface PluginContext {
   tools: ToolsService;
   sessions: SessionsService;
   settings: SettingsService;
+  fs: FsService;
 
   // ===== 事件 =====
   on(event: string, listener: EventListener): () => void;
