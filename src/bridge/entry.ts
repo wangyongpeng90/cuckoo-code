@@ -25,6 +25,7 @@ import { initHarnessBridge } from './harness-bridge.js';
 import { initProbeIfNeeded } from './probe.js';
 import { initFeishuBridge } from './feishu-bridge.js';
 import { initPlugins, bindPluginReload } from './plugin-system.js';
+import { buildUserAgentDataFix } from '../infra/user-agent.js';
 
 const require = createRequire(import.meta.url);
 const { webFrame, ipcRenderer } = require('electron');
@@ -35,6 +36,18 @@ const currentProvider = getProviderByUrl(window.location.href);
 const useIntercept = !!(currentProvider && currentProvider.useIntercept);
 console.log('[Cuckoo Code] 平台=' + (currentProvider ? currentProvider.id : 'unknown') +
   ', 模式=' + (useIntercept ? '网络拦截' : 'DOM 抓取'));
+
+// ========== 主世界指纹修正（所有平台，最早注入）==========
+// Google OAuth 会检测 navigator.userAgentData / navigator.webdriver 等指纹，
+// 判定"内嵌浏览器不安全"而拒绝登录。必须在页面脚本之前注入到主世界修正。
+try {
+  webFrame.executeJavaScript(buildUserAgentDataFix()).then(
+    () => console.log('[Cuckoo Code] 主世界指纹修正已注入'),
+    (err: any) => console.warn('[Cuckoo Code] 主世界指纹修正注入失败:', err && err.message)
+  );
+} catch (err) {
+  console.warn('[Cuckoo Code] 主世界指纹修正异常:', err);
+}
 
 // ========== 主世界注入（拦截模式）==========
 // 必须在页面脚本执行前把 hook 注入到主世界，才能覆盖到 window.fetch / XHR。

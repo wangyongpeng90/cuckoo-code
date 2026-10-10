@@ -53,6 +53,58 @@ const chatgpt = {
     return null;
   },
 
+  // 填入输入框：ChatGPT 的 ProseMirror 会把 ClipboardEvent('paste') 识别为
+  // "粘贴的文件"附件（出现 .txt 卡片），文本区却为空 → 发送空内容。
+  // 改用 execCommand('insertText') 直接写文本节点，与真实打字等价。
+  fillInput(input: any, text: string) {
+    try {
+      input.focus();
+      // 清空现有内容
+      try {
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(input);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          document.execCommand('delete', false, undefined);
+        }
+      } catch (_) {}
+      // 分段插入（长文本 execCommand 可能失败）
+      const CHUNK = 5000;
+      for (let i = 0; i < text.length; i += CHUNK) {
+        const chunk = text.slice(i, i + CHUNK);
+        const ok = document.execCommand('insertText', false, chunk);
+        if (!ok && i === 0) return false; // 首次就失败 → 回退 paste 逻辑
+      }
+      // 触发一次 input 让框架感知
+      try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
+  },
+
+  // 触发发送：ChatGPT 的 ProseMirror 输入框只认**真实键盘事件**（合成 KeyboardEvent
+  // 无效，站点免疫），且发送按钮在输入框为空时不存在（选择器不稳定）。
+  // 故走主进程 sendInputEvent 派发真实级 Enter（isTrusted=true），与人工按键等价。
+  async triggerSend(input: any) {
+    try {
+      if (input && typeof input.focus === 'function') {
+        try { input.focus(); } catch (_) {}
+      }
+      const api = (window as any).electronAPI;
+      if (api && typeof api.sendEnterToChat === 'function') {
+        const ok = await api.sendEnterToChat();
+        if (ok) return true;
+      }
+    } catch (_) { /* 回退到按钮点击 */ }
+    // 回退：发送按钮（有内容时才出现）
+    const btn = this.findSendButton ? this.findSendButton() : null;
+    if (btn) { (btn as any).click(); return true; }
+    return false;
+  },
+
   // 提取当前用户信息文本
   // 优先从 localStorage 的 accountSwitchSessions 读取（稳定，不受 DOM 渲染影响）；
   // 失败再回退到侧边栏 DOM 提取。
