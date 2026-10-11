@@ -385,4 +385,6 @@ cuckoo-code/
   - **provider 自定义工具结果格式**：新增 `transformToolResult` 可选钩子，插件可在工具结果回传前自定义文本格式（PR #34）
 - [@ZiJiangel](https://github.com/ZiJiangel)：
   - **飞书 Markdown 卡片**：飞书推送 AI 回复改用交互卡片渲染 Markdown（含表格）（PR #35）
+- [@yangjh888](https://github.com/yangjh888)：
+  - **ChatGPT 登录态完整适配**：回复拦截重写为三态（finished/stopped/error）、SSE 裸 `{v:[...]}` 增量帧解析修复、`fillInput`（execCommand）+ `triggerSend`（真实 Enter）解决 ProseMirror 输入/发送、Google OAuth 指纹修正（Sec-CH-UA* / userAgentData / webdriver）（PR #47）
 - 所有贡献者和用户
