@@ -35,6 +35,17 @@ function randomDelay(): number {
  */
 async function setInputContent(input: any, msg: string): Promise<boolean> {
   try {
+    // 平台自定义填入（优先）：部分站点对 ClipboardEvent('paste') 敏感
+    // （ChatGPT 会识别为"粘贴的文件"附件），由 provider.fillInput 覆盖。
+    try {
+      const provider = getCurrentProvider();
+      if (provider && typeof provider.fillInput === 'function') {
+        const r = await provider.fillInput(input, msg);
+        if (r) return true;
+      }
+    } catch (err: any) {
+      console.warn('[Cuckoo Code] provider.fillInput 失败，回退通用逻辑:', err && err.message);
+    }
     if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
       input.focus();
       const nativeSetter = Object.getOwnPropertyDescriptor(
