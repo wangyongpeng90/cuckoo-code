@@ -2,8 +2,14 @@
 
 ## [Unreleased]
 
+## [0.8.11] - 2026-10-11
+
 ### Added
-- **插件系统（对标 DSH）**：引入可执行插件运行时——函数/对象/类三种插件形态、5 种事件派发
+- **DSH 插件兼容（C1–C6 全接真）**：Cuckoo 里可直接**安装/运行 DSH 插件**（npm 包，原样不改），
+  不依赖任何 DSH 代码（自己实现 `@deepseek-ai/*` 同名 API）。含 `ctx.settings/tools/sessions`（C1）、
+  最小 DSH 运行时（C2）、事件总线（C3）、`systemPrompt/fs/agents`（C4）、会话落盘 JSONL + 重放（C5）、
+  `skills/commands/goals/compaction/workspaceFiles/sessionTitle/tokenMeter`（C6）。需求档案 022。
+- **可执行插件运行时（对标 DSH）**：函数/对象/类三种插件形态、5 种事件派发
   （emit/parallel/serial/bail/waterfall）、服务 provide/inject、可逆副作用（effect/scope）、
   资源（assets）、工具注册（tools.register）、agents/sessions 核心映射、插件配置（config schema）。
 - **主题系统（对标 DSH ui-theme）**：`ctx.theme`（register / overrideTokens / setTheme / getTheme / list +
@@ -12,7 +18,19 @@
 - **UI 原子能力**：`ctx.ui.overlay`（覆盖层）、`ctx.ui.shell`（壳页面挂载）、`ctx.ui.slot`（通用槽位）、
   `ctx.ui.shell.addStyle`（注入壳页面 CSS）、`ctx.ui.setWebViewVisible`、`ctx.ui.setWindowMaterial`。
 - **纯净模式集成**：透明 harness 视图 + `harness/change` 事件。
+- **ChatGPT 登录态完整适配**：回复拦截三态化、SSE 裸 `{v:[...]}` 帧解析修复、
+  `fillInput`（execCommand）+ `triggerSend`（真实 Enter）、Google OAuth 指纹修正。（@yangjh888，PR #47）
 - 插件开发文档（`docs/plugin-system.md` / `docs/plugin-dev.md`）、示例插件与模板、单元测试。
+
+### Changed
+- 地址栏改为可切换按钮（默认隐藏，地球图标）；纯净模式切换键改「净」/「原」字；mac 红绿灯兼容（hiddenInset）。
+- 关闭窗口前弹框确认（删除窗口等程序主动关闭除外）。
+- 项目目录选择框默认打开上次的目录（全局记忆，跨对话/窗口）。
+
+### Fixed
+- **ChatGPT**：`extractSessionId` 只认完整 UUID —— 修复中间态 `local-chatgpt` 被当真实会话 ID，
+  导致初始化后 GPT 拿不到项目目录。
+- 文件树按自然序排列（v0.8.10 排在 v0.8.9 之后）；清除源码中字面 NUL 字节。
 
 ## [0.8.10] - 2026-10-06
 
