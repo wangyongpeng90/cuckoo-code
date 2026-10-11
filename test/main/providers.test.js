@@ -64,10 +64,14 @@ test('chatgpt matchesUrl', () => {
   assert.strictEqual(chatgpt.matchesUrl('https://chat.deepseek.com'), false);
 });
 
-test('chatgpt extractSessionId 排除 WEB 中间态', () => {
-  assert.strictEqual(chatgpt.extractSessionId('https://chatgpt.com/c/abc-123_def'), 'abc-123_def');
-  // 创建会话中间态 /c/WEB:xxx 不应把 WEB 当会话 ID（正则只匹配 UUID 片段）
-  assert.notStrictEqual(chatgpt.extractSessionId('https://chatgpt.com/c/WEB:abc'), 'WEB');
+test('chatgpt extractSessionId 只认完整 UUID，排除中间态', () => {
+  const uuid = '6acae293-4d08-83e8-a58b-2a5c865a1df5';
+  assert.strictEqual(chatgpt.extractSessionId('https://chatgpt.com/c/' + uuid), uuid);
+  // 创建会话中间态 /c/WEB:xxx、/c/local-chatgpt 等均非真实会话 ID，必须返回 null。
+  // 否则 session-store 会据此绑定 projectDir 并清空暂存目录，导致初始化后拿不到项目目录。
+  assert.strictEqual(chatgpt.extractSessionId('https://chatgpt.com/c/WEB:abc'), null);
+  assert.strictEqual(chatgpt.extractSessionId('https://chatgpt.com/c/local-chatgpt'), null);
+  assert.strictEqual(chatgpt.extractSessionId('https://chatgpt.com/c/abc-123_def'), null);
   assert.strictEqual(chatgpt.extractSessionId('https://chatgpt.com/'), null);
 });
 

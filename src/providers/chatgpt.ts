@@ -145,19 +145,16 @@ const chatgpt = {
   // 首页判断正则（https://chatgpt.com/ 或 https://chatgpt.com）
   homeUrlPattern: /^https:\/\/chatgpt\.com\/?$/,
 
-  // 从 URL 提取会话 ID（ChatGPT 是 /c/xxx 格式）
-  // 从 URL 提取会话 ID（ChatGPT 是 /c/{uuid} 格式）
-  // 注意：创建会话过程中 URL 有中间态 /c/WEB:xxx，不能把 WEB 当会话 ID。
-  // session-store 会优先使用本方法的返回值，故此处必须自行排除 WEB。
+  // 从 URL 提取会话 ID（ChatGPT 正式会话是 /c/{uuid} 格式）。
+  // 注意：创建会话过程中 URL 有中间态 /c/WEB:xxx、/c/local-chatgpt 等，
+  // 这些不是真实会话 ID。若误把它们当会话 ID 返回，session-store 会据此
+  // 绑定 projectDir 并清空 pendingProjectDir，导致真正会话 ID 出现时
+  // 项目目录丢失（表现为"初始化后 GPT 拿不到项目目录"）。
+  // 故此处只认完整 UUID，中间态一律返回 null。
   extractSessionId(url: string): string | null {
     if (!url) return null;
-    // 优先匹配完整 UUID（正式会话 ID）
     const uuidMatch = url.match(/\/c\/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
-    if (uuidMatch) return uuidMatch[1];
-    // 回退通用匹配，排除中间态 WEB
-    const genericMatch = url.match(/\/c\/([a-zA-Z0-9_-]+)/i);
-    if (genericMatch && genericMatch[1] !== 'WEB') return genericMatch[1];
-    return null;
+    return uuidMatch ? uuidMatch[1] : null;
   },
 
   // 判断 URL 是否属于本平台
