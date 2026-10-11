@@ -161,11 +161,18 @@ function install(): void {
 
   // ---------- 回复文本提取 ----------
   function createExtractor(reqMeta) {
-    var text = '';
+    // 正文按消息 id 分槽维护，派发时拼接（见 msgText / joinText 说明）；
+    // 不再保留单一 text 缓冲区。
     // 思考内容通道：ChatGPT 目前不向 /conversation 流下发推理原文，
     // 仅当 part 标记 reasoning / thoughts 时才有值（例如部分推理模型）。
     var thinkText = '';
     var finished = false;
+    // 「整轮结束」信号（与 finished="某条消息完成" 区分）：
+    // ChatGPT 会在**同一条流**里先后下发多条 assistant 消息（实测 3 条：含块 → 纯文字说明 → 含块）。
+    // 只有 message.end_turn === true 才表示这一轮真的结束，此时才允许立即派发；
+    // 否则要等后续消息（流关闭兜底）。若在"某条消息 finished"就锁死派发，
+    // 后续含 cuckoo 块的消息会被永久丢弃 → 表现为「输出了块却判为正常文本」。
+    var endTurn = false;
     // 服务端视角的用户停止：status = interrupted 或 metadata.stop_reason = user_cancelled
     var serverStopped = false;
     // 服务端判定失败：status = failed / errored
@@ -228,6 +235,96 @@ function install(): void {
       if (low.indexOf('cancel') !== -1 || low.indexOf('interrupt') !== -1) serverStopped = true;
     }
 
+    /**
+     * 一轮回复可能包含多条 assistant 消息，而正文写入有两条通道：
+     *  - **快照**（v.message.content.parts）：携带该消息的**完整正文**（随流推进逐渐变长）
+     *  - **路径增量**（/message/content/parts/N）：不携带消息 id，只带片段
+     *
+     * 二者若共用一个缓冲区，后到的快照会把已追加的增量覆盖掉（实测表现为
+     * 「页面上的文字先出现、随后被后出现的文字替换」），解析器便检不到工具块。
+     *
+     * 因此改为**按消息 id 分别维护**：
+     *  - 快照：写入/更新「该消息 id」的正文（同一 id 的快照是累积值，允许覆盖自身）
+     *  - 路径增量：追加到「最近一次快照所属的消息」
+     *  - 派发时按消息**首次出现顺序**拼接
+     * 这样不同消息之间不再互相覆盖，同一条消息的增量也不会被其自身快照误抹
+     *（同 id 快照比当前长时取快照，短时保留更长的增量结果）。
+     */
+    var msgOrder = [];          // 消息 id 首次出现顺序
+    var msgText = {};           // id -> 正文
+    var currentMsgId = null;    // 最近一次快照所属的消息 id（路径增量的归属）
+    var anonSeq = 0;            // 无 id 消息的计数（兜底）
+    var lastChunk = null;       // 上次追加的片段（用于跳过重复下发的增量）
+    var dupAppendSkipped = 0;   // 跳过重复次数（便于核对）
+
+    /** 取某条消息的正文；不存在则创建并登记顺序 */
+    function msgSlot(id) {
+      var key = id || ('__anon' + anonSeq);
+      if (!Object.prototype.hasOwnProperty.call(msgText, key)) {
+        msgText[key] = '';
+        msgOrder.push(key);
+      }
+      return key;
+    }
+
+    /**
+     * 把所有消息的正文按出现顺序拼接为最终文本。
+     *
+     * ⚠️ 多条消息之间必须以换行分隔：否则前一条消息的结尾会与本条消息开头的
+     * ```cuckoo 拼在同一行，围栏不在行首 → 解析器（按行首判定围栏）检不出工具块。
+     */
+    function joinText() {
+      var out = '';
+      for (var i = 0; i < msgOrder.length; i++) {
+        var seg = msgText[msgOrder[i]] || '';
+        if (!seg) continue;
+        out += (out ? '\n' : '') + seg;
+      }
+      return out;
+    }
+
+    /**
+     * 快照写入：该消息 id 的完整正文。
+     * 同一 id 的快照是累积值 —— 新快照更长时采用快照；
+     * 新快照更短时保留已有（更长的）内容，避免把已累积的增量回退掉。
+     * 若已有内容含 cuckoo 块、而新快照不含，也保留已有（防丢块）。
+     */
+    function writeSnapshot(id, next) {
+      var key = msgSlot(id);
+      var cur = msgText[key] || '';
+      var s = String(next || '');
+      if (!s && !cur) return;
+      if (!cur) { msgText[key] = s; return; }
+      if (s.length >= cur.length) {
+        var FENCE = '```' + 'cuckoo';
+        if (cur.indexOf(FENCE) !== -1 && s.indexOf(FENCE) === -1) return; // 防丢块
+        msgText[key] = s;
+        return;
+      }
+      // 新快照更短：保留更长的现有内容（增量可能已领先）
+    }
+
+    /**
+     * 追加正文到「最近一次快照所属的消息」。
+     * 重复下发的增量（与上次片段逐字节相同）跳过。
+     */
+    function appendText(chunk) {
+      var s = String(chunk || '');
+      if (!s) return;
+      if (lastChunk !== null && s === lastChunk) {
+        dupAppendSkipped++;
+        if (dupAppendSkipped <= 5 || dupAppendSkipped % 10 === 0) {
+          console.log('[Cuckoo Code][hook] 跳过重复增量 len=' + s.length
+            + ' 累计=' + dupAppendSkipped);
+        }
+        return;
+      }
+      var key = msgSlot(currentMsgId);
+      msgText[key] = (msgText[key] || '') + s;
+      lastChunk = s;
+    }
+
+
     function partKind(p) {
       if (!p || typeof p !== 'object') return 'text';
       var ct = String(p.content_type || p.type || '').toLowerCase();
@@ -263,11 +360,15 @@ function install(): void {
       //    登录态流里 model_editable_context / model_set_context 等内部帧 role 也是 assistant、
       //    且带 status='finished_successfully'，若采信会在正文到达前就 finished=true → 空文本 → error。
       if (snap === null) return;
-      text = snap.text;
+      var newText = String(snap.text || '');
+      // 快照写入「该消息 id」的槽位，并把 currentMsgId 指向它 ——
+      // 紧随其后的 /message/content/parts/N 增量即归属于这条消息。
+      currentMsgId = (typeof m.id === 'string' && m.id) ? m.id : null;
+      writeSnapshot(currentMsgId, newText);
       if (snap.think) thinkText = snap.think;
       applyStatus(m.status);
       if (m.metadata) applyStopReason(m.metadata.stop_reason);
-      if (m.end_turn === true) finished = true;
+      if (m.end_turn === true) { finished = true; endTurn = true; }
     }
 
     function applyOp(node) {
@@ -302,21 +403,25 @@ function install(): void {
       // 3) 路径操作
       if (typeof node.p === 'string' && node.p !== '') {
         if (node.p === '/message/status') { applyStatus(node.v); return; }
-        if (node.p === '/message/end_turn' && node.v === true) { finished = true; return; }
+        if (node.p === '/message/end_turn' && node.v === true) { finished = true; endTurn = true; return; }
         if (/\/message\/content\/parts\/\d+$/.test(node.p)) {
           if (typeof node.v === 'string') {
-            if (node.o === 'append' || node.o === 'add') text += node.v;
-            else text = node.v;
+            if (node.o === 'append' || node.o === 'add') {
+              appendText(node.v);
+            } else {
+              // 覆盖式写入：写入「该 part 所属消息」的槽位（不跨消息覆盖，见 msgText 说明）
+              writeSnapshot(currentMsgId, node.v);
+            }
           } else if (node.v && typeof node.v === 'object' && typeof node.v.text === 'string') {
             if (partKind(node.v) === 'think') thinkText += node.v.text;
-            else text += node.v.text;
+            else appendText(node.v.text);
           }
         }
         return;
       }
 
       // 4) 裸 v 字符串（无有效 p）：追加正文
-      if (typeof node.v === 'string') { text += node.v; return; }
+      if (typeof node.v === 'string') { appendText(node.v); return; }
 
       // 5) 类型化结束事件
       if (node.type === 'message_stream_complete' || node.type === 'message_stream_completed') {
@@ -326,25 +431,31 @@ function install(): void {
 
     return {
       consume: function (parsed) { applyOp(parsed); },
-      markDone: function () { finished = true; },
-      get text() { return text; },
+      // SSE 的 [DONE] 是明确终态 → 同时置 finished 与 endTurn（允许立即派发）
+      markDone: function () { finished = true; endTurn = true; },
+      // 拼接各条消息的正文（见 msgText / joinText 说明）
+      get text() { return joinText(); },
       get think() { return thinkText; },
       get finished() { return finished; },
+      // 「整轮结束」：仅它允许立即派发（见 feed 注释）；流关闭时由 pump 兜底派发
+      get endTurn() { return endTurn; },
       get failed() { return failed; },
       get serverStopped() { return serverStopped; },
       get tokenUsage() { return tokenUsage; },
       get msgIds() { return msgIds; },
-      get textLen() { return text.length; },
+      get textLen() { return joinText().length; },
       snapshot: function () {
+        var joined = joinText();
         return {
           finished: finished,
+          endTurn: endTurn,
           failed: failed,
           serverStopped: serverStopped,
           userStopped: userStopped,
           sawAssistant: sawAssistant,
-          textLen: text.length,
+          textLen: joined.length,
           thinkLen: thinkText.length,
-          textTail: text.slice(-200),
+          textTail: joined.slice(-200),
           statusFrames: statusFrames.slice()
         };
       }
@@ -410,9 +521,15 @@ function install(): void {
       var frames = frameDecoder.push(chunk);
       for (var i = 0; i < frames.length; i++) flushFrame(frames[i]);
       dispatchStream(extractor.think, extractor.text, extractor.finished);
-      if (extractor.finished && !dispatched) {
+      // ⚠️ 关键修复（2026-10-11）：仅在「整轮结束」（end_turn=true）时立即派发。
+      //    原先用 extractor.finished（=某条消息完成）就派发并锁死 dispatched，
+      //    而实测同一轮里 GPT 会先发一条**纯文字说明**（finished_successfully 但 end_turn=false），
+      //    真正的含 cuckoo 块消息在其后 4+ 秒才到达 → 被永久丢弃。
+      //    未 end_turn 时不派发：交给流关闭（pump 的 r.done 分支）兜底，
+      //    或等后续消息的 end_turn=true。这样不丢内容，也不改动"最终必定派发"的保证。
+      if (extractor.endTurn && !dispatched) {
         dispatched = true;
-        dispatch(extractor.text, resolveStatus(extractor, false), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'feed-finished-frame' }, extractor.snapshot()));
+        dispatch(extractor.text, resolveStatus(extractor, false), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'feed-end-turn' }, extractor.snapshot()));
       }
     }
 
@@ -576,9 +693,12 @@ function install(): void {
       var frames = frameDecoder.push(chunk);
       for (var i = 0; i < frames.length; i++) flushFrame(frames[i]);
       dispatchStream(extractor.think, extractor.text, extractor.finished);
-      if (extractor.finished && !dispatched) {
+      // 与 fetch 侧同款修复：仅在「整轮结束」（end_turn=true）时立即派发，
+      // 避免把同一轮中的中间消息（纯文字说明）当最终结果锁死，丢掉后续含 cuckoo 块的消息。
+      // 未 end_turn 时交给 readyState===4 的分支兜底派发。
+      if (extractor.endTurn && !dispatched) {
         dispatched = true;
-        dispatch(extractor.text, resolveStatus(extractor, false), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'xhr-finished-frame' }, extractor.snapshot()));
+        dispatch(extractor.text, resolveStatus(extractor, false), extractor.tokenUsage, extractor.msgIds, null, Object.assign({ path: 'xhr-end-turn' }, extractor.snapshot()));
       }
     }
 

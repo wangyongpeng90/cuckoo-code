@@ -89,13 +89,10 @@ export interface Provider {
 
   findInput?(): InputElement | null;
   findSendButton?(): InputElement | null;
-  /**
-   * 可选的「填入输入框」实现（覆盖通用逻辑）。
-   * 通用逻辑用 ClipboardEvent('paste')，但部分站点（如 ChatGPT）会把它
-   * 识别为"粘贴的文件"附件而非文本 → 输入框文本区为空 → 发送空内容。
-   * 返回 true=已填入，false/空=回退通用逻辑。
-   */
-  fillInput?(input: any, text: string): boolean | Promise<boolean>;
+  // 说明：不提供 fillInput 钩子。
+  //   填入统一走 overlay/chat-input.ts 的通用 contenteditable 分支
+  //   （分片 6000 + 片间 50ms + 读回校验，校验不达标即失败重试），
+  //   避免平台自定义实现绕过校验、静默写入空内容。
   /**
    * 可选的「原生发送触发」实现（免疫合成事件的平台用）。
    * 在渲染层调用，返回 boolean 或 Promise<boolean>：true=已触发发送，false/空=回退通用逻辑。

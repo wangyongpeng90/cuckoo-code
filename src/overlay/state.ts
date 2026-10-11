@@ -12,6 +12,8 @@ interface PreloadState {
   sendDelayMax: number;
   // 当前项目目录（null 表示未初始化）
   currentProjectDir: string | null;
+  // 本窗口是否为子代理窗口（由 bridge 在初始化时置位；供"是否分批发送"等按窗口类型分流）
+  isSubagent: boolean;
 }
 
 const state: PreloadState = {
@@ -23,6 +25,8 @@ const state: PreloadState = {
   sendDelayMax: 4000,
   // 当前项目目录（null 表示未初始化）
   currentProjectDir: null,
+  // 是否子代理窗口（默认 false，bridge 初始化子代理时置 true）
+  isSubagent: false,
 };
 
 export { state };

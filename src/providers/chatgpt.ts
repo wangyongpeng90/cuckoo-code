@@ -53,37 +53,12 @@ const chatgpt = {
     return null;
   },
 
-  // 填入输入框：ChatGPT 的 ProseMirror 会把 ClipboardEvent('paste') 识别为
-  // "粘贴的文件"附件（出现 .txt 卡片），文本区却为空 → 发送空内容。
-  // 改用 execCommand('insertText') 直接写文本节点，与真实打字等价。
-  fillInput(input: any, text: string) {
-    try {
-      input.focus();
-      // 清空现有内容
-      try {
-        const sel = window.getSelection();
-        if (sel) {
-          const range = document.createRange();
-          range.selectNodeContents(input);
-          sel.removeAllRanges();
-          sel.addRange(range);
-          document.execCommand('delete', false, undefined);
-        }
-      } catch (_) {}
-      // 分段插入（长文本 execCommand 可能失败）
-      const CHUNK = 5000;
-      for (let i = 0; i < text.length; i += CHUNK) {
-        const chunk = text.slice(i, i + CHUNK);
-        const ok = document.execCommand('insertText', false, chunk);
-        if (!ok && i === 0) return false; // 首次就失败 → 回退 paste 逻辑
-      }
-      // 触发一次 input 让框架感知
-      try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (_) {}
-      return true;
-    } catch (_) {
-      return false;
-    }
-  },
+  // 说明：本 provider 不实现 fillInput。
+  //   086 的填入策略是「统一走 overlay/chat-input.ts 的通用 contenteditable 分支」——
+  //   分片 6000 + 片间 50ms + 写入后读回校验，校验不达标返回 false 交由上层重试。
+  //   上游曾在此实现 fillInput（insertText 分段 5000、无校验、无片间等待），
+  //   实测会出现「execCommand 报告成功但编辑器实际为空」而静默发出空消息，
+  //   故不采用；ChatGPT 与 DeepSeek 走同一套填入逻辑。
 
   // 触发发送：ChatGPT 的 ProseMirror 输入框只认**真实键盘事件**（合成 KeyboardEvent
   // 无效，站点免疫），且发送按钮在输入框为空时不存在（选择器不稳定）。

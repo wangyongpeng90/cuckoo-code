@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cuckoo Code preload 入口
  * 原 preload.js 的全部逻辑拆分为本目录下的模块，此处负责组装与初始化，
  * 初始化时序与原文件保持一致。
@@ -13,6 +13,7 @@ import * as ui from '../overlay/panel.js';
 import * as projectDir from '../overlay/project-dir.js';
 import { bindEvents, refreshTokenForCurrentSession, setIsSubagentWindow, getAutoCompactConfig, applyAutoCompactConfig, triggerCompaction } from '../overlay/events.js';
 import * as chatInput from '../overlay/chat-input.js';
+import { state } from '../overlay/state.js';
 import * as settingsPanel from '../overlay/panels/settings.js';
 import { wireEvents } from '../overlay/events.js';
 import { getProviderByUrl } from '../providers/registry.js';
@@ -146,6 +147,10 @@ function init(): void {
     try { ui.setSuppressHomeMode(true); } catch (_) { /* ignore */ }
     // 子代理共享父窗口 localStorage，不参与 token 统计（否则污染"今日窗口"）
     try { setIsSubagentWindow(true); } catch (_) { /* ignore */ }
+    // 同步到共享 state：供 chat-input 判断"是否分批发送"。
+    // 子代理必须一次性投递首条消息 —— 分批会让它先收到不完整提示词并立即开工
+    // （与子代理协议冲突，实测其会回复"未收到第 2 批内容"）。
+    try { state.isSubagent = true; } catch (_) { /* ignore */ }
   }
   try {
     ui.injectCSS();

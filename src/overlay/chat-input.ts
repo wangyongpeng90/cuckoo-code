@@ -35,17 +35,9 @@ function randomDelay(): number {
  */
 async function setInputContent(input: any, msg: string): Promise<boolean> {
   try {
-    // 平台自定义填入（优先）：部分站点对 ClipboardEvent('paste') 敏感
-    // （ChatGPT 会识别为"粘贴的文件"附件），由 provider.fillInput 覆盖。
-    try {
-      const provider = getCurrentProvider();
-      if (provider && typeof provider.fillInput === 'function') {
-        const r = await provider.fillInput(input, msg);
-        if (r) return true;
-      }
-    } catch (err: any) {
-      console.warn('[Cuckoo Code] provider.fillInput 失败，回退通用逻辑:', err && err.message);
-    }
+    // 不使用 provider.fillInput：其实现只要首次 execCommand 返回 true 便无条件返回成功，
+    // 既不做写入后读回、分片之间也不等待。实测存在「execCommand 报告成功但编辑器内容为空」
+    // 被当作填入成功 → 发出空消息。统一走下方通用逻辑（含读回校验），各平台一致。
     if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
       input.focus();
       const nativeSetter = Object.getOwnPropertyDescriptor(
@@ -58,25 +50,38 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
     }
     if (input.isContentEditable || input.getAttribute('contenteditable') === 'true') {
       input.focus();
-      document.execCommand('selectAll', false, undefined);
-      document.execCommand('delete', false, undefined);
+      // 清空现有内容：不用 execCommand('selectAll')，它选中的是「当前焦点所在的可编辑区域」，
+      // 焦点未真正落入本输入框时会退化为全选整个文档（表现为页面文字被全部选中）。
+      // 改为在 input 内部显式建立 Range 选区，范围锁定在本元素，不依赖焦点位置。
+      try {
+        const sel = window.getSelection();
+        if (sel) {
+          const range = document.createRange();
+          range.selectNodeContents(input);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          document.execCommand('delete', false, undefined);
+        }
+      } catch (_) { /* 选区失败不阻断：由下方读回校验兜底 */ }
 
-      // 分段 Paste：每段 ≤6000 字符，不会触发 ChatGPT 的附件行为，且每段都很快。
-      // 实测 12000 字符只需约 350ms。
+      // 分段插入：每段 ≤6000 字符，避免触发站点的"粘贴文件"附件行为。
+      // 用 execCommand('insertText') 而非合成 ClipboardEvent('paste')：
+      // 后者 isTrusted=false，ProseMirror 一类编辑器会拒收，导致写入静默失败。
       const CHUNK_SIZE = 6000;
       for (let i = 0; i < msg.length; i += CHUNK_SIZE) {
         const chunk = msg.slice(i, i + CHUNK_SIZE);
-        const dt = new DataTransfer();
-        dt.setData('text/plain', chunk);
-        const pasteEvent = new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: dt,
-        });
-        input.dispatchEvent(pasteEvent);
+        document.execCommand('insertText', false, chunk);
         if (i + CHUNK_SIZE < msg.length) {
           await new Promise(resolve => setTimeout(resolve, 50));
         }
+      }
+      // 读回校验：编辑器可能拒绝写入（受控组件/合成事件），不能无条件返回 true。
+      // 以去空白后长度 ≥ 期望的 90% 为准，容忍编辑器对空白与换行的处理差异。
+      const probe = msg.replace(/\s+/g, '');
+      const writtenCompact = getInputText(input).replace(/\s+/g, '');
+      if (!writtenCompact || writtenCompact.length < probe.length * 0.9) {
+        console.error('[Cuckoo Code] 输入框写入校验失败：期望约 ' + probe.length + ' 字，实际 ' + writtenCompact.length + ' 字');
+        return false;
       }
       return true;
     }
@@ -279,44 +284,135 @@ function isInputVisible(el: any): boolean {
   return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
 }
 /**
- * 发送初始提示（目录树+systemPrompt）到输入框
+ * 分批发送的每批字符数。
+ * 仅用于**存在单条长度上限的平台**（实测 ChatGPT 会拒绝过长的单条消息，
+ * 提示"内容过长"）。初始化提示词（模板 + 工具契约 + 项目说明 + 工作流规则）
+ * 可达数万字符，故按固定长度切分后逐批发送；切分直接按字符数截断。
+ */
+const INITIAL_PROMPT_BATCH_SIZE = 15000;
+/**
+ * 批间等待（毫秒）。**从「上一批已发送」之后开始计时**。
+ * 下一批在填入后还要经过 randomDelay()（发送延迟，用户可设）才会真正发出，
+ * 两段等待叠加已足够让 AI 回执并结束生成，故批间只需补足剩余余量。
+ */
+const INITIAL_PROMPT_BATCH_WAIT_MS = 4000;
+/** 已发出的批次数：重试时从下一批继续，避免重发已送达内容 */
+let initialPromptBatchSent = 0;
+/** 是否正在分批发送：期间不重入，避免 initial-prompt 重复到达导致交叉发送 */
+let initialPromptSending = false;
+
+/**
+ * 是否需要分批发送初始提示。
+ *
+ * 仅在「ChatGPT 主 Agent」时为真，两个排除条件都有实测依据：
+ *  - **子代理不分批**：子代理协议要求首条消息一次性投递（它收到后立即开工）。
+ *    分批会先给它一段不完整提示词 + "请只回复收到，等待下一批"，实测子代理直接
+ *    回复「无法开始审查：未收到第 2 批内容」；且第 1 片发送后会话 URL 变化会被
+ *    看门狗判定为"会话切换"并重置状态。
+ *  - **非 ChatGPT 平台不分批**：DeepSeek 等实测可一次接收数万字符，
+ *    日志中无"内容过长"记录，无需分批。
+ */
+function shouldBatchInitialPrompt(): boolean {
+  if (state.isSubagent) return false;
+  try {
+    const provider = getCurrentProvider();
+    return !!provider && provider.id === 'chatgpt';
+  } catch (_) {
+    return false;
+  }
+}
+
+/** 按固定长度切分文本（直接按字符数截断） */
+function splitInitialPrompt(text: string, size: number): string[] {
+  if (!text) return [];
+  const parts: string[] = [];
+  for (let i = 0; i < text.length; i += size) parts.push(text.slice(i, i + size));
+  return parts;
+}
+
+/** 生成某一批的尾注（说明这是分批内容，并要求 AI 只回执等待下一批） */
+function buildBatchNote(index: number, total: number): string {
+  if (total <= 1) return '';
+  const no = index + 1;
+  if (no < total) {
+    return '\n\n---\n\n【分批发送 ' + no + '/' + total + '】以上是系统提示词的第 ' + no + ' 部分。'
+      + '请只回复「收到」，不要执行任何操作，等待下一批内容。';
+  }
+  return '\n\n---\n\n【分批发送 ' + total + '/' + total + '】以上是系统提示词的完整内容（最后一批）。'
+    + '请开始按上述系统提示词工作。';
+}
+
+/**
+ * 发送初始提示（目录树+systemPrompt）到输入框。
+ * 内容超过单条上限时分批发送，每批附带说明要求 AI 只回执、等待下一批。
  */
 async function sendInitialPromptToInput(): Promise<boolean> {
   if (!state.initialPromptContent) {
     state.pendingInitialPrompt = false;
     return false;
   }
-
-  const input = findInputArea();
-  if (!input) {
-    return false;
+  if (initialPromptSending) {
+    console.log('[Cuckoo Code] 初始提示正在分批发送中，忽略本次重复触发');
+    return true;
   }
-
-  if (!(await setInputContent(input, state.initialPromptContent))) {
-    console.log('[Cuckoo Code] 初始提示填充失败');
-    return false;
-  }
-
-  // 校验：填充后输入框确实有内容（contenteditable 合成粘贴可能被站点拒绝）
+  initialPromptSending = true;
   try {
-    const filled = getInputText(input);
-    if (!filled || filled.trim().length < 10) {
-      console.log('[Cuckoo Code] 初始提示填充后输入框为空，判定失败');
-      return false;
+    // 不该分批的场景（子代理 / 非 ChatGPT）按"整条一次发出"处理：
+    // 传大于内容长度的 size → 只切出 1 片 → 循环只跑一次、无尾注、无批间等待。
+    const batching = shouldBatchInitialPrompt();
+    const size = batching ? INITIAL_PROMPT_BATCH_SIZE : state.initialPromptContent.length + 1;
+    const batches = splitInitialPrompt(state.initialPromptContent, size);
+    const total = batches.length;
+    console.log('[Cuckoo Code] 初始提示 ' + state.initialPromptContent.length
+      + ' 字符，' + (batching ? '分 ' + total + ' 批发送' : '整条发送（不分批）'));
+
+    for (let i = initialPromptBatchSent; i < total; i++) {
+      const input = findInputArea();
+      if (!input) {
+        console.log('[Cuckoo Code] 第 ' + (i + 1) + '/' + total + ' 批发送失败：找不到输入框');
+        return false;
+      }
+
+      const text = batches[i] + buildBatchNote(i, total);
+      if (!(await setInputContent(input, text))) {
+        console.log('[Cuckoo Code] 第 ' + (i + 1) + '/' + total + ' 批填充失败');
+        return false;
+      }
+
+      // 校验：填充后输入框确实有内容（contenteditable 可能拒绝写入）
+      try {
+        const filled = getInputText(input);
+        if (!filled || filled.trim().length < 10) {
+          console.log('[Cuckoo Code] 第 ' + (i + 1) + '/' + total + ' 批填充后输入框为空，判定失败');
+          return false;
+        }
+      } catch (_) { /* ignore */ }
+
+      const sendDelay = randomDelay();
+      console.log('[Cuckoo Code] 第 ' + (i + 1) + '/' + total + ' 批已填入，随机等待 ' + sendDelay + 'ms 后发送...');
+      await new Promise<void>((resolve) => {
+        setTimeout(function () {
+          console.log('[Cuckoo Code] 发送第 ' + (i + 1) + '/' + total + ' 批');
+          triggerSend(input);
+          emitMessageDelivered(text, '系统提示词');
+          resolve();
+        }, sendDelay);
+      });
+      initialPromptBatchSent = i + 1;
+
+      if (i < total - 1) {
+        console.log('[Cuckoo Code] 等待 ' + INITIAL_PROMPT_BATCH_WAIT_MS + 'ms 后发送下一批...');
+        await new Promise<void>((resolve) => setTimeout(resolve, INITIAL_PROMPT_BATCH_WAIT_MS));
+      }
     }
-  } catch (_) { /* ignore */ }
 
-  const sendDelay = randomDelay();
-  console.log('[Cuckoo Code] 初始提示已填入，随机等待 ' + sendDelay + 'ms 后发送...');
-  setTimeout(function() {
-    console.log('[Cuckoo Code] 等待结束，开始发送初始提示');
-    triggerSend(input);
+    initialPromptBatchSent = 0;
     state.pendingInitialPrompt = false;
-    // 纯净模式：系统提示词投递也要有运行态反馈（内容不显示）
-    emitMessageDelivered(state.initialPromptContent || '', '系统提示词');
-  }, sendDelay);
-
-  return true;
+    console.log('[Cuckoo Code] 初始提示发送完毕（共 ' + total + ' 批）');
+    return true;
+  } finally {
+    initialPromptSending = false;
+  }
 }
 /** 初始提示发送的最大尝试次数（跨"等输入框"与"等发送成功"共用） */
 const INITIAL_PROMPT_MAX_ATTEMPTS = 30;
