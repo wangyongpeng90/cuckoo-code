@@ -100,6 +100,21 @@ function toProjectRelPath(filePath: any, projectDir: any): string | null {
 /** 合法 JS 标识符（防注入：插件工具名/参数名来自不可信插件） */
 const JS_IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 
+/** ES 保留字：作严格模式函数形参名会直接 SyntaxError，导致整个沙箱初始化失败 */
+const JS_RESERVED_WORDS = new Set([
+  'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger',
+  'default', 'delete', 'do', 'else', 'enum', 'export', 'extends', 'false',
+  'finally', 'for', 'function', 'if', 'import', 'in', 'instanceof', 'let',
+  'new', 'null', 'return', 'static', 'super', 'switch', 'this', 'throw',
+  'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
+  'implements', 'interface', 'package', 'private', 'protected', 'public',
+]);
+
+/** 合法且非保留字的标识符（可安全用作生成代码的形参名） */
+function isSafeParamName(name: any): boolean {
+  return typeof name === 'string' && JS_IDENT_RE.test(name) && !JS_RESERVED_WORDS.has(name);
+}
+
 /**
  * 为"运行时动态工具"（插件工具）生成沙箱注入代码。
  * 每个工具生成 globalThis.<name> = async function(...) { return await __call('<name>', {...}) }
@@ -113,9 +128,9 @@ function buildDynamicToolsBootstrap(registry: any): string {
   const lines: string[] = ['(function () {', "'use strict';"];
   for (const tool of tools) {
     const name = tool.name;
-    if (!JS_IDENT_RE.test(name)) continue; // 非法标识符，跳过
+    if (!isSafeParamName(name)) continue; // 非法标识符/保留字，跳过
     const props = Object.keys((tool.parameters && tool.parameters.properties) || {})
-      .filter((p) => JS_IDENT_RE.test(p));
+      .filter((p) => isSafeParamName(p));
     const params = props.join(', ');
     const argsObj = props.map((p) => p + ': ' + p).join(', ');
     lines.push('  globalThis.' + name + ' = async function (' + params + ') {');
@@ -199,7 +214,10 @@ class JsRunner {
         toolFailures.push({ tool: op || 'unknown', args: args, error: result.error });
       } else {
         try {
-          result = await tool.execute(Object.assign({}, settings || {}, args, { projectDir, currentWindowId: windowId }));
+          // 合并顺序：宿主 settings 后干入——安全相关开关（ssrfGuard 等）
+          // 不允许被沙箱侧 args 覆盖，否则 AI 代码传 {ssrfGuard:false}
+          // 即可关掉用户在设置页开启的 SSRF 防护
+          result = await tool.execute(Object.assign({}, args, settings || {}, { projectDir, currentWindowId: windowId }));
           if (result && result.success === false) {
             toolFailures.push({ tool: op, args: args, error: result.error || '未知错误' });
           } else if (op === 'read' && result && result.success !== false) {
@@ -217,14 +235,26 @@ class JsRunner {
       return JSON.stringify(result);
     };
 
-    // 沙箱内的计时器句柄（脚本结束时统一清理，避免残留定时器）
-    const sandboxTimers = new Set<any>();
+    // 沙箱内的计时器：以自增数字 id 暴露给沙箱。
+    // 绝不能把宿主 setTimeout 返回的 Timeout 对象直接交进沙箱——它带有宿主
+    // 原型链，`t.constructor.constructor('return process')()` 即可逃逸拿到
+    // 宿主 Function/process，击穿全部工具层防护（危险命令检查/SSRF/路径约束）。
+    const sandboxTimers = new Map<number, any>();
+    let sandboxTimerSeq = 0;
     const hostSetTimeout = (fn: any, ms: any) => {
-      const h = setTimeout(() => { try { fn(); } catch (_) { /* 回调异常忽略 */ } }, ms);
-      sandboxTimers.add(h);
-      return h;
+      const id = ++sandboxTimerSeq;
+      const h = setTimeout(() => {
+        sandboxTimers.delete(id);
+        try { fn(); } catch (_) { /* 回调异常忽略 */ }
+      }, ms);
+      sandboxTimers.set(id, h);
+      return id; // 不透明句柄：沙箱只能拿到纯数字
     };
-    const hostClearTimeout = (h: any) => { if (h) { clearTimeout(h); sandboxTimers.delete(h); } };
+    const hostClearTimeout = (id: any) => {
+      if (typeof id !== 'number') return;
+      const h = sandboxTimers.get(id);
+      if (h) { clearTimeout(h); sandboxTimers.delete(id); }
+    };
 
     // ========== 沙箱构建与加固 ==========
     const sandbox = {};
@@ -240,9 +270,13 @@ class JsRunner {
     Object.defineProperty(sandbox, '__hostClearTimeout', {
       value: hostClearTimeout, enumerable: true, writable: false, configurable: false,
     });
-    // 截断沙箱对象与桥接函数的原型链，阻止经 constructor/__proto__ 逃逸到宿主 realm
+    // 截断沙箱对象与全部跨域函数的原型链，阻止经 constructor/__proto__ 逃逸到宿主 realm。
+    // 注意必须覆盖所有暴露给沙箱的宿主函数：漏掉任何一个，其 .constructor
+    // 都能拿到宿主 Function 构造器（此前 hostSetTimeout/hostClearTimeout 就被漏掉）。
     try { Object.setPrototypeOf(sandbox, null); } catch (e) { /* 尽力而为 */ }
     try { Object.setPrototypeOf(hostBridge, null); } catch (e) { /* 尽力而为 */ }
+    try { Object.setPrototypeOf(hostSetTimeout, null); } catch (e) { /* 尽力而为 */ }
+    try { Object.setPrototypeOf(hostClearTimeout, null); } catch (e) { /* 尽力而为 */ }
 
     let context: any;
     try {
@@ -274,8 +308,14 @@ class JsRunner {
       return { success: false, error: '沙箱初始化失败: ' + (err.message || String(err)) };
     }
 
-    // 包装为 async IIFE：支持顶层 await、return 返回值
-    const script = new vm.Script('(async () => {\n' + code + '\n})()', { filename: 'cuckoo-js-tool-script.js' });
+    let script: any = null;
+    try {
+      // 包装为 async IIFE：支持顶层 await、return 返回值
+      //（new vm.Script 放进 try：AI 代码语法错误应返回错误结果而非裸抛）
+      script = new vm.Script('(async () => {\n' + code + '\n})()', { filename: 'cuckoo-js-tool-script.js' });
+    } catch (err: any) {
+      return { success: false, error: 'JS 代码语法错误: ' + (err && err.message ? err.message : String(err)) };
+    }
 
     let settleTimer: any = null;
     try {
@@ -337,7 +377,7 @@ class JsRunner {
     } finally {
       if (settleTimer) clearTimeout(settleTimer);
       // 清理沙箱内遗留的计时器
-      for (const h of sandboxTimers) clearTimeout(h);
+      for (const h of sandboxTimers.values()) clearTimeout(h);
       sandboxTimers.clear();
     }
   }

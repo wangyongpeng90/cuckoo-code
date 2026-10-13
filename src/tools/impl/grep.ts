@@ -122,12 +122,17 @@ function runRipgrep(args: string[], cwd: string): Promise<{ stdout: string; stde
         // 会改为从 stdin 读取搜索目标，导致无限等待、grep 卡死。
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (d: Buffer) => { stdout += d; });
-      child.stderr.on('data', (d: Buffer) => { stderr += d; });
+      // 必须收集 Buffer 后统一解码：`string += chunk` 会把每个 data 块
+      // 独立 toString('utf8')，64KB 块边界切在多字节字符（CJK/emoji）中间
+      // 时产生 U+FFFD 乱码，且 NDJSON 行仍能 parse → 静默返回损坏路径/内容
+      const stdoutChunks: Buffer[] = [];
+      const stderrChunks: Buffer[] = [];
+      child.stdout.on('data', (d: Buffer) => { stdoutChunks.push(d); });
+      child.stderr.on('data', (d: Buffer) => { stderrChunks.push(d); });
       child.on('error', reject);
       child.on('close', code => {
+        const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+        const stderr = Buffer.concat(stderrChunks).toString('utf8');
         if (code === 0 || code === 1) {
           resolve({ stdout, stderr, code });
         } else {

@@ -351,9 +351,15 @@ function registerShellIpc(): void {
     const { screen } = require('electron');
     const base = ctx.win.getContentBounds(); // 窗口内容区（屏幕坐标）
     const minW = 320;
-    win.__ckSidebarDragTimer = setInterval(() => {
+    const dragTimer: any = setInterval(() => {
+      // 窗口已销毁：必须清掉 interval，否则每 16ms 空转直到进程退出
+      //（drag-end 事件可能因窗口销毁而永远收不到）
+      if (win.isDestroyed()) {
+        clearInterval(dragTimer);
+        if (win.__ckSidebarDragTimer === dragTimer) win.__ckSidebarDragTimer = null;
+        return;
+      }
       try {
-        if (!win || win.isDestroyed()) return;
         const pt = screen.getCursorScreenPoint();
         let w = Math.round(pt.x - base.x);
         if (w < minW) w = minW;
@@ -361,6 +367,7 @@ function registerShellIpc(): void {
         if (!win.webContents.isDestroyed()) win.webContents.send('shell-sidebar-drag', w);
       } catch (_) { /* ignore */ }
     }, 16);
+    win.__ckSidebarDragTimer = dragTimer;
   });
 
   ipcMain.on('shell-sidebar-drag-end', (event: any) => {

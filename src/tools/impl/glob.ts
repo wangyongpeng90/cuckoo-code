@@ -110,16 +110,22 @@ function buildGlobArgs(input: { pattern: string; path?: string }): string[] {
 async function runRipgrep(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number | null }> {
   const rgPath = await getRgPath();
   return new Promise((resolve, reject) => {
-    const child = spawn(rgPath, args, {
+    // --no-config：与 grep 工具保持一致，避免用户 RIPGREP_CONFIG_PATH
+    // 干扰 glob 结果（如自定义忽略规则/输出格式）
+    const child = spawn(rgPath, ['--no-config', ...args], {
       cwd,
       windowsHide: true,
     });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (d: Buffer) => { stdout += d; });
-    child.stderr.on('data', (d: Buffer) => { stderr += d; });
+    // 收集 Buffer 统一解码：按块 string += 会在 64KB 边界切断多字节
+    // 字符（CJK/emoji 文件名）产生乱码（U+FFFD）
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    child.stdout.on('data', (d: Buffer) => { stdoutChunks.push(d); });
+    child.stderr.on('data', (d: Buffer) => { stderrChunks.push(d); });
     child.on('error', reject);
     child.on('close', code => {
+      const stdout = Buffer.concat(stdoutChunks).toString('utf8');
+      const stderr = Buffer.concat(stderrChunks).toString('utf8');
       // code 0 表示成功，code 1 表示无匹配
       if (code === 0 || code === 1) {
         resolve({ stdout, stderr, code });

@@ -98,6 +98,38 @@ function formatFetchOutput(url: string, statusCode: number, bodyKind: string, bo
 }
 
 /**
+ * 手动跟随重定向（替代 fetch 默认 redirect:'follow'）：
+ * SSRF 防护开启时逐跳调用 assertUrlAllowed——否则公网 URL 302 跳到
+ * http://127.0.0.1 / 169.254.169.254（云元数据）可轻松绕过首跳校验。
+ * 每跳同样校验协议（http/https），相对 Location 以当前 URL 为基准解析。
+ */
+const MAX_REDIRECTS = 5;
+async function fetchWithRedirectGuard(startUrl: string, guardOn: boolean, signal: AbortSignal): Promise<Response> {
+  let currentUrl = startUrl;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (guardOn) {
+      await assertUrlAllowed(currentUrl); // 违规地址直接抛错（由调用方统一转为 ToolResult.error）
+    } else {
+      const protocol = new URL(currentUrl).protocol;
+      if (protocol !== 'http:' && protocol !== 'https:') {
+        throw new Error('仅支持 http/https 协议');
+      }
+    }
+    const response = await fetch(currentUrl, { method: 'GET', redirect: 'manual', signal });
+    const status = response.status;
+    const location = response.headers.get('location');
+    if ((status === 301 || status === 302 || status === 303 || status === 307 || status === 308) && location) {
+      // 释放重定向响应体（极小的提示页），避免连接挂起
+      try { await response.body?.cancel(); } catch (_) { /* ignore */ }
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+    return response;
+  }
+  throw new Error('重定向次数过多（超过 ' + MAX_REDIRECTS + ' 次）');
+}
+
+/**
  * web_fetch 工具 - 对齐 dsh。
  * 只接受 url 参数，返回转 Markdown 后的纯文本。
  */
@@ -134,18 +166,14 @@ class WebFetchTool extends Tool {
 
     try {
       const input = parseFetchArgs(url);
+      const guardOn = ssrfGuard === true;
 
       // 安全限制（**默认关闭**，需在设置里开启）：
       // 仅 http/https，且拒绝内网/回环/链路本地/保留地址（防 SSRF）。
       // 关闭时保留原行为（可访问任意 http/https URL，含本地项目）。
-      if (ssrfGuard === true) {
-        try {
-          await assertUrlAllowed(input.url);
-        } catch (e: any) {
-          return ToolResult.error(e.message);
-        }
-      } else {
-        // 未开启防护时，仍只允许 http/https（原行为）
+      // 注意：重定向逐跳校验在 fetchWithRedirectGuard 内完成——
+      // 否则攻击者可用公网 URL 302 跳到 http://127.0.0.1 / 云元数据地址绕过首跳校验。
+      if (!guardOn) {
         const protocol = new URL(input.url).protocol;
         if (protocol !== 'http:' && protocol !== 'https:') {
           return ToolResult.error('仅支持 http/https 协议');
@@ -156,10 +184,7 @@ class WebFetchTool extends Tool {
       const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
       try {
-        const response = await fetch(input.url, {
-          method: 'GET',
-          signal: controller.signal,
-        });
+        const response = await fetchWithRedirectGuard(input.url, guardOn, controller.signal);
 
         // 流式读取，限制大小
         const reader = response.body ? response.body.getReader() : null;

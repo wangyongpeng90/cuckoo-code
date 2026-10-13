@@ -30,7 +30,15 @@ let electronAPI: any = {
     return ipcRenderer.invoke('get-plugin-web-scripts');
   },
   executeTool: (toolName: any, params: any, callId: any) => {
-    return ipcRenderer.invoke('execute-tool', { toolName, params, callId });
+    // SSRF 防护开关同样要传给 execute-tool（与 execute-js 对齐）：
+    // 该路径直达 toolRegistry.execute，主进程无法读取页面 localStorage，
+    // 若不传则 webFetch 的防护永远处于关闭状态（设置页开关形同虚设）
+    let ssrfGuard = false;
+    try {
+      ssrfGuard = localStorage.getItem('cuckoo-ssrf-guard') === '1';
+    } catch (_) {}
+    const merged = Object.assign({}, params, { ssrfGuard });
+    return ipcRenderer.invoke('execute-tool', { toolName, params: merged, callId });
   },
   executeJs: (code: any, callId: any) => {
     // 附件上传间隔（毫秒），随 JS 执行一并传给主进程的 attachFile 工具

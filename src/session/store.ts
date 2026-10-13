@@ -26,6 +26,14 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
         return JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
       }
     } catch (err: any) {
+      // JSON 损坏（半截写入/磁盘坏块）：把坏文件改名备份再返回空对象。
+      // 若直接当空 store 用，下一次任意写盘会以空为基底落盘，
+      // 全部会话映射/血缘/归档数据被静默永久抹掉。
+      try {
+        const backupPath = STORE_FILE + '.corrupt-' + Date.now();
+        fs.renameSync(STORE_FILE, backupPath);
+        console.error('[Cuckoo Code] 会话存储解析失败，已备份损坏文件到: ' + backupPath + '（错误: ' + err.message + '）');
+      } catch (_) { /* 备份失败也继续（下面仍返回空） */ }
       console.error('[Cuckoo Code] 读取会话存储失败:', err.message);
     }
     return {};
@@ -34,7 +42,12 @@ function createSessionStore(profileId: string, storeDir: string, windowState: an
   function writeSessionStore(store: any): void {
     if (noPersist) { memStore = store; return; }
     try {
-      fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), 'utf-8');
+      // 原子写：先写同目录临时文件再 rename 顶替。
+      // 直接 writeFileSync 在写入中途崩溃/断电会留下半截 JSON，
+      // 之后 readSessionStore 解析失败 → 空 store 落盘 → 全量数据丢失。
+      const tmpFile = STORE_FILE + '.tmp';
+      fs.writeFileSync(tmpFile, JSON.stringify(store, null, 2), 'utf-8');
+      fs.renameSync(tmpFile, STORE_FILE);
       console.log('[Cuckoo Code] 会话存储已保存:', STORE_FILE);
     } catch (err: any) {
       console.error('[Cuckoo Code] 写入会话存储失败:', err.message);

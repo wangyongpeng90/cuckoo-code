@@ -555,10 +555,33 @@ function createWindow(profile: any) {
   });
 
   // 关闭前记录窗口大小/位置（用 getNormalBounds 取"还原后"尺寸；closed 时窗口已销毁取不到）
+  const persistWindowState = () => {
+    try {
+      if (mainWindow.isDestroyed()) return;
+      const b = mainWindow.getNormalBounds();
+      profileManager.setWindowBounds(profileData.id, {
+        x: b.x, y: b.y, width: b.width, height: b.height,
+        maximized: mainWindow.isMaximized(),
+      });
+      // 记录最后 URL（仅 http/https；view 可能已销毁）
+      if (view && view.webContents && !view.webContents.isDestroyed()) {
+        const curUrl = view.webContents.getURL();
+        console.log('[Cuckoo Code] 关闭窗口记录 lastUrl: profile=' + profileData.id + ' url=' + curUrl);
+        profileManager.setLastUrl(profileData.id, curUrl);
+      } else {
+        console.log('[Cuckoo Code] 关闭窗口：view 已销毁，跳过记录 URL (profile=' + profileData.id + ')');
+      }
+    } catch (_) { /* ignore */ }
+  };
+
   mainWindow.on('close', (e: any) => {
     if (profileData.isSubagent) return; // 子代理窗口：不记录、不弹框
-    // 应用退出中（菜单退出 / 更新重启）：退出是明确意图，不弹框（否则逐窗口弹框会阻塞退出/更新安装）
-    if (isQuitting) return;
+    // 应用退出中（菜单退出 / 更新重启）：退出是明确意图，不弹框（否则逐窗口弹框会阻塞退出/更新安装）。
+    // 但窗口状态（bounds/lastUrl）仍要落盘——否则退出后恢复的是上一次单独关窗时的旧值
+    if (isQuitting) {
+      persistWindowState();
+      return;
+    }
     // 未确认关闭 且 非程序主动关闭 → 弹框确认
     if (!closeConfirmed.has(mainWindow.id) && !(mainWindow as any).__programmaticClose) {
       e.preventDefault();
@@ -582,22 +605,7 @@ function createWindow(profile: any) {
       }).catch(() => { (mainWindow as any).__closeDialogOpen = false; });
       return;
     }
-    try {
-      if (mainWindow.isDestroyed()) return;
-      const b = mainWindow.getNormalBounds();
-      profileManager.setWindowBounds(profileData.id, {
-        x: b.x, y: b.y, width: b.width, height: b.height,
-        maximized: mainWindow.isMaximized(),
-      });
-      // 记录最后 URL（仅 http/https；view 可能已销毁）
-      if (view && view.webContents && !view.webContents.isDestroyed()) {
-        const curUrl = view.webContents.getURL();
-        console.log('[Cuckoo Code] 关闭窗口记录 lastUrl: profile=' + profileData.id + ' url=' + curUrl);
-        profileManager.setLastUrl(profileData.id, curUrl);
-      } else {
-        console.log('[Cuckoo Code] 关闭窗口：view 已销毁，跳过记录 URL (profile=' + profileData.id + ')');
-      }
-    } catch (_) { /* ignore */ }
+    persistWindowState();
   });
 
   mainWindow.on('closed', () => {

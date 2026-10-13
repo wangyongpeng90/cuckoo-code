@@ -35,30 +35,40 @@ function sleep(ms: number): Promise<void> {
 /**
  * 执行 JS 代码块，遇到"代码不完整"错误时自动重试。
  * 拦截模式下文本已完整（finished），无需重新提取，简单重试执行即可。
+ * 重试只重跑"疑似截断"的失败块——已成功/已定性的块不再重复执行，
+ * 否则非幂等工具（bash 删除 / edit 二次编辑 / webFetch 请求）副作用翻倍。
  * @param shouldCancel 取消判定；返回 true 时停止执行后续代码块（已进入执行的块不中断）
  * @returns 已执行块的结果（取消时为已完成的那些块）
  */
 async function executeJsBlocksWithRetry(blocks: string[], shouldCancel?: () => boolean): Promise<any[]> {
   // 工具开始（每个代码块一次）
   for (const code of blocks) emitToolCall({ phase: 'start', code });
-  let results: any[] = [];
+  // 每个块最近一次的执行结果（按下标记录，保持块顺序；重试成功会覆盖旧失败结果）
+  const resultsByIndex = new Map<number, any>();
+  // 已定性的块（成功 / 或以非"疑似截断"错误失败）：重试时跳过
+  const settled = new Set<number>();
   for (let attempt = 0; attempt <= MAX_JS_RETRY; attempt++) {
-    results = [];
-    for (const code of blocks) {
+    let hasIncompleteFailure = false;
+    for (let i = 0; i < blocks.length; i++) {
+      if (settled.has(i)) continue; // 已成功过的块绝不重跑（防副作用翻倍）
       // 用户已取消：不再执行后续代码块，仅保留已执行块的结果
       if (shouldCancel && shouldCancel()) break;
-      const r = await handleJsToolScript(code);
-      if (r) results.push(r);
+      const r = await handleJsToolScript(blocks[i]);
+      if (r) resultsByIndex.set(i, r);
+      const incomplete = !!(r && r.result && !r.result.success && looksLikeIncompleteCodeError(r.result.error));
+      if (incomplete) hasIncompleteFailure = true;
+      else settled.add(i);
     }
     if (shouldCancel && shouldCancel()) break;
-    const hasIncompleteFailure = results.some(
-      (item) => item && item.result && !item.result.success && looksLikeIncompleteCodeError(item.result.error)
-    );
     if (!hasIncompleteFailure) break;
     if (attempt < MAX_JS_RETRY) await sleep(1000);
   }
-  // 工具结束（逐块上报结果）
-  for (const r of results) {
+  // 工具结束（逐块上报结果，保持块顺序）
+  const results: any[] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const r = resultsByIndex.get(i);
+    if (!r) continue;
+    results.push(r);
     emitToolCall({
       phase: 'end',
       code: (r && r.code) || '',
@@ -160,6 +170,9 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
 
   // 4. 普通文本回复：任务完成，退出工具循环
   console.log('[Cuckoo Code][拦截] 正常文本回复，未检测到工具调用');
+  // 正常回复说明 AI 已回到正确格式，重置"连续格式提示"计数——
+  // 否则计数跨会话/跨天数累计，达到上限后格式纠正提示永久失效
+  formatHintCount = 0;
   try {
     (window as any).electronAPI.showAiNotification().catch(() => {});
   } catch (e) { /* ignore */ }
@@ -258,9 +271,12 @@ function startInterceptObserver(): void {
       const detail = ev && ev.detail;
       if (!detail) return;
       // 诊断日志已移除（高频 JSON.stringify + 每回复输出，会拖慢页面/累积日志）
-      // 用户主动停止：不处理，也不通知监听器（等待方按超时处理）
+      // 用户主动停止：不处理，也不通知监听器（等待方按超时处理）。
+      // 同时消费掉可能残留的 abort 标志（用户点过 harness 停止、又点了平台自己的停止）：
+      // 否则下一条正常回复会在 processInterceptedResponse 入口被旧标志吞掉
       if (detail.status === 'stopped') {
         console.log('[Cuckoo Code][拦截] 检测到用户停止生成，忽略该回复');
+        clearAbort();
         try { watchdog.onResponseReceived('stopped'); } catch (_) { /* ignore */ }
         return;
       }
@@ -273,7 +289,12 @@ function startInterceptObserver(): void {
       for (const cb of responseListeners) {
         try { cb(detail.text || '', meta); } catch (_) { /* ignore */ }
       }
-      processInterceptedResponse(detail.text);
+      // 漂浮 Promise：补上 catch，否则回传阶段异常（找不到输入框等）
+      // 会变成 unhandled rejection，工具遮罩永久挂起、结果静默丢失
+      processInterceptedResponse(detail.text).catch((err: any) => {
+        try { hideToolMask(); } catch (_) { /* ignore */ }
+        console.error('[Cuckoo Code][拦截] 处理回复链异常:', err && err.message ? err.message : err);
+      });
     } catch (err) {
       console.error('[Cuckoo Code][拦截] 处理回复事件出错:', err);
     }

@@ -142,6 +142,10 @@ async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterS
     console.log('[Cuckoo Code] 找不到输入框，无法发送消息');
     return false;
   }
+  // 互斥：同一时间只允许一条待发送消息。旧消息若还在倒计时，先取消
+  //（清掉旧 timer）——否则旧 timer 到点会把输入框里的【新】内容误发送出去
+  //（两条消息重复发送），且旧 token 从此永远无法被 cancelPendingSend 取消。
+  if (pendingSend) cancelPendingSend();
   const token: PendingSend = { timer: null, input: input, cancelled: false };
   pendingSend = token;
   if (!(await setInputContent(input, msg))) {

@@ -43,6 +43,15 @@ function guessMime(p: string): string {
   return MIME[ext] || 'application/octet-stream';
 }
 
+/** 安全解码 URL 路径段：含空格/中文的文件名经浏览器会百分号编码，不解码则 404 */
+function safeDecodePathSegment(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch (_) {
+    return s; // 非法编码序列：按原样处理（后续 existsSync 自然 404）
+  }
+}
+
 /** 启动服务（懒加载，第一次注册路由时启动） */
 function ensureServer(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -53,7 +62,9 @@ function ensureServer(): Promise<number> {
         const m = url.pathname.match(/^\/plugins\/([^/]+)(\/.*)?$/);
         if (!m) { res.writeHead(404); res.end('not found'); return; }
         const pluginId = decodeURIComponent(m[1]);
-        const rest = m[2] || '/';
+        // rest 必须解码：URL 里的 %20（空格）/中文等编码不还原，
+        // path.resolve 会去找字面 "%20" 的文件名 → 一律 404
+        const rest = safeDecodePathSegment(m[2] || '/');
         const route = routes.find(r => r.pluginId === pluginId && (rest === r.prefix || rest.startsWith(r.prefix + '/')));
         if (!route) { res.writeHead(404); res.end('no route'); return; }
         const relInDir = rest.slice(route.prefix.length).replace(/^\//, '');

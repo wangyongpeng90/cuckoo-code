@@ -29,6 +29,8 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
   const wc = ctx.view.webContents;
   let tmpPath: string | null = null;
   let attached = false;
+  // fileChooser 监听器：提升到函数作用域，finally 里才能移除（防残留竞态）
+  let onMessage: ((_e: any, method: string, params: any) => void) | null = null;
   // 诊断镜像：主进程 console 不进 provider 日志，镜像到页面控制台以便落盘排查
   const pageLog = (msg: string) => {
     try {
@@ -161,7 +163,7 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
     let chooserSettled = false;
     let resolveChooser: ((r: AttachResult) => void) | null = null;
     const chooserPromise = new Promise<AttachResult>((resolve) => { resolveChooser = resolve; });
-    const onMessage = (_e: any, method: string, params: any) => {
+    const msgListener = (_e: any, method: string, params: any) => {
       if (method !== 'Page.fileChooserOpened' || chooserSettled) return;
       chooserSettled = true;
       (async () => {
@@ -185,7 +187,8 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
         }
       })();
     };
-    wc.debugger.on('message', onMessage);
+    onMessage = msgListener;
+    wc.debugger.on('message', msgListener);
     await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: true });
 
     // 最多 3 轮「探测 → 真实点击 → 等文件选择框」：
@@ -250,6 +253,10 @@ export async function cdpAttach(ctx: AttachCtx, file: AttachPayload): Promise<At
     return { success: false, error: (err && err.message) || 'cdp-attach-failed' };
   } finally {
     try { if (attached) await wc.debugger.sendCommand('Page.setInterceptFileChooserDialog', { enabled: false }); } catch (_) { /* ignore */ }
+    // 摘除可能残留的 fileChooser 监听：3 轮点击都没等到选择框（file-chooser-timeout）
+    // 时它仍挂在 debugger 上，且闭包引用了下方马上要删除的 tmpPath——
+    // 下次 cdpAttach 重新 attach 后新旧两个监听器会同时响应，竞态注入错文件
+    try { if (onMessage) wc.debugger.removeListener('message', onMessage as any); } catch (_) { /* ignore */ }
     try { if (attached) wc.debugger.detach(); } catch (_) { /* ignore */ }
     try { if (tmpPath) { fs.unlinkSync(tmpPath); fs.rmdirSync(path.dirname(tmpPath)); } } catch (_) { /* ignore */ }
   }

@@ -62,9 +62,12 @@ function isBlockedIpv4(ip: string): boolean {
 
 function isBlockedIpv6(ip: string): boolean {
   const s = ip.toLowerCase();
-  // IPv4-mapped（::ffff:1.2.3.4）→ 抽出 IPv4 部分递归校验
-  const mapped = s.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isBlockedIpv4(mapped[1]);
+  // 内嵌 IPv4 的 IPv6 形式 → 抽出 IPv4 部分递归校验。
+  // 覆盖：::ffff:1.2.3.4（IPv4-mapped）、::ffff:0:1.2.3.4（翻译形式）、
+  // ::1.2.3.4（IPv4-compatible，已弃用但解析器仍接受）、0:0:0:0:0:ffff:1.2.3.4（全展开）。
+  // 此前只认 ::ffff: 一种，::127.0.0.1 / ::169.254.169.254 等直接放行。
+  const embedded = s.match(/^(?:::ffff:(?:0:)?|::|(?:0:){5}ffff:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (embedded) return isBlockedIpv4(embedded[1]);
   if (s === '::1' || s === '::') return true;                 // 回环 / 未指定
   if (/^fe[89ab]/.test(s)) return true;                       // fe80::/10 链路本地
   if (/^f[cd]/.test(s)) return true;                          // fc00::/7 唯一本地

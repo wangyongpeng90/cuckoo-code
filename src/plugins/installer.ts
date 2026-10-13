@@ -47,6 +47,22 @@ function parseSource(repo: string): { source: 'github' | 'gitee'; plain: string 
 /** 来源记录文件名（随插件落盘，但不属于插件内容本身） */
 const INSTALL_META_FILE = '.install-meta.json';
 
+/**
+ * 移动目录：优先 rename（同卷原子），跨设备（EXDEV）时回退 copy+delete。
+ * 插件目录在 ~/.cuckoo/plugins，备份目录在 os.tmpdir()——Linux 上 /tmp
+ * 常为 tmpfs（与 $HOME 不同文件系统），rename 直接抛 EXDEV，
+ * 插件升级会永远失败，故必须回退。
+ */
+function moveDirSync(src: string, dst: string): void {
+  try {
+    fs.renameSync(src, dst);
+  } catch (err: any) {
+    if (!err || err.code !== 'EXDEV') throw err;
+    fs.cpSync(src, dst, { recursive: true });
+    fs.rmSync(src, { recursive: true, force: true });
+  }
+}
+
 /** 安装结果 */
 export interface InstallResult {
   success: boolean;
@@ -217,7 +233,7 @@ async function installPlugin(opts: {
     const backupDir = alreadyInstalled ? path.join(tmpRoot, 'prev') : '';
     if (alreadyInstalled) {
       try {
-        fs.renameSync(targetDir, backupDir);
+        moveDirSync(targetDir, backupDir);
       } catch (err: any) {
         return { success: false, error: '准备覆盖失败：' + (err && err.message ? err.message : String(err)) };
       }
@@ -232,9 +248,9 @@ async function installPlugin(opts: {
       fs.cpSync(stageDir, targetDir, { recursive: true });
     } catch (err: any) {
       fs.rmSync(targetDir, { recursive: true, force: true });
-      // 覆盖失败：把旧版本挪回来
+      // 覆盖失败：把旧版本挪回来（EXDEV 回退同 moveDirSync）
       if (alreadyInstalled && fs.existsSync(backupDir)) {
-        try { fs.renameSync(backupDir, targetDir); } catch { /* 尽力而为 */ }
+        try { moveDirSync(backupDir, targetDir); } catch { /* 尽力而为 */ }
       }
       return { success: false, error: '写入插件目录失败：' + (err && err.message ? err.message : String(err)) };
     }

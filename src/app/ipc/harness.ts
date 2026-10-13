@@ -138,11 +138,20 @@ async function stopGeneration(ctx: any): Promise<any> {
     if (r && r.found && typeof r.x === 'number') {
       let cdpOk = false;
       try {
-        if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
-        await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y, button: 'none', clickCount: 0 });
-        await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', buttons: 1, clickCount: 1 });
-        await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', buttons: 0, clickCount: 1 });
-        cdpOk = true;
+        // 记住进入前是否已附加：用完只在"是我们自己 attach 的"情况下 detach，
+        // 不误伤其他模块（如 cdp-attach）长期持有的调试会话
+        const wasAttached = wc.debugger.isAttached();
+        if (!wasAttached) wc.debugger.attach('1.3');
+        try {
+          await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y, button: 'none', clickCount: 0 });
+          await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', buttons: 1, clickCount: 1 });
+          await wc.debugger.sendCommand('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', buttons: 0, clickCount: 1 });
+          cdpOk = true;
+        } finally {
+          // 用完即还：若不 detach，该窗口 debugger 永久占用，
+          // 之后 cdpAttach（附件上传）一律 debugger-busy，上传通道永久失效
+          if (!wasAttached) { try { wc.debugger.detach(); } catch (_) { /* ignore */ } }
+        }
       } catch (e: any) { console.log('[Cuckoo Harness] CDP 失败: ' + (e && e.message)); }
       if (!cdpOk) {
         wc.sendInputEvent({ type: 'mouseMove', x: r.x, y: r.y });

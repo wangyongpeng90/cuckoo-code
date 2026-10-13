@@ -764,7 +764,12 @@ function registerPluginIpc(): void {
   ipcMain.on('plugin-overlay-msg', (event: any, { channel, data }: any = {}) => {
     if (channel === 'overlay-hit-rects') {
       overlayRects = Array.isArray(data) ? data : [];
-      if (!overlayWinRef) overlayWinRef = findOverlayView(event);
+      // 引用失效时（主窗口关闭后重建 overlay）必须重新查找：
+      // 只判空的话，陈旧的已销毁引用永远 truthy，下方轮询对它 early-return，
+      // setIgnoreMouseEvents 不再切换 → 桌宠等交互区域点不动/一直穿透
+      if (!overlayWinRef || (overlayWinRef.isDestroyed && overlayWinRef.isDestroyed())) {
+        overlayWinRef = findOverlayView(event);
+      }
     }
   });
   // 定时轮询鼠标（200ms，够用且省）；鼠标没动则跳过，进一步省 CPU
