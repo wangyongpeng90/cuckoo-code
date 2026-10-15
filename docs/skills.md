@@ -82,7 +82,11 @@ allowed-tools: bash, read, grep
 - 中文描述
 ```
 
-## 六、与 Agents 的区别
+## 六、现成技能合集
+
+[`skills/`](../skills/) 目录收录了可直接复制安装的社区技能（GitHub 一键提交流程等），复制到 `~/.cuckoo/skills/` 即用，欢迎 PR 贡献新技能。
+
+## 七、与 Agents 的区别
 
 | | Skill | Agent |
 |---|---|---|
