@@ -9,6 +9,9 @@
  * 本模块依赖 electron?否——纯 Node。但 SDK 是 CJS，用 createRequire 加载。
  */
 import { createRequire } from 'node:module';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { readConfig, writeConfig } from './config.js';
 
 const require = createRequire(import.meta.url);
@@ -19,8 +22,10 @@ const lark = require('@larksuiteoapi/node-sdk');
 type FeishuStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
 interface FeishuCallbacks {
-  /** 收到用户从飞书发来的消息（chatId 非空=群消息；空=单聊） */
+  /** 收到用户从飞书发来的文本消息（chatId 非空=群消息；空=单聊） */
   onUserMessage?: (text: string, chatId: string) => void;
+  /** 收到用户从飞书发来的图片（已下载到本地临时文件） */
+  onUserImage?: (filePath: string, chatId: string) => void;
   /** 状态变化（供 UI 刷新） */
   onStatusChange?: (status: FeishuStatus, detail?: string) => void;
 }
@@ -91,6 +96,66 @@ function extractText(event: any): string {
   }
 }
 
+/** 从图片消息事件中取 image_key 与 message_id；非图片消息返回空 */
+function extractImageRef(event: any): { imageKey: string; messageId: string } {
+  try {
+    const msg = event && event.message;
+    if (!msg) return { imageKey: '', messageId: '' };
+    if (msg.message_type !== 'image') return { imageKey: '', messageId: '' };
+    const content = JSON.parse(msg.content || '{}');
+    const imageKey = typeof content.image_key === 'string' ? content.image_key : '';
+    const messageId = typeof msg.message_id === 'string' ? msg.message_id : '';
+    return { imageKey, messageId };
+  } catch (_) {
+    return { imageKey: '', messageId: '' };
+  }
+}
+
+/**
+ * 下载飞书消息里的图片到本地临时文件。
+ * 用户发来的图片属于「消息资源」，用 im.v1.messageResource.get 下载
+ * （im.v1.image.get 只能下载本机器人自己上传的图片）。
+ * @param messageId 消息 id
+ * @param imageKey message.content.image_key（即 file_key）
+ * @returns 本地文件绝对路径；失败返回 null
+ */
+async function downloadImage(messageId: string, imageKey: string): Promise<string | null> {
+  if (!messageId || !imageKey || !apiClient) return null;
+  try {
+    const res: any = await apiClient.im.v1.messageResource.get({
+      params: { type: 'image' },
+      path: { message_id: messageId, file_key: imageKey },
+    });
+    const dir = path.join(os.tmpdir(), 'cuckoo-feishu-images');
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'feishu-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.png');
+    // SDK 返回对象带 writeFile；无则退回流收集
+    if (res && typeof res.writeFile === 'function') {
+      await res.writeFile(file);
+    } else if (res && typeof res.getReadableStream === 'function') {
+      const buf = await streamToBuffer(res.getReadableStream());
+      fs.writeFileSync(file, buf);
+    } else {
+      console.error('[Feishu] 下载图片返回格式未知:', typeof res);
+      return null;
+    }
+    return file;
+  } catch (err: any) {
+    console.error('[Feishu] 下载图片失败:', err && err.message);
+    return null;
+  }
+}
+
+/** 把可读流收集为 Buffer */
+function streamToBuffer(stream: any): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on('data', (c: Buffer) => chunks.push(Buffer.from(c)));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', (e: any) => reject(e));
+  });
+}
+
 /** 启动长连接（幂等：先断开旧的） */
 function connect(cb?: FeishuCallbacks): { success: boolean; error?: string } {
   if (cb) callbacks = cb;
@@ -120,8 +185,24 @@ function connect(cb?: FeishuCallbacks): { success: boolean; error?: string } {
               console.log('[Feishu] 已记录推送目标 open_id:', openId);
             }
           }
-          const text = extractText(data);
           const chatId = extractChatId(data);
+
+          // 图片消息：下载到本地临时文件后回调
+          const imageRef = extractImageRef(data);
+          if (imageRef.imageKey) {
+            console.log('[Feishu] 收到图片消息, image_key=' + imageRef.imageKey + (chatId ? ' 群=' + chatId : ' 单聊'));
+            downloadImage(imageRef.messageId, imageRef.imageKey).then((filePath) => {
+              if (filePath) {
+                console.log('[Feishu] 图片已下载:', filePath);
+                try { callbacks.onUserImage?.(filePath, chatId); } catch (_) {}
+              } else {
+                console.warn('[Feishu] 图片下载失败，丢弃');
+              }
+            }).catch((e: any) => console.error('[Feishu] 图片处理失败:', e && e.message));
+            return;
+          }
+
+          const text = extractText(data);
           if (text) {
             console.log('[Feishu] 收到消息, 长度=' + text.length + (chatId ? ' 群=' + chatId : ' 单聊'));
             try { callbacks.onUserMessage?.(text, chatId); } catch (_) {}

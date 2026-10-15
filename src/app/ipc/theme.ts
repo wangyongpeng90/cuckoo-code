@@ -56,6 +56,28 @@ function registerThemeIpc(): void {
     return { success: themeManager.dispose(token) };
   });
 
+  ipcMain.handle('theme-user-get', () => {
+    return { success: true, tokens: themeManager.getUserTheme() };
+  });
+
+  ipcMain.handle('theme-user-set', (_e: any, { tokens }: any = {}) => {
+    try {
+      const ok = themeManager.setUserTheme(tokens || {});
+      return { success: ok, snapshot: themeManager.snapshot() };
+    } catch (err: any) {
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('theme-user-reset', () => {
+    try {
+      themeManager.resetUserTheme();
+      return { success: true, snapshot: themeManager.snapshot() };
+    } catch (err: any) {
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
   ipcMain.handle('theme-subscribe', (event: any) => {
     const wc = event && event.sender;
     if (!wc) return { success: false, error: 'no sender' };

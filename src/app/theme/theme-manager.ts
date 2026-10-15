@@ -45,6 +45,48 @@ function writePreference(preference: string): void {
 /** 订阅者：窗口 webContents，变化时推快照 */
 const subscribers = new Set<any>();
 
+// ===== 用户自定义颜色（持久化覆盖层，供主题类插件/UI 使用）=====
+// 存 {CUCKOO_HOME}/user-theme.json，形如 { token: { light, dark } }。
+// 启动时应用为固定 source 'user-custom' 的覆盖层，插件可读写。
+const USER_THEME_SOURCE = 'user-custom';
+function getUserThemeFile(): string {
+  return path.join(process.env.CUCKOO_HOME || path.join(os.homedir(), '.cuckoo'), 'user-theme.json');
+}
+function readUserTheme(): ThemeTokenOverrides | null {
+  try {
+    const file = getUserThemeFile();
+    if (!fs.existsSync(file)) return null;
+    const raw = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    if (!raw || typeof raw !== 'object') return null;
+    return raw as ThemeTokenOverrides;
+  } catch { return null; }
+}
+function applyUserTheme(tokens: ThemeTokenOverrides | null): void {
+  const t = getTheme();
+  try { t.overrideTokens(USER_THEME_SOURCE, tokens && Object.keys(tokens).length ? tokens : {}); } catch { /* ignore */ }
+}
+function getUserTheme(): ThemeTokenOverrides {
+  return readUserTheme() || {};
+}
+function setUserTheme(tokens: ThemeTokenOverrides): boolean {
+  let ok = true;
+  try {
+    const file = getUserThemeFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(tokens || {}, null, 2), 'utf-8');
+  } catch { ok = false; }
+  if (ok) applyUserTheme(tokens);
+  return ok;
+}
+function resetUserTheme(): boolean {
+  try {
+    const file = getUserThemeFile();
+    if (fs.existsSync(file)) fs.rmSync(file);
+  } catch { /* ignore */ }
+  applyUserTheme(null);
+  return true;
+}
+
 /** 取（或懒创建）主进程主题权威实例 */
 function getTheme(): ThemeRuntime {
   if (runtime) return runtime;
@@ -83,6 +125,8 @@ function getTheme(): ThemeRuntime {
   if (saved) {
     try { runtime.setTheme(saved); } catch { /* 未注册的旧主题，忽略 */ }
   }
+  // 应用用户自定义颜色覆盖层
+  try { applyUserTheme(readUserTheme()); } catch { /* ignore */ }
   return runtime;
 }
 
@@ -163,4 +207,5 @@ function dispose(token: string): boolean {
 export {
   getTheme, snapshot, subscribe, broadcastSnapshot,
   setTheme, register, overrideTokens, list, dispose,
+  getUserTheme, setUserTheme, resetUserTheme,
 };

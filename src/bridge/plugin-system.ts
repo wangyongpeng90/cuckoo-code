@@ -314,20 +314,33 @@ export function unloadAllPlugins(): void {
   if (host) host.unloadAll();
 }
 
-/** 重载全部插件（先卸载，再重新拉取加载） */
-export async function reloadPlugins(): Promise<void> {
-  const h = getPluginHost();
-  h.unloadAll();
+let reloading = false;
+let reloadQueued = false;
 
-  const dshSources = await fetchSources('dsh');
-  const uiSources = await fetchSources('ui');
-  const all = [...dshSources, ...uiSources];
-  if (all.length === 0) {
-    console.log('[plugin] 重载后无插件');
-    return;
+/** 重载全部插件（先卸载，再重新拉取加载）。并发调用会合并为一次。 */
+export async function reloadPlugins(): Promise<void> {
+  // 防并发：重载进行中时，只记一个"待重载"标记，结束后再跑一次
+  if (reloading) { reloadQueued = true; return; }
+  reloading = true;
+  try {
+    do {
+      reloadQueued = false;
+      const h = getPluginHost();
+      h.unloadAll();
+
+      const dshSources = await fetchSources('dsh');
+      const uiSources = await fetchSources('ui');
+      const all = [...dshSources, ...uiSources];
+      if (all.length === 0) {
+        console.log('[plugin] 重载后无插件');
+        continue;
+      }
+      const result = h.loadAll(all);
+      console.log('[plugin] 重载完成:', result.loaded.join(', ') || '(无)');
+    } while (reloadQueued);
+  } finally {
+    reloading = false;
   }
-  const result = h.loadAll(all);
-  console.log('[plugin] 重载完成:', result.loaded.join(', ') || '(无)');
 }
 
 /** 绑定"插件重载"通知（主进程推送） */

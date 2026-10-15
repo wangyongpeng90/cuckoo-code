@@ -137,6 +137,9 @@ let electronAPI: any = {
   shellMount: (pluginId: string, target: string, id: string, spec: any) => {
     return ipcRenderer.invoke('plugin-shell-mount', { pluginId, target, id, spec });
   },
+  shellUnmount: (pluginId: string, target?: string, id?: string) => {
+    return ipcRenderer.invoke('plugin-shell-unmount', { pluginId, target, id });
+  },
   /** 插件 webServer：注册静态路由（暴露插件目录为 HTTP） */
   webServerServe: (pluginId: string, prefix: string, dir: string) => {
     return ipcRenderer.invoke('plugin-webserver-serve', { pluginId, prefix, dir });

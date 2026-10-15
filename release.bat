@@ -23,8 +23,10 @@ if "%NEW_VER%"=="" (
   exit /b 1
 )
 
-:: 简单校验版本号格式 x.y.z
-echo %NEW_VER% | findstr /r "^[0-9][0-9]*.[0-9][0-9]*.[0-9][0-9]*$" > nul
+:: 校验版本号格式 x.y.z（用 node 校验，避免 findstr 的坑：
+:: findstr 的 "." 匹配任意字符、对行尾空格/全角字符敏感，曾导致 0.8.10 被误判）
+for /f "delims=" %%v in ('node -e "const v=process.argv[1].trim();process.stdout.write(v)" "%NEW_VER%"') do set NEW_VER=%%v
+node -e "const v=process.argv[1];if(!/^[0-9]+.[0-9]+.[0-9]+$/.test(v)){console.error('版本号格式错误，应为 x.y.z 格式（实际输入：['+v+']）');process.exit(1)}" "%NEW_VER%"
 if errorlevel 1 (
   echo 版本号格式错误，应为 x.y.z 格式，例如 0.1.5
   pause

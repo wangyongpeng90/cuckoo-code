@@ -334,6 +334,25 @@ document.getElementById('plugin-open-dir')?.addEventListener('click', async () =
   if (r && !r.success) await ckAlert(r.error || '打开目录失败');
 });
 
+// 导入插件：选文件夹或 zip
+document.getElementById('plugin-import-btn')?.addEventListener('click', async () => {
+  const apiAny: any = api as any;
+  const fromDir = await ckConfirm('从【文件夹】导入？\n\n点「确定」= 文件夹\n点「取消」= zip 文件', '导入插件');
+  try {
+    const r = fromDir
+      ? (apiAny.pluginImportDir ? await apiAny.pluginImportDir() : null)
+      : (apiAny.pluginImportZip ? await apiAny.pluginImportZip() : null);
+    if (!r) { await ckAlert('导入接口不可用'); return; }
+    if (r.canceled) return;
+    if (!r.success) { await ckAlert(r.error || '导入失败', '导入失败'); return; }
+    const name = (r.plugin && r.plugin.manifest && r.plugin.manifest.name) || '插件';
+    await ckAlert('已导入：' + name + '\n\n默认处于禁用状态，请在列表中打开开关启用。', '导入完成');
+    await loadInstalledPlugins();
+  } catch (e: any) {
+    await ckAlert('导入失败: ' + (e.message || e));
+  }
+});
+
 /** 打开插件配置弹窗（按 schema 渲染简单表单） */
 async function openPluginConfig(pluginId: string): Promise<void> {
   const apiAny: any = api as any;
@@ -421,19 +440,12 @@ async function openPluginConfig(pluginId: string): Promise<void> {
 
 // ===== Cuckoo 插件（DSH 兼容）=====
 function ckpRenderItem(p: any): string {
-  const on = !!p.enabled;
+  // 只显示标题 + 描述 + 卸载按钮（开关/版本/id 由插件详情页处理）
   return '<div class="ck-list-item" data-id="' + escapeAttr(p.id) + '">' +
     '<div class="ck-list-main">' +
-      '<div class="ck-list-title">' + escapeHtml(p.name || p.id) +
-        (p.version ? ' <span class="ck-plugin-ver">v' + escapeHtml(p.version) + '</span>' : '') +
-      '</div>' +
+      '<div class="ck-list-title">' + escapeHtml(p.name || p.id) + '</div>' +
       (p.description ? '<div class="ck-list-desc">' + escapeHtml(p.description) + '</div>' : '') +
-      '<div class="ck-plugin-meta"><span>' + escapeHtml(p.id) + '</span></div>' +
     '</div>' +
-    '<label class="ck-switch" title="' + (on ? '已启用' : '已禁用') + '">' +
-      '<input type="checkbox" class="ckp-toggle" ' + (on ? 'checked' : '') + ' />' +
-      '<span class="ck-switch-track"></span>' +
-    '</label>' +
     '<button class="ck-icon-btn ckp-del" title="卸载">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>' +
     '</button>' +

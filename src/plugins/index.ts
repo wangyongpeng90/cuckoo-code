@@ -92,6 +92,8 @@ export {
   listInstalledPlugins,
   installPlugin,
   uninstallPlugin,
+  importPluginFromDir,
+  importPluginFromZip,
 } from './installer.js';
 
 export type { InstallResult } from './installer.js';

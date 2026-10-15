@@ -60,9 +60,10 @@ export function setCollapsed(collapsed: boolean): void {
 }
 
 function activateTab(item: any, tab: string): void {
-  abItems.forEach((i: any) => i.classList.remove('ck-ab-active'));
+  // 实时查询（含插件动态挂载的图标/面板），避免用模块加载时的一次性快照
+  document.querySelectorAll('.ck-ab-item').forEach((i: any) => i.classList.remove('ck-ab-active'));
   item.classList.add('ck-ab-active');
-  tabs.forEach((p: any) => {
+  document.querySelectorAll('.ck-tab').forEach((p: any) => {
     if (p.dataset.panel === tab) p.classList.add('ck-tab-active');
     else p.classList.remove('ck-tab-active');
   });

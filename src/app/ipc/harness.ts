@@ -18,80 +18,11 @@ import { getPluginScanRoots } from '../../plugins/roots.js';
 import { registry } from '../../tools/index.js';
 import { getProvider } from '../../providers/registry.js';
 import { resetTodosCache } from './tool.js';
-import { cdpAttach } from './cdp-attach.js';
+import { uploadAttachment } from './attach-upload.js';
 import { initProject } from '../../session/project-context.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
-
-/**
- * 注入到 AI 页面执行的上传函数（harness 专用，比官方 attachFile 更健壮）。
- * 先找 input[type=file]，找不到则尝试点击上传按钮再等（很多站点输入框是懒创建的）。
- * 用函数 toString 注入，避免多行字符串转义问题。
- */
-function attachFn(doc: any, win: any, b64: any, fileName: any, mimeType: any, timeoutMs: any, waitMs: any) {
-  return (async function () {
-    try {
-      var bin = win.atob(b64);
-      var bytes = new win.Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      var file = new win.File([bytes], fileName, { type: mimeType });
-      function findInput() { return doc.querySelector('input[type=file]'); }
-      var input = findInput();
-      if (!input) {
-        var keys = ['attach', 'upload', 'paperclip', 'file', 'image', '图片', '文件', '上传', '添加'];
-        var cands = doc.querySelectorAll('button, [role=button], [class*=attach], [class*=upload], [class*=file], [class*=plus], [class*=add]');
-        for (var ci = 0; ci < cands.length; ci++) {
-          var b = cands[ci];
-          if (!b || b.offsetWidth === 0) continue;
-          var sig = String(b.className || '') + ' ' + (b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '');
-          var low = sig.toLowerCase();
-          for (var ki = 0; ki < keys.length; ki++) {
-            if (low.indexOf(keys[ki].toLowerCase()) !== -1) { b.click(); break; }
-          }
-          input = findInput();
-          if (input) break;
-        }
-        if (!input) {
-          var dl = win.Date.now() + 2500;
-          while (win.Date.now() < dl && !input) { await new Promise(function (r) { win.setTimeout(r, 120); }); input = findInput(); }
-        }
-      }
-      if (!input) return { success: false, error: '未找到文件上传输入框（已尝试点击上传按钮）' };
-      var dt = new win.DataTransfer();
-      dt.items.add(file);
-      input.files = dt.files;
-      // dispatch 后立即判断：文件已写入 input 即视为提交成功（图片缩略图不含文件名，不能只靠文本检测）
-      var submitted = false;
-      try { input.dispatchEvent(new win.Event('change', { bubbles: true })); submitted = true; } catch (e) { /* ignore */ }
-      var hasFiles = false;
-      try { hasFiles = !!(input.files && input.files.length > 0); } catch (e) { /* ignore */ }
-      // 站点可能在 change 后清空 input.files，但文件其实已被接收；派发成功即视为提交成功
-      if (submitted) return { success: true, fileName: fileName };
-      function fileVisible() {
-        var node = input;
-        for (var d = 0; d < 12 && node; d++) {
-          if (node.innerText && node.innerText.indexOf(fileName) !== -1) return true;
-          node = node.parentElement;
-        }
-        var bt = doc.body ? doc.body.innerText : '';
-        return bt.indexOf(fileName) !== -1;
-      }
-      if (submitted && hasFiles) return { success: true, fileName: fileName };
-      // 退化检测：等待附件 chip 出现
-      await new Promise(function (r) { win.setTimeout(r, waitMs); });
-      if (fileVisible()) return { success: true, fileName: fileName };
-      var deadline = win.Date.now() + timeoutMs;
-      while (win.Date.now() < deadline) {
-        await new Promise(function (r) { win.setTimeout(r, 300); });
-        if (fileVisible()) return { success: true, fileName: fileName };
-      }
-      return { success: false, error: '上传超时，未检测到附件出现' };
-    } catch (err: any) {
-      return { success: false, error: err && err.message ? err.message : String(err) };
-    }
-  })();
-}
 
 /** 该窗口的 harness view（用于状态查询） */
 function getHarnessView(sender: any): any {
@@ -254,31 +185,14 @@ function registerHarnessIpc(): void {
     if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: 'no-ai-view' };
     }
-    const pageWc = ctx.view.webContents;
     const results: any[] = [];
     for (const f of files) {
       console.log('[Cuckoo Harness] 上传文件: ' + f.name + ' b64len=' + ((f.data || '').length));
-      // CDP 真实点击优先：合成事件免疫站点（如智谱）走原生文件选择通道
-      try {
-        const cr = await cdpAttach(ctx as any, { name: f.name, data: f.data, mime: f.mime });
-        console.log('[Cuckoo Harness] CDP 上传结果: ' + JSON.stringify(cr));
-        if (cr && cr.success) { results.push({ success: true, name: f.name }); continue; }
-      } catch (cdpErr: any) {
-        console.log('[Cuckoo Harness] CDP 通道异常，转合成事件兜底: ' + (cdpErr && cdpErr.message));
-      }
-      try {
-        const code = '(' + attachFn.toString() + ')(document, window, ' +
-          JSON.stringify(f.data || '') + ', ' +
-          JSON.stringify(f.name || 'file') + ', ' +
-          JSON.stringify(f.mime || 'application/octet-stream') + ', 12000, 500)';
-        const r = await pageWc.executeJavaScript(code, true);
-        console.log('[Cuckoo Harness] 上传结果: ' + JSON.stringify(r));
-        if (r && r.success) results.push({ success: true, name: f.name });
-        else results.push({ success: false, name: f.name, error: (r && r.error) || '上传失败' });
-      } catch (err: any) {
-        console.log('[Cuckoo Harness] 上传异常: ' + err.message);
-        results.push({ success: false, name: f.name, error: err.message });
-      }
+      // CDP 真实点击优先，合成事件兜底（见 attach-upload.ts）
+      const r = await uploadAttachment(ctx as any, { name: f.name, data: f.data, mime: f.mime });
+      console.log('[Cuckoo Harness] 上传结果: ' + JSON.stringify(r));
+      if (r && r.success) results.push({ success: true, name: f.name });
+      else results.push({ success: false, name: f.name, error: (r && r.error) || '上传失败' });
     }
     const ok = results.filter((x) => x.success).length;
     console.log('[Cuckoo Harness] harness-attach 完成, ok=' + ok + '/' + files.length);

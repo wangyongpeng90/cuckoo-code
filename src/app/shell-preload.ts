@@ -61,6 +61,10 @@ const shellAPI = {
   },
   // 拉取"已缓存的插件挂载"（壳页面就绪后补渲染）
   listPluginShellMounts: () => ipcRenderer.invoke('plugin-shell-list'),
+  // 插件界面卸载（主进程 → 壳页面：移除某插件的挂载）
+  onPluginShellUnmount: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-plugin-unmount', (_e: any, data: any) => cb(data));
+  },
   // 插件注入壳页面 CSS
   onPluginShellStyle: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-plugin-style', (_e: any, data: any) => cb(data));
@@ -139,6 +143,11 @@ const shellAPI = {
   onThemeChanged: (cb: (snapshot: any) => void) => {
     ipcRenderer.on('theme-changed', (_e: any, snap: any) => cb(snap));
   },
+  // 用户自定义颜色（主题类插件用）
+  themeUserGet: () => ipcRenderer.invoke('theme-user-get'),
+  themeUserSet: (tokens: any) => ipcRenderer.invoke('theme-user-set', { tokens }),
+  themeUserReset: () => ipcRenderer.invoke('theme-user-reset'),
+  themeOverride: (source: string, tokens: any) => ipcRenderer.invoke('theme-override', { source, tokens }),
   // ========== 技能 ==========
   listSkills: () => ipcRenderer.invoke('list-skills'),
   // ========== 子代理 ==========
@@ -167,6 +176,8 @@ const shellAPI = {
   pluginSetEnabled: (id: string, enabled: boolean) =>
     ipcRenderer.invoke('plugin-set-enabled', { id, enabled }),
   pluginOpenDir: () => ipcRenderer.invoke('plugin-open-dir'),
+  pluginImportDir: () => ipcRenderer.invoke('plugin-import-dir'),
+  pluginImportZip: () => ipcRenderer.invoke('plugin-import-zip'),
   // ===== Cuckoo 插件（DSH 兼容）=====
   cuckooPluginList: () => ipcRenderer.invoke('cuckoo-plugin-list'),
   cuckooPluginInstall: (pkgName: string) => ipcRenderer.invoke('cuckoo-plugin-install', { pkgName }),

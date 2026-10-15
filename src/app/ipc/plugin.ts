@@ -22,6 +22,8 @@ import {
   getEnabledPluginDshFiles,
   getEnabledPluginUiFiles,
   getEnabledPluginWebScripts,
+  importPluginFromDir,
+  importPluginFromZip,
 } from '../../plugins/index.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -46,7 +48,7 @@ import * as windowState from '../window.js';
 import * as mcpClient from '../../mcp/client.js';
 
 const require = createRequire(import.meta.url);
-const { ipcMain, shell, app } = require('electron');
+const { ipcMain, shell, app, dialog } = require('electron');
 const _os = require('node:os');
 const _fs = require('node:fs');
 const _path = require('node:path');
@@ -197,6 +199,35 @@ function registerPluginIpc(): void {
   ipcMain.handle('plugin-uninstall', async (_event: any, { id }: any = {}) => {
     try {
       const r = uninstallPlugin(id);
+      if (r.success) invalidateCustomProvidersCache();
+      return r;
+    } catch (err: any) {
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  // ===== 本地导入插件（从文件夹 / zip）=====
+  ipcMain.handle('plugin-import-dir', async () => {
+    try {
+      const win: any = windowState.getMainWindow ? windowState.getMainWindow() : null;
+      const opts = { title: '选择插件文件夹', properties: ['openDirectory'] };
+      const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+      if (res.canceled || !res.filePaths || !res.filePaths.length) return { success: false, canceled: true };
+      const r = importPluginFromDir(res.filePaths[0]);
+      if (r.success) invalidateCustomProvidersCache();
+      return r;
+    } catch (err: any) {
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
+  });
+
+  ipcMain.handle('plugin-import-zip', async () => {
+    try {
+      const win: any = windowState.getMainWindow ? windowState.getMainWindow() : null;
+      const opts = { title: '选择插件 zip', properties: ['openFile'], filters: [{ name: 'ZIP', extensions: ['zip'] }] };
+      const res = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts);
+      if (res.canceled || !res.filePaths || !res.filePaths.length) return { success: false, canceled: true };
+      const r = await importPluginFromZip(res.filePaths[0]);
       if (r.success) invalidateCustomProvidersCache();
       return r;
     } catch (err: any) {
@@ -614,6 +645,27 @@ function registerPluginIpc(): void {
   // 壳页面就绪后拉取（补发之前缓存的挂载）
   ipcMain.handle('plugin-shell-list', async () => {
     return { success: true, mounts: shellMounts };
+  });
+  // 卸载某插件（或某个挂载点）的壳页面挂载 → 通知壳页面移除对应 DOM
+  ipcMain.handle('plugin-shell-unmount', async (_event: any, { pluginId, target, id }: any = {}) => {
+    try {
+      if (typeof pluginId !== 'string' || !pluginId) return { success: false, error: '缺少 pluginId' };
+      // 从缓存移除（target/id 缺省 = 移除该插件全部挂载）
+      for (let i = shellMounts.length - 1; i >= 0; i--) {
+        const m = shellMounts[i];
+        if (m.pluginId !== pluginId) continue;
+        if (target && m.target !== target) continue;
+        if (id && m.id !== id) continue;
+        shellMounts.splice(i, 1);
+      }
+      const mainWin: any = windowState.getMainWindow ? windowState.getMainWindow() : null;
+      if (mainWin && mainWin.webContents) {
+        mainWin.webContents.send('shell-plugin-unmount', { pluginId, target, id });
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err && err.message ? err.message : String(err) };
+    }
   });
 
   // ===== 插件注入壳页面 CSS（对标 DSH styles.insert）=====

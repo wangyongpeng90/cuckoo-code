@@ -1364,6 +1364,9 @@
             <div class="ck-tab" data-panel="plugins">
               <div class="ck-actions">
                 <span class="ck-set-group-title" style="flex:1;">已安装插件</span>
+                <button class="ck-icon-btn" id="plugin-import-btn" title="导入插件（文件夹 / zip）">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+                </button>
                 <button class="ck-icon-btn" id="plugin-open-dir" title="打开插件目录">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                 </button>
@@ -2333,9 +2336,9 @@
     }
   }
   function activateTab(item, tab) {
-    abItems.forEach((i) => i.classList.remove("ck-ab-active"));
+    document.querySelectorAll(".ck-ab-item").forEach((i) => i.classList.remove("ck-ab-active"));
     item.classList.add("ck-ab-active");
-    tabs.forEach((p) => {
+    document.querySelectorAll(".ck-tab").forEach((p) => {
       if (p.dataset.panel === tab) p.classList.add("ck-tab-active");
       else p.classList.remove("ck-tab-active");
     });
@@ -4613,6 +4616,27 @@
     const r = await api.pluginOpenDir();
     if (r && !r.success) await ckAlert(r.error || "\u6253\u5F00\u76EE\u5F55\u5931\u8D25");
   });
+  document.getElementById("plugin-import-btn")?.addEventListener("click", async () => {
+    const apiAny = api;
+    const fromDir = await ckConfirm("\u4ECE\u3010\u6587\u4EF6\u5939\u3011\u5BFC\u5165\uFF1F\n\n\u70B9\u300C\u786E\u5B9A\u300D= \u6587\u4EF6\u5939\n\u70B9\u300C\u53D6\u6D88\u300D= zip \u6587\u4EF6", "\u5BFC\u5165\u63D2\u4EF6");
+    try {
+      const r = fromDir ? apiAny.pluginImportDir ? await apiAny.pluginImportDir() : null : apiAny.pluginImportZip ? await apiAny.pluginImportZip() : null;
+      if (!r) {
+        await ckAlert("\u5BFC\u5165\u63A5\u53E3\u4E0D\u53EF\u7528");
+        return;
+      }
+      if (r.canceled) return;
+      if (!r.success) {
+        await ckAlert(r.error || "\u5BFC\u5165\u5931\u8D25", "\u5BFC\u5165\u5931\u8D25");
+        return;
+      }
+      const name = r.plugin && r.plugin.manifest && r.plugin.manifest.name || "\u63D2\u4EF6";
+      await ckAlert("\u5DF2\u5BFC\u5165\uFF1A" + name + "\n\n\u9ED8\u8BA4\u5904\u4E8E\u7981\u7528\u72B6\u6001\uFF0C\u8BF7\u5728\u5217\u8868\u4E2D\u6253\u5F00\u5F00\u5173\u542F\u7528\u3002", "\u5BFC\u5165\u5B8C\u6210");
+      await loadInstalledPlugins();
+    } catch (e) {
+      await ckAlert("\u5BFC\u5165\u5931\u8D25: " + (e.message || e));
+    }
+  });
   async function openPluginConfig(pluginId) {
     const apiAny = api;
     if (!apiAny || typeof apiAny.pluginConfigGet !== "function") {
@@ -4710,8 +4734,7 @@
     mask.classList.remove("cuckoo-hidden");
   }
   function ckpRenderItem(p) {
-    const on = !!p.enabled;
-    return '<div class="ck-list-item" data-id="' + escapeAttr(p.id) + '"><div class="ck-list-main"><div class="ck-list-title">' + escapeHtml(p.name || p.id) + (p.version ? ' <span class="ck-plugin-ver">v' + escapeHtml(p.version) + "</span>" : "") + "</div>" + (p.description ? '<div class="ck-list-desc">' + escapeHtml(p.description) + "</div>" : "") + '<div class="ck-plugin-meta"><span>' + escapeHtml(p.id) + '</span></div></div><label class="ck-switch" title="' + (on ? "\u5DF2\u542F\u7528" : "\u5DF2\u7981\u7528") + '"><input type="checkbox" class="ckp-toggle" ' + (on ? "checked" : "") + ' /><span class="ck-switch-track"></span></label><button class="ck-icon-btn ckp-del" title="\u5378\u8F7D"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div>';
+    return '<div class="ck-list-item" data-id="' + escapeAttr(p.id) + '"><div class="ck-list-main"><div class="ck-list-title">' + escapeHtml(p.name || p.id) + "</div>" + (p.description ? '<div class="ck-list-desc">' + escapeHtml(p.description) + "</div>" : "") + '</div><button class="ck-icon-btn ckp-del" title="\u5378\u8F7D"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button></div>';
   }
   async function loadCuckooPlugins() {
     const listEl2 = document.getElementById("ckp-list");
@@ -4799,6 +4822,7 @@
     const el = document.createElement("div");
     el.className = "sb-item";
     el.setAttribute("data-plugin", m.pluginId);
+    el.setAttribute("data-plugin-target", "statusbar");
     el.setAttribute("data-plugin-id", m.id);
     if (m.spec && m.spec.title) el.title = String(m.spec.title);
     el.innerHTML = '<span class="sb-label">' + escapeHtml2(m.spec && m.spec.text || "") + "</span>";
@@ -4815,6 +4839,7 @@
     const btn = document.createElement("button");
     btn.className = "nav-btn";
     btn.setAttribute("data-plugin", m.pluginId);
+    btn.setAttribute("data-plugin-target", "toolbar");
     btn.setAttribute("data-plugin-id", m.id);
     if (m.spec && m.spec.title) btn.title = String(m.spec.title);
     btn.textContent = m.spec && m.spec.label || m.id;
@@ -4837,15 +4862,95 @@
   }
   function mountSidebar(m) {
     const key = m.pluginId + ":" + m.id;
-    const bar = document.getElementById("ck-sidebar");
-    if (!bar) return;
-    if (bar.querySelector('[data-plugin-panel="' + key + '"]')) return;
-    const panel = document.createElement("div");
-    panel.className = "ck-panel";
-    panel.setAttribute("data-plugin-panel", key);
-    panel.style.display = "none";
-    panel.innerHTML = m.spec && m.spec.html || '<div style="padding:12px;color:var(--ck-text-dim);font-size:12px">' + escapeHtml2(m.spec && m.spec.title || m.id) + "</div>";
-    bar.appendChild(panel);
+    const tabId = "plugin:" + key;
+    const sidebar2 = document.getElementById("ck-sidebar");
+    const ab = document.querySelector(".ck-activitybar");
+    const panelBody = document.querySelector(".ck-panel-body");
+    if (!sidebar2 || !ab || !panelBody) return;
+    document.querySelectorAll('[data-plugin="' + m.pluginId + '"][data-plugin-panel]').forEach((el) => el.remove());
+    document.querySelectorAll('.ck-ab-item[data-plugin="' + m.pluginId + '"][data-plugin-tab]').forEach((el) => el.remove());
+    if (!panelBody.querySelector('[data-panel="' + tabId + '"]')) {
+      const panel = document.createElement("div");
+      panel.className = "ck-tab";
+      panel.setAttribute("data-panel", tabId);
+      panel.setAttribute("data-plugin-panel", key);
+      panel.setAttribute("data-plugin", m.pluginId);
+      panel.setAttribute("data-plugin-target", "sidebar");
+      panel.setAttribute("data-plugin-id", m.id);
+      panel.innerHTML = m.spec && m.spec.html || '<div style="padding:12px;color:var(--ck-text-dim);font-size:12px">' + escapeHtml2(m.spec && m.spec.title || m.id) + "</div>";
+      panelBody.appendChild(panel);
+      const script = m.spec && m.spec.script;
+      if (typeof script === "string" && script.trim()) {
+        try {
+          const fn = new Function("shellAPI", "panel", "pluginId", script);
+          fn(api, panel, m.pluginId);
+        } catch (err) {
+          console.error("[plugin-shell] \u9762\u677F\u811A\u672C\u6267\u884C\u5931\u8D25 " + key + ":", err && err.message);
+        }
+      }
+    }
+    if (!ab.querySelector('[data-plugin-tab="' + key + '"]')) {
+      const btn = document.createElement("button");
+      btn.className = "ck-ab-item";
+      btn.setAttribute("data-plugin", m.pluginId);
+      btn.setAttribute("data-plugin-target", "sidebar");
+      btn.setAttribute("data-plugin-id", m.id);
+      btn.setAttribute("data-plugin-tab", key);
+      btn.title = m.spec && m.spec.title || m.id;
+      const icon = m.spec && m.spec.icon;
+      if (icon) {
+        btn.innerHTML = String(icon);
+      } else {
+        btn.innerHTML = '<span class="ck-ab-text">' + escapeHtml2((m.spec && m.spec.title || m.id).slice(0, 1)) + "</span>";
+      }
+      btn.addEventListener("click", () => {
+        const sb = document.getElementById("ck-sidebar");
+        const isCollapsed = sb && sb.classList.contains("ck-collapsed");
+        const isActive = btn.classList.contains("ck-ab-active");
+        if (isCollapsed) {
+          setSidebarCollapsed(false);
+          activatePluginTab(btn, tabId);
+          return;
+        }
+        if (isActive) {
+          setSidebarCollapsed(true);
+          return;
+        }
+        activatePluginTab(btn, tabId);
+      });
+      const spacer = ab.querySelector(".ck-ab-spacer");
+      if (spacer && spacer.parentNode === ab) ab.insertBefore(btn, spacer);
+      else ab.appendChild(btn);
+    }
+  }
+  function activatePluginTab(btn, tabId) {
+    document.querySelectorAll(".ck-ab-item").forEach((i) => i.classList.remove("ck-ab-active"));
+    btn.classList.add("ck-ab-active");
+    document.querySelectorAll(".ck-tab").forEach((p) => {
+      if (p.getAttribute("data-panel") === tabId) p.classList.add("ck-tab-active");
+      else p.classList.remove("ck-tab-active");
+    });
+  }
+  function setSidebarCollapsed(collapsed) {
+    const sb = document.getElementById("ck-sidebar");
+    if (!sb) return;
+    const apiAny = api;
+    const WIDTH_KEY2 = "cuckoo-sidebar-width";
+    let w = 320;
+    try {
+      const v = Number(localStorage.getItem(WIDTH_KEY2));
+      if (Number.isFinite(v) && v >= 320) w = Math.round(v);
+    } catch (_) {
+    }
+    if (collapsed) {
+      sb.classList.add("ck-collapsed");
+      sb.style.width = "";
+      if (apiAny && typeof apiAny.toggleSidebar === "function") apiAny.toggleSidebar(46);
+    } else {
+      sb.classList.remove("ck-collapsed");
+      sb.style.width = w + "px";
+      if (apiAny && typeof apiAny.toggleSidebar === "function") apiAny.toggleSidebar(w);
+    }
   }
   function mountSlot(m) {
     if (!m || !m.slot || !m.id) return;
@@ -4858,6 +4963,7 @@
     el.className = "ck-ab-item";
     el.setAttribute("data-slot-key", key);
     el.setAttribute("data-plugin", m.pluginId);
+    el.setAttribute("data-plugin-target", "slot:" + m.slot);
     if (spec.title) el.title = String(spec.title);
     el.innerHTML = spec.icon ? String(spec.icon) : spec.label ? escapeHtml2(String(spec.label)) : escapeHtml2(m.id);
     el.addEventListener("click", () => {
@@ -4878,6 +4984,36 @@
     const spacer = container.querySelector(".ck-ab-spacer");
     if (m.slot === "activitybar" && spacer) container.insertBefore(el, spacer);
     else container.appendChild(el);
+  }
+  function unmountPlugin(pluginId, target, id) {
+    if (!pluginId) return;
+    const match = (el) => {
+      if (!el || el.getAttribute("data-plugin") !== pluginId) return false;
+      return true;
+    };
+    const hitTarget = (el) => {
+      if (!match(el)) return false;
+      const t = el.getAttribute("data-plugin-target");
+      if (target && t && t !== target) return false;
+      const pid = el.getAttribute("data-plugin-id");
+      if (id && pid && pid !== id) return false;
+      return true;
+    };
+    document.querySelectorAll(".ck-ab-item[data-plugin]").forEach((el) => {
+      if (hitTarget(el)) el.remove();
+    });
+    document.querySelectorAll(".ck-tab[data-plugin-panel]").forEach((el) => {
+      if (hitTarget(el)) el.remove();
+    });
+    document.querySelectorAll(".statusbar [data-plugin]").forEach((el) => {
+      if (hitTarget(el)) el.remove();
+    });
+    document.querySelectorAll(".toolbar [data-plugin]").forEach((el) => {
+      if (hitTarget(el)) el.remove();
+    });
+    document.querySelectorAll("[data-slot-key][data-plugin]").forEach((el) => {
+      if (hitTarget(el)) el.remove();
+    });
   }
   function escapeHtml2(s) {
     return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -4960,6 +5096,14 @@
             if (m.target === "statusbar") mountStatusbar(m);
             else if (m.target === "toolbar") mountToolbar(m);
             else if (m.target === "sidebar") mountSidebar(m);
+          } catch (_) {
+          }
+        });
+      }
+      if (apiAny && typeof apiAny.onPluginShellUnmount === "function") {
+        apiAny.onPluginShellUnmount((m) => {
+          try {
+            unmountPlugin(m && m.pluginId, m && m.target, m && m.id);
           } catch (_) {
           }
         });

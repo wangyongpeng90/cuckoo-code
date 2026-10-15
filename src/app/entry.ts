@@ -1277,7 +1277,7 @@ ipcMainForProfile.handle('get-mcp-tools', async (event: any) => {
 });
 
 // ========== 单实例锁 ==========
-const gotSingleInstanceLock = app.requestSingleInstanceLock();
+const gotSingleInstanceLock = process.env.CUCKOO_SKIP_SINGLE_INSTANCE === '1' ? true : app.requestSingleInstanceLock();
 if (!gotSingleInstanceLock) {
   app.quit();
 } else {
