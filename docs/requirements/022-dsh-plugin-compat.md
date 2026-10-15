@@ -181,5 +181,6 @@ DSH（DeepSeek Harness）是 DeepSeek 官方的 Agent 框架，生态里已有�
 
 ## 相关
 
+- **用户指南**：[docs/dsh-plugin-guide.md](../dsh-plugin-guide.md)——怎么装、怎么用、有哪些坑
 - 参考项目：`C:\d\SourceCode\2026\deepseek-harness2`
 - 前置：PR #36（可执行插件运行时——但它是 bridge 层、简化版，与本需求的"主进程 + 全兼容"不同）
