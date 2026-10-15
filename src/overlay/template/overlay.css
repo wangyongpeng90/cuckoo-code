@@ -414,3 +414,23 @@
 .cuckoo-settings-hint { font-size: 12px; color: var(--ck-text-dim); white-space: nowrap; }
 .cuckoo-settings-input { width: 90px; background: var(--ck-code-bg); border: 1px solid var(--ck-border); border-radius: 6px; padding: 4px 8px; color: var(--ck-text); font-size: 12px; }
 .cuckoo-settings-textarea { width: 100%; background: var(--ck-code-bg); border: 1px solid var(--ck-border); border-radius: 6px; padding: 6px 8px; color: var(--ck-text); font-size: 12px; resize: vertical; }
+
+/* ===== 语音输入按钮（悬浮球左侧）===== */
+#cuckoo-voice-btn {
+  position: fixed; bottom: 24px; right: 84px; z-index: 2147483647;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: rgba(139, 147, 255, 0.22); border: 1px solid rgba(139, 147, 255, 0.4);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; touch-action: none; user-select: none;
+  transition: background 0.2s, border-color 0.2s, transform 0.15s;
+}
+#cuckoo-voice-btn:hover { background: rgba(139, 147, 255, 0.35); border-color: rgba(139, 147, 255, 0.65); transform: scale(1.05); }
+#cuckoo-voice-btn .cuckoo-voice-icon { font-size: 22px; line-height: 1; user-select: none; }
+#cuckoo-voice-btn.cuckoo-voice-recording {
+  background: rgba(255, 107, 122, 0.32); border-color: rgba(255, 107, 122, 0.7);
+  animation: cuckoo-voice-pulse 1.2s ease-in-out infinite;
+}
+@keyframes cuckoo-voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 122, 0.5); }
+  50% { box-shadow: 0 0 0 10px rgba(255, 107, 122, 0); }
+}

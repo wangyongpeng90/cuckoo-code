@@ -30,5 +30,6 @@
 | 024 | fix | [窗口组转移复用 IDB 重写 + 上下文耗尽续接补发工具结果](./024-switch-idb-context-resume.md) | done | fix/024-switch-idb-context-resume | 2026-10-14 |
 | 025 | fix | [危险命令检测增强（前缀/通配符/长选项）](./025-dangerous-cmd-bypass.md) | review | fix/022-dangerous-cmd-bypass | 2026-10-14 |
 | 026 | fix | [edit 编辑混合换行符文件时保留未编辑区域](./026-edit-preserve-eol.md) | done | fix/023-edit-preserve-eol | 2026-10-15 |
+| 027 | feature | [语音输入（录音 + 本地 faster-whisper 识别填入）](./027-voice-input.md) | review | feat/027-voice-input | 2026-10-15 |
 
-共 25 个需求。
+共 26 个需求。

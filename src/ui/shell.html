@@ -1722,6 +1722,23 @@
                 <p class="ck-about-tip">开启后，webFetch 将拒绝访问内网、回环、保留地址（防 SSRF）。默认关闭（可访问本地项目）。</p>
               </div>
 
+              <div class="ck-card">
+                <div class="ck-set-group-title">语音识别（本地 faster-whisper）</div>
+                <div class="ck-set-field">
+                  <span class="ck-set-key">Python 路径</span>
+                  <input type="text" class="ck-set-input" id="st-voice-python" placeholder="留空自动探测（如 F:\AI\python\python.exe）" />
+                </div>
+                <div class="ck-set-field">
+                  <span class="ck-set-key">Whisper 模型目录</span>
+                  <input type="text" class="ck-set-input" id="st-voice-model" placeholder="留空自动探测（如 F:\AI\models\whisper\faster-whisper-base）" />
+                </div>
+                <div class="ck-set-field">
+                  <span class="ck-set-key">识别语言</span>
+                  <input type="text" class="ck-set-input" id="st-voice-lang" placeholder="zh" />
+                </div>
+                <p class="ck-about-tip">语音输入走本机 faster-whisper（离线）。留空则自动探测本机常见路径；换更大模型（如 small/medium）可提升中文准确率。</p>
+              </div>
+
               <div class="ck-actions">
                 <button class="ck-btn ck-btn-primary" id="st-save">保存设置</button>
                 <button class="ck-btn ck-btn-secondary" id="st-reset">恢复默认</button>
@@ -4151,7 +4168,10 @@
     ["send-delay-min", "sendDelayMin"],
     ["send-delay-max", "sendDelayMax"],
     ["attach-delay-min", "attachDelayMin"],
-    ["attach-delay-max", "attachDelayMax"]
+    ["attach-delay-max", "attachDelayMax"],
+    ["voice-python", "voicePythonPath"],
+    ["voice-model", "voiceModelPath"],
+    ["voice-lang", "voiceLang"]
   ];
   function setVal(id, v) {
     const el = document.getElementById("st-" + id);
@@ -4199,7 +4219,10 @@
       sendDelayMin: num("send-delay-min"),
       sendDelayMax: num("send-delay-max"),
       attachDelayMin: num("attach-delay-min"),
-      attachDelayMax: num("attach-delay-max")
+      attachDelayMax: num("attach-delay-max"),
+      voicePythonPath: getVal("voice-python"),
+      voiceModelPath: getVal("voice-model"),
+      voiceLang: getVal("voice-lang") || "zh"
     };
   }
   var stSaveBtn = document.getElementById("st-save");

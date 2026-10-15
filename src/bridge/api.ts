@@ -242,6 +242,10 @@ let electronAPI: any = {
   contextExhaustedContinue: (payload: any) => {
     return ipcRenderer.invoke('context-exhausted-continue', payload || {});
   },
+  // 本地语音识别：录音 buffer → 文字（主进程调 faster-whisper）
+  transcribeAudio: (payload: any) => {
+    return ipcRenderer.invoke('transcribe-audio', payload || {});
+  },
 };
 
 try {

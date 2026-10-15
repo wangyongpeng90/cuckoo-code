@@ -182,6 +182,22 @@ function createWindow(profile: any) {
   });
   mainWindow.contentView.addChildView(view);
 
+  // ========== 媒体权限（语音输入用） ==========
+  // Electron 默认拒绝所有权限请求 → AI 页面拿不到麦克风。
+  // 仅放行 media / audioCapture（语音输入需要），其余权限维持默认拒绝，不扩大权限面。
+  try {
+    const ses = view.webContents.session;
+    ses.setPermissionRequestHandler((_wc: any, permission: string, callback: (granted: boolean) => void) => {
+      if (permission === 'media' || permission === 'audioCapture') { callback(true); return; }
+      callback(false);
+    });
+    ses.setPermissionCheckHandler((_wc: any, permission: string) => {
+      return permission === 'media' || permission === 'audioCapture';
+    });
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 配置媒体权限失败:', err && err.message);
+  }
+
   // ========== 插件覆盖层窗口（透明、置顶、鼠标穿透） ==========
   // 用独立 BrowserWindow（而非 WebContentsView）——因为只有 BrowserWindow 支持
   // setIgnoreMouseEvents（鼠标穿透）；WebContentsView 不支持，会拦截 AI 页面的滚轮/点击。

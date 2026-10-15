@@ -12,6 +12,7 @@ import { renderWindowList, openWindowManager, closeWindowManager, handleGenerate
 import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
 import { openSettings, closeSettings, resetSettings, saveSettings } from './panels/settings.js';
 import { makeFabDraggable } from './fab.js';
+import { toggleVoiceInput } from './voice.js';
 import { getProviderByUrl } from '../providers/registry.js';
 import { createTpsMeter, formatTps } from './tps.js';
 
@@ -562,6 +563,10 @@ function bindEvents() {
   // 设置弹窗：发送技能清单
   const skillsSendBtn = document.getElementById('cuckoo-skills-send');
   skillsSendBtn?.addEventListener('click', handleSendSkills);
+
+  // 语音输入按钮：点击开始/停止录音
+  const voiceBtn = document.getElementById('cuckoo-voice-btn');
+  voiceBtn?.addEventListener('click', () => toggleVoiceInput());
 
   // 悬浮球：可拖动 + 点击切换面板显隐
   const statusBadge = document.getElementById('cuckoo-status-badge');

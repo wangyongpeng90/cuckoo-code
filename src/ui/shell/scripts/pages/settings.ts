@@ -17,6 +17,9 @@ const SET_FIELDS: [string, string][] = [
   ['send-delay-max', 'sendDelayMax'],
   ['attach-delay-min', 'attachDelayMin'],
   ['attach-delay-max', 'attachDelayMax'],
+  ['voice-python', 'voicePythonPath'],
+  ['voice-model', 'voiceModelPath'],
+  ['voice-lang', 'voiceLang'],
 ];
 
 function setVal(id: string, v: any): void {
@@ -64,6 +67,9 @@ function collectSettings(): any {
     sendDelayMax: num('send-delay-max'),
     attachDelayMin: num('attach-delay-min'),
     attachDelayMax: num('attach-delay-max'),
+    voicePythonPath: getVal('voice-python'),
+    voiceModelPath: getVal('voice-model'),
+    voiceLang: getVal('voice-lang') || 'zh',
   };
 }
 

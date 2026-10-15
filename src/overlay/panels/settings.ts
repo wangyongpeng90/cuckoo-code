@@ -146,6 +146,12 @@ interface SettingsData {
   goalMaxIterations: number;
   /** 拒绝 webFetch 访问内网/保留地址（默认关闭） */
   ssrfGuard: boolean;
+  /** 语音识别：python 可执行文件路径（空=自动探测） */
+  voicePythonPath: string;
+  /** 语音识别：whisper 模型目录（空=自动探测） */
+  voiceModelPath: string;
+  /** 语音识别：语言代码（默认 zh） */
+  voiceLang: string;
 }
 
 /** 读取当前设置（UI 单位：秒） */
@@ -176,6 +182,9 @@ function getSettingsData(): SettingsData {
     attachDelayMax: sec(lsGet('cuckoo-attach-delay-max'), 1),
     goalMaxIterations: int(lsGet('cuckoo-goal-max-iterations'), 50),
     ssrfGuard: lsGet('cuckoo-ssrf-guard') === '1',
+    voicePythonPath: lsGet('cuckoo-voice-python') || '',
+    voiceModelPath: lsGet('cuckoo-voice-model') || '',
+    voiceLang: lsGet('cuckoo-voice-lang') || 'zh',
   };
 }
 
@@ -238,6 +247,10 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     if (goalMax !== null) localStorage.setItem('cuckoo-goal-max-iterations', String(goalMax));
     // ssrfGuard 仅当显式提供时才写（避免未传该字段的调用方把它清成 0）
     if (data && data.ssrfGuard !== undefined) localStorage.setItem('cuckoo-ssrf-guard', data.ssrfGuard ? '1' : '0');
+    // 语音识别配置：仅当显式提供时才写
+    if (data && data.voicePythonPath !== undefined) localStorage.setItem('cuckoo-voice-python', String(data.voicePythonPath || ''));
+    if (data && data.voiceModelPath !== undefined) localStorage.setItem('cuckoo-voice-model', String(data.voiceModelPath || ''));
+    if (data && data.voiceLang !== undefined) localStorage.setItem('cuckoo-voice-lang', String(data.voiceLang || 'zh'));
   } catch (err: any) {
     return { success: false, error: '写入失败: ' + err.message };
   }
@@ -255,6 +268,7 @@ function resetSettingsData(): SettingsData {
     'cuckoo-watchdog-count', 'cuckoo-send-delay-min', 'cuckoo-send-delay-max',
     'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
     'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
+    'cuckoo-voice-python', 'cuckoo-voice-model', 'cuckoo-voice-lang',
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
   state.sendDelayMin = 2000;
