@@ -24,6 +24,8 @@ export interface FeishuConfig {
   pushToolStatus: boolean;
   /** 工具状态里是否带工具名（默认 false，保护隐私） */
   pushToolName: boolean;
+  /** AI 回复里出现的本地图片文件是否自动作为图片消息发到飞书（默认 true） */
+  pushImages: boolean;
 }
 
 function getUserDir(): string {
@@ -33,6 +35,11 @@ function getUserDir(): string {
 
 function getConfigFile(): string {
   return path.join(getUserDir(), 'feishu.json');
+}
+
+/** 图片收发目录（收到的飞书图片存这里）：~/.cuckoo/feishu-images */
+function getImagesDir(): string {
+  return path.join(getUserDir(), 'feishu-images');
 }
 
 /** 默认配置（未启用） */
@@ -46,6 +53,7 @@ function defaultConfig(): FeishuConfig {
     pushAiReply: true,
     pushToolStatus: true,
     pushToolName: false,
+    pushImages: true,
   };
 }
 
@@ -66,6 +74,7 @@ function readConfig(): FeishuConfig {
       pushAiReply: raw.pushAiReply !== false,
       pushToolStatus: raw.pushToolStatus !== false,
       pushToolName: raw.pushToolName === true,
+      pushImages: raw.pushImages !== false,
     };
   } catch (err: any) {
     console.error('[Feishu] 读取配置失败:', err.message);
@@ -86,6 +95,7 @@ function writeConfig(data: any): boolean {
       pushAiReply: data && typeof data.pushAiReply === 'boolean' ? data.pushAiReply : base.pushAiReply,
       pushToolStatus: data && typeof data.pushToolStatus === 'boolean' ? data.pushToolStatus : base.pushToolStatus,
       pushToolName: data && typeof data.pushToolName === 'boolean' ? data.pushToolName : base.pushToolName,
+      pushImages: data && typeof data.pushImages === 'boolean' ? data.pushImages : base.pushImages,
     };
     const file = getConfigFile();
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -98,4 +108,4 @@ function writeConfig(data: any): boolean {
   }
 }
 
-export { readConfig, writeConfig, getConfigFile, defaultConfig };
+export { readConfig, writeConfig, getConfigFile, getImagesDir, defaultConfig };

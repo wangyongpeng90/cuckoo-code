@@ -8,6 +8,7 @@ import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import * as feishuClient from '../../feishu/client.js';
 import { readConfig, writeConfig } from '../../feishu/config.js';
+import { findImagePaths } from '../../feishu/images.js';
 import { getProfileById, getProfileByFeishuChat, setProfileFeishuChat } from '../profile.js';
 import { hasRunningSubagent } from '../subagent.js';
 
@@ -15,6 +16,16 @@ const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
 
 let feishuInited = false;
+
+/** 最近已回传过的图片路径（防同图重复发送；上限 50，超出丢弃最旧） */
+const recentlySentImages = new Set<string>();
+function rememberSentImage(p: string): void {
+  recentlySentImages.add(p.toLowerCase());
+  if (recentlySentImages.size > 50) {
+    const first = recentlySentImages.values().next().value;
+    if (first) recentlySentImages.delete(first);
+  }
+}
 
 /**
  * 飞书来消息 → 按 chatId 找到"绑定了该群的窗口" → 转发给它的 AI 页面。
@@ -58,6 +69,16 @@ function forwardUserMessage(text: string, chatId: string): void {
   }
 }
 
+/**
+ * 收图（飞书 → Cuckoo）：图片已由 client 下载到本地，这里按消息同样的路由
+ * 告知 AI 页面（带绝对路径，AI 可直接用文件工具查看/处理）。
+ * 定向规则与 forwardUserMessage 一致：群消息只进绑定窗口，单聊进活跃窗口。
+ */
+function forwardUserImage(imagePath: string, chatId: string): void {
+  const text = '📩 收到飞书图片，已保存到：' + imagePath + '\n（请查看并处理这张图片）';
+  forwardUserMessage(text, chatId);
+}
+
 /** 通知所有 AI 页面：飞书启用状态（bridge 据此决定是否上报） */
 function broadcastFeishuMode(enabled: boolean): void {
   for (const ctx of windowState.getAllContexts()) {
@@ -78,6 +99,7 @@ function initFeishu(): void {
   if (!cfg.enabled || !cfg.appId || !cfg.appSecret) return;
   feishuClient.connect({
     onUserMessage: (text, chatId) => forwardUserMessage(text, chatId),
+    onUserImage: (imagePath, chatId) => forwardUserImage(imagePath, chatId),
   });
   broadcastFeishuMode(true);
   console.log('[Feishu] 启动时自动连接（已启用）');
@@ -130,7 +152,10 @@ function registerFeishuIpc(): void {
     if (!connChanged) return { success: true };
     // 按启用状态连接/断开
     if (cfg.enabled && cfg.appId && cfg.appSecret) {
-      feishuClient.connect({ onUserMessage: (text, chatId) => forwardUserMessage(text, chatId) });
+      feishuClient.connect({
+        onUserMessage: (text, chatId) => forwardUserMessage(text, chatId),
+        onUserImage: (imagePath, chatId) => forwardUserImage(imagePath, chatId),
+      });
       broadcastFeishuMode(true);
     } else {
       feishuClient.disconnect();
@@ -169,7 +194,10 @@ function registerFeishuIpc(): void {
   ipcMain.handle('feishu-reconnect', async () => {
     const cfg = readConfig();
     if (!cfg.appId || !cfg.appSecret) return { success: false, error: '未配置凭证' };
-    feishuClient.connect({ onUserMessage: (text, chatId) => forwardUserMessage(text, chatId) });
+    feishuClient.connect({
+      onUserMessage: (text, chatId) => forwardUserMessage(text, chatId),
+      onUserImage: (imagePath, chatId) => forwardUserImage(imagePath, chatId),
+    });
     return { success: true };
   });
 
@@ -213,7 +241,30 @@ function registerFeishuIpc(): void {
       } else if (type === 'ai-reply') {
         if (!cfg.pushAiReply) return { success: true };
         const t = String(payload.text || '').trim();
-        if (t) return await pushMd('**🤖 AI：**\n\n' + t, 'ai-reply');
+        let r = { success: true };
+        if (t) r = await pushMd('**🤖 AI：**\n\n' + t, 'ai-reply');
+        // 图片回传：AI 回复里提到的本地图片（如生成/处理的产物）→ 作为图片消息发到飞书
+        if (cfg.pushImages) {
+          const imgs = findImagePaths(t);
+          for (const img of imgs) {
+            if (recentlySentImages.has(img.toLowerCase())) continue;
+            const ir = await feishuClient.sendImage(img, chatId);
+            if (ir.success) {
+              rememberSentImage(img);
+              console.log('[Feishu] 已回传图片:', img);
+            } else {
+              console.warn('[Feishu] 回传图片失败（' + img + '）:', ir.error);
+            }
+          }
+        }
+        return r;
+      } else if (type === 'image') {
+        // 显式图片上报（页面/插件主动指定图片路径发送）
+        const p = String((payload && payload.path) || '').trim();
+        if (!p) return { success: false, error: '缺少 path' };
+        const ir = await feishuClient.sendImage(p, chatId);
+        if (ir.success) rememberSentImage(p);
+        return ir;
       } else if (type === 'tool-start') {
         if (!cfg.pushToolStatus) return { success: true };
         return await push(cfg.pushToolName && payload.toolName ? '🔧 正在调用工具：' + payload.toolName : '🔧 AI 正在调用工具…', 'tool-start');

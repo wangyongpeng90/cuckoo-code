@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- **飞书图片双向通道**：手机飞书发给机器人的图片自动下载到本地（`~/.cuckoo/feishu-images/inbox/`，按魔数识别格式），路径自动告知 AI 处理；AI 回复中出现的真实本地图片（≤10MB，支持 jpg/jpeg/png/bmp/gif/webp）自动作为图片消息回传飞书（走 OpenAPI `im.image.create` 上传，无需 GUI 粘贴）。新增 `pushImages` 配置开关（默认开启）；需在飞书应用开通 `im:resource` 权限。
+
 ## [0.8.13] - 2026-10-13
 
 ### Added

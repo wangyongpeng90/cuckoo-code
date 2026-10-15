@@ -9,7 +9,10 @@
  * 本模块依赖 electron?否——纯 Node。但 SDK 是 CJS，用 createRequire 加载。
  */
 import { createRequire } from 'node:module';
-import { readConfig, writeConfig } from './config.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { readConfig, writeConfig, getImagesDir } from './config.js';
+import { extractImageKey, saveResourceToFile, isImagePath, MAX_IMAGE_BYTES } from './images.js';
 
 const require = createRequire(import.meta.url);
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -21,6 +24,8 @@ type FeishuStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 interface FeishuCallbacks {
   /** 收到用户从飞书发来的消息（chatId 非空=群消息；空=单聊） */
   onUserMessage?: (text: string, chatId: string) => void;
+  /** 收到用户从飞书发来的图片（已下载到本地，chatId 同上） */
+  onUserImage?: (imagePath: string, chatId: string) => void;
   /** 状态变化（供 UI 刷新） */
   onStatusChange?: (status: FeishuStatus, detail?: string) => void;
 }
@@ -91,9 +96,106 @@ function extractText(event: any): string {
   }
 }
 
+/** 收图存放目录：~/.cuckoo/feishu-images/inbox */
+function getInboxDir(): string {
+  return path.join(getImagesDir(), 'inbox');
+}
+
+/** 生成不重复的收图文件基础名（不含扩展名，落盘时按魔数补） */
+function makeInboxBase(): string {
+  const d = new Date();
+  const p2 = (n: number) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+  const rand = Math.random().toString(36).slice(2, 6);
+  return path.join(getInboxDir(), `img_${stamp}_${rand}`);
+}
+
+/**
+ * 下载一条图片消息到本地（收图：手机飞书 → Cuckoo）。
+ * @param messageId 消息 id（im.message.receive_v1 事件里的 message.message_id）
+ * @param imageKey  消息 content 里的 image_key
+ */
+async function downloadImage(messageId: string, imageKey: string): Promise<{ success: boolean; path?: string; size?: number; error?: string }> {
+  const cfg = readConfig();
+  if (!apiClient) {
+    if (!cfg.appId || !cfg.appSecret) return { success: false, error: '未配置' };
+    apiClient = new lark.Client({ appId: cfg.appId, appSecret: cfg.appSecret });
+  }
+  if (!messageId || !imageKey) return { success: false, error: '缺少 message_id / image_key' };
+  try {
+    const res = await apiClient.im.messageResources.get({
+      path: { message_id: messageId },
+      params: { file_key: imageKey },
+      type: 'file',
+    });
+    if (res && res.code !== undefined && res.code !== 0) {
+      return { success: false, error: res.msg || `下载失败(code=${res.code})` };
+    }
+    return await saveResourceToFile(res, makeInboxBase());
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 发送本地图片到飞书（发图：Cuckoo → 手机飞书）。
+ * 上传走 im.image.create（需 im:resource 权限），再发 msg_type=image 消息。
+ *
+ * @param filePath 本地图片绝对路径（jpg/jpeg/png/bmp/gif/webp，≤10MB）
+ * @param chatId   群 chat_id；为空则回退单聊（targetOpenId）
+ */
+async function sendImage(filePath: string, chatId?: string): Promise<{ success: boolean; error?: string }> {
+  const cfg = readConfig();
+  if (!apiClient) {
+    if (!cfg.appId || !cfg.appSecret) return { success: false, error: '未配置' };
+    apiClient = new lark.Client({ appId: cfg.appId, appSecret: cfg.appSecret });
+  }
+  const p = String(filePath || '').trim();
+  if (!p || !isImagePath(p)) return { success: false, error: '不是支持的图片格式（jpg/jpeg/png/bmp/gif/webp）' };
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(p);
+  } catch (_) {
+    return { success: false, error: '图片文件不存在：' + p };
+  }
+  if (!stat.isFile() || stat.size === 0) return { success: false, error: '不是有效文件：' + p };
+  if (stat.size > MAX_IMAGE_BYTES) return { success: false, error: '图片超过 10MB 上限' };
+  // 上传拿 image_key
+  let imageKey = '';
+  try {
+    const res = await apiClient.im.image.create({
+      data: { image_type: 'message', image: fs.createReadStream(p) },
+    });
+    if (res && res.code !== undefined && res.code !== 0) {
+      return { success: false, error: res.msg || `上传图片失败(code=${res.code})` };
+    }
+    imageKey = (res && res.data && res.data.image_key) || '';
+  } catch (err: any) {
+    return { success: false, error: '上传图片失败：' + err.message };
+  }
+  if (!imageKey) return { success: false, error: '上传成功但未返回 image_key' };
+  // 发消息（群优先，单聊回退——与 sendText 一致）
+  const send = async (receiveIdType: 'chat_id' | 'open_id', receiveId: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const res = await apiClient.im.message.create({
+        params: { receive_id_type: receiveIdType },
+        data: { receive_id: receiveId, msg_type: 'image', content: JSON.stringify({ image_key: imageKey }) },
+      });
+      if (res && (res.code === 0 || res.code === undefined)) return { success: true };
+      return { success: false, error: (res && res.msg) || '发送失败' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  };
+  if (chatId) return send('chat_id', chatId);
+  if (!cfg.targetOpenId) {
+    return { success: false, error: '该窗口尚未绑定飞书群（请先在飞书页绑定群）' };
+  }
+  return send('open_id', cfg.targetOpenId);
+}
+
 /** 启动长连接（幂等：先断开旧的） */
-function connect(cb?: FeishuCallbacks): { success: boolean; error?: string } {
-  if (cb) callbacks = cb;
+function connect(cb?: FeishuCallbacks): { success: boolean; error?: string } {  if (cb) callbacks = cb;
   const cfg = readConfig();
   if (!cfg.appId || !cfg.appSecret) {
     setStatus('error', '缺少 App ID / App Secret');
@@ -125,6 +227,21 @@ function connect(cb?: FeishuCallbacks): { success: boolean; error?: string } {
           if (text) {
             console.log('[Feishu] 收到消息, 长度=' + text.length + (chatId ? ' 群=' + chatId : ' 单聊'));
             try { callbacks.onUserMessage?.(text, chatId); } catch (_) {}
+            return;
+          }
+          // 图片消息：下载到本地 → 通知上层（onUserImage），不让用户发的图石沉大海
+          const msg = data && data.message;
+          const imageKey = extractImageKey(data);
+          if (msg && imageKey) {
+            const dl = await downloadImage(msg.message_id, imageKey);
+            if (dl.success && dl.path) {
+              console.log('[Feishu] 收到图片，已保存:', dl.path, (chatId ? ' 群=' + chatId : ' 单聊'));
+              try { callbacks.onUserImage?.(dl.path, chatId); } catch (_) {}
+            } else {
+              console.error('[Feishu] 图片下载失败:', dl.error);
+              try { sendText('收到图片了，但下载失败：' + (dl.error || '未知错误'), chatId || undefined); } catch (_) {}
+            }
+            return;
           }
         } catch (err: any) {
           console.error('[Feishu] 处理消息失败:', err.message);
@@ -331,5 +448,5 @@ async function sendMarkdown(md: string, chatId?: string): Promise<{ success: boo
   return { success: true };
 }
 
-export { connect, disconnect, sendText, sendMarkdown, getStatus, readConfig, listChats };
+export { connect, disconnect, sendText, sendMarkdown, sendImage, downloadImage, getStatus, readConfig, listChats };
 export type { FeishuStatus, FeishuChat };

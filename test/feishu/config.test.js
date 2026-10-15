@@ -92,3 +92,17 @@ test('类型清洗：enabled 非布尔时视为 false', () => {
   assert.strictEqual(c.enabled, false);
   assert.strictEqual(c.appId, '');
 });
+
+test('pushImages 字段：默认 true、读写往返、显式 false 可关闭', () => {
+  const c1 = cfg.readConfig();
+  assert.strictEqual(c1.pushImages, true);
+  cfg.writeConfig({ pushImages: false });
+  assert.strictEqual(cfg.readConfig().pushImages, false);
+  // 部分更新保留原值
+  cfg.writeConfig({ appId: 'cli_x' });
+  const c3 = cfg.readConfig();
+  assert.strictEqual(c3.pushImages, false);
+  assert.strictEqual(c3.appId, 'cli_x');
+  cfg.writeConfig({ pushImages: true });
+  assert.strictEqual(cfg.readConfig().pushImages, true);
+});
