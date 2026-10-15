@@ -21,6 +21,7 @@
 import { sendToChat } from '../overlay/chat-input.js';
 import { onInterceptedResponse } from '../bridge/intercept/observer.js';
 import { showToast } from '../overlay/panel.js';
+import { getProviderByUrl } from '../providers/registry.js';
 import * as retryEngine from '../bridge/loop/retry.js';
 import * as watchdog from '../bridge/loop/watchdog.js';
 
@@ -251,8 +252,54 @@ async function createShare(sessionId: string, messageIds: number[], headers: any
   return shareId;
 }
 
+/**
+ * ChatGPT 主动压缩：生成摘要 → 复用「上下文续接」在新会话带摘要继续。
+ *
+ * 与 DeepSeek 压缩的差异：ChatGPT 无 IndexedDB 分享机制，故不走
+ * 「清 IDB → 刷新 → share/create」，而是直接生成摘要文本，
+ * 交给 context-exhausted-continue IPC 在新会话作为 extraPrompt 注入。
+ */
+async function runChatGptCompaction(projectDir?: string): Promise<void> {
+  const btn = document.getElementById('cuckoo-btn-compact') as any;
+  if (btn) { btn.disabled = true; btn.textContent = '压缩中...'; }
+  retryEngine.setCompacting(true);
+  watchdog.setSuspended(true);
+  try {
+    logStep('chatgpt-compact', '发送摘要指令');
+    const waitReply = waitForResponse(120000);
+    sendToChat(SUMMARY_INSTRUCTION, '压缩-摘要', 300);
+    const { text: summaryText } = await waitReply;
+    const summary = (summaryText || '').trim();
+    if (!summary) throw new Error('未收到摘要回复');
+    logStep('chatgpt-compact', '收到摘要，长度=' + summary.length);
+
+    const handoff =
+      '【上一会话摘要（上下文压缩）】\n' + summary + '\n\n——\n' +
+      '这是上一轮会话的压缩摘要（原会话上下文接近上限，故在新会话继续）。' +
+      '请据此继续工作；如摘要缺少关键细节，请主动用工具读取项目文件补全，不要凭空假设。';
+
+    const api = (window as any).electronAPI;
+    if (!api || typeof api.contextExhaustedContinue !== 'function') {
+      throw new Error('续接 API 不可用');
+    }
+    await api.contextExhaustedContinue({ pendingText: handoff });
+    showToast('压缩完成，正在新会话继续...', 3000);
+  } catch (err: any) {
+    console.error('[Cuckoo Compact] ChatGPT 压缩失败:', err);
+    showToast('压缩失败: ' + err.message, 5000);
+    retryEngine.setCompacting(false);
+    watchdog.setSuspended(false);
+    if (btn) { btn.disabled = false; btn.textContent = '压缩'; }
+  }
+}
+
 /** 段1：当前页 —— 发摘要 → 清 IDB → 刷新 */
 async function runCompaction(projectDir?: string): Promise<void> {
+  // ChatGPT：走「摘要 + 续接」路径（无 IDB 分享）
+  const provider = getProviderByUrl(window.location.href);
+  if (provider && provider.id === 'chatgpt') {
+    return runChatGptCompaction(projectDir);
+  }
   const btn = document.getElementById('cuckoo-btn-compact') as any;
   if (btn) { btn.disabled = true; btn.textContent = '压缩中...'; }
   retryEngine.setCompacting(true);
