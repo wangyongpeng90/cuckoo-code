@@ -6,6 +6,8 @@
  * resources/runtime/<platform>/bin/，打包后由 MCP spawn 时优先使用（不碰用户系统）。
  *
  * 幂等：已安装且版本一致时跳过。
+ * 支持平台：win-x64 / mac-x64 / mac-arm64 / linux-x64 / linux-arm64
+ *  （目录名与 src/infra/runtime-platform.ts 保持一致）。
  * 用法：node scripts/fetch-runtime.mjs
  */
 import fs from 'node:fs';
@@ -20,12 +22,17 @@ const TMP_DIR = path.join(RUNTIME_DIR, '.tmp');
 
 const VERSIONS = JSON.parse(fs.readFileSync(path.join(__dirname, 'runtime-versions.json'), 'utf-8'));
 
+// 目录布局版本：改动安装结构时 +1，让老用户重新下载（v2：posix 按 node 前缀目录铺开，修复 bin/bin/node）
+const LAYOUT_VERSION = 2;
+
 function currentPlatform() {
   const p = process.platform;
   const a = process.arch;
   if (p === 'win32' && a === 'x64') return 'win-x64';
   if (p === 'darwin' && a === 'x64') return 'mac-x64';
   if (p === 'darwin' && a === 'arm64') return 'mac-arm64';
+  if (p === 'linux' && a === 'x64') return 'linux-x64';
+  if (p === 'linux' && a === 'arm64') return 'linux-arm64';
   throw new Error('不支持的平台: ' + p + '-' + a);
 }
 
@@ -34,6 +41,8 @@ function uvAsset(platform) {
     'win-x64': 'uv-x86_64-pc-windows-msvc.zip',
     'mac-x64': 'uv-x86_64-apple-darwin.tar.gz',
     'mac-arm64': 'uv-aarch64-apple-darwin.tar.gz',
+    'linux-x64': 'uv-x86_64-unknown-linux-gnu.tar.gz',
+    'linux-arm64': 'uv-aarch64-unknown-linux-gnu.tar.gz',
   };
   return map[platform];
 }
@@ -44,6 +53,8 @@ function nodeAsset(platform) {
     'win-x64': 'node-' + v + '-win-x64.zip',
     'mac-x64': 'node-' + v + '-darwin-x64.tar.gz',
     'mac-arm64': 'node-' + v + '-darwin-arm64.tar.gz',
+    'linux-x64': 'node-' + v + '-linux-x64.tar.gz',
+    'linux-arm64': 'node-' + v + '-linux-arm64.tar.gz',
   };
   return map[platform];
 }
@@ -72,7 +83,8 @@ function installedMarker(platform) {
 function isUpToDate(platform) {
   try {
     const marker = JSON.parse(fs.readFileSync(installedMarker(platform), 'utf-8'));
-    return marker.uv === VERSIONS.uv && marker.node === VERSIONS.node;
+    return marker.uv === VERSIONS.uv && marker.node === VERSIONS.node
+      && marker.layout === LAYOUT_VERSION;
   } catch {
     return false;
   }
@@ -87,6 +99,30 @@ function copyDir(srcDir, destDir) {
     if (ent.isDirectory()) copyDir(s, d);
     else fs.copyFileSync(s, d);
   }
+}
+
+/** 解压 tar.gz 并去掉顶层目录（直接铺到 dest，保留 tar 里的相对符号链接与权限） */
+function extractTarGzStripOne(archive, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  execSync('tar -xzf "' + archive + '" -C "' + dest + '" --strip-components=1', { stdio: 'inherit' });
+}
+
+/**
+ * 找到真正存放可执行文件的目录：官方包可能直接铺在根，也可能多一层子目录
+ * （如 uv 的 tar.gz 里是 uv-x86_64-unknown-linux-gnu/，node 的 win zip 无子目录）。
+ * @param {string} root 解压目录
+ * @param {string} markerFile 特征文件名（如 node.exe / uv）
+ */
+function findPayloadDir(root, markerFile) {
+  const stack = [root];
+  while (stack.length) {
+    const dir = stack.shift();
+    if (fs.existsSync(path.join(dir, markerFile))) return dir;
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (ent.isDirectory()) stack.push(path.join(dir, ent.name));
+    }
+  }
+  return root;
 }
 
 function chmodExec(dir) {
@@ -109,11 +145,20 @@ function main() {
   }
 
   console.log('[runtime] 准备 ' + platform + ' 运行时...');
+  const isWin = process.platform === 'win32';
+  const platformDir = path.join(RUNTIME_DIR, platform);
+  const binDir = path.join(platformDir, 'bin');
+
   fs.rmSync(TMP_DIR, { recursive: true, force: true });
   fs.mkdirSync(TMP_DIR, { recursive: true });
 
-  const binDir = path.join(RUNTIME_DIR, platform, 'bin');
-  fs.rmSync(binDir, { recursive: true, force: true });
+  // Windows：zip 根目录就是可执行文件集合，只清 bin。
+  // macOS/Linux：node 解压出来是 bin/lib/include/share 前缀目录，整目录重铺。
+  if (isWin) {
+    fs.rmSync(binDir, { recursive: true, force: true });
+  } else {
+    fs.rmSync(platformDir, { recursive: true, force: true });
+  }
   fs.mkdirSync(binDir, { recursive: true });
 
   // ---- uv ----
@@ -123,8 +168,14 @@ function main() {
   download(uvUrl, uvArchive);
   const uvExtract = path.join(TMP_DIR, 'uv');
   extract(uvArchive, uvExtract);
-  // uv 解压后直接是 uv / uv.exe（可能有子目录，递归找）
-  copyDir(uvExtract, binDir);
+  // uv 包内只取可执行文件（win：uv.exe/uvx.exe；posix：uv/uvx），忽略同层的 LICENSE 与子目录
+  const uvPayload = findPayloadDir(uvExtract, isWin ? 'uv.exe' : 'uv');
+  for (const ent of fs.readdirSync(uvPayload, { withFileTypes: true })) {
+    if (ent.isDirectory()) continue;
+    const name = ent.name;
+    if (!/^(uv|uvw|uvx)(\.exe)?$/i.test(name)) continue;
+    fs.copyFileSync(path.join(uvPayload, name), path.join(binDir, name));
+  }
 
   // ---- node ----
   const nodeAssetName = nodeAsset(platform);
@@ -132,16 +183,28 @@ function main() {
   const nodeArchive = path.join(TMP_DIR, nodeAssetName);
   download(nodeUrl, nodeArchive);
   const nodeExtract = path.join(TMP_DIR, 'node');
-  extract(nodeArchive, nodeExtract);
-  // node 解压后是 node-vX.Y.Z-<platform>/ 子目录
-  const nodeInner = fs.readdirSync(nodeExtract).map(n => path.join(nodeExtract, n)).find(p => fs.statSync(p).isDirectory());
-  copyDir(nodeInner || nodeExtract, binDir);
+  if (isWin) {
+    // win zip：binDir 直接放 node.exe / npm.cmd / npx.cmd / node_modules/
+    extract(nodeArchive, nodeExtract);
+    copyDir(findPayloadDir(nodeExtract, 'node.exe'), binDir);
+  } else {
+    // darwin/linux tar.gz：前缀目录（bin/lib/include/share）直接铺到 <platform>/，
+    // 得到 <platform>/bin/node 与 <platform>/bin/npm -> ../lib/node_modules/npm/bin/npm-cli.js
+    extractTarGzStripOne(nodeArchive, platformDir);
+  }
 
   chmodExec(binDir);
+  if (!isWin) {
+    // npm/npx 是指向 lib/node_modules/npm 的符号链接，chmod 会落到链接目标，补一次
+    for (const n of ['npm', 'npx', 'corepack']) {
+      try { fs.chmodSync(path.join(binDir, n), 0o755); } catch {}
+    }
+  }
 
   // 标记已安装
+  fs.mkdirSync(platformDir, { recursive: true });
   fs.writeFileSync(installedMarker(platform), JSON.stringify({
-    uv: VERSIONS.uv, node: VERSIONS.node, installedAt: new Date().toISOString(),
+    uv: VERSIONS.uv, node: VERSIONS.node, layout: LAYOUT_VERSION, installedAt: new Date().toISOString(),
   }, null, 2));
 
   // 清理临时

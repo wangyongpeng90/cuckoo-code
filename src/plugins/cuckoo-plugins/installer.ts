@@ -6,15 +6,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { getCuckooPluginDir, isValidPluginId } from './paths.js';
+import { runtimePlatformDir } from '../../infra/runtime-platform.js';
 
-/** 找自带的 npm.cmd（resources/runtime/<platform>/bin/） */
+/** 找自带的 npm.cmd/npm（resources/runtime/<platform>/bin/） */
 function bundledNpm(): { cmd: string; binDir: string } | null {
   // 与 src/mcp/client.ts 的运行时定位一致
-  const platform = process.platform === 'win32'
-    ? 'win-x64'
-    : (process.platform === 'darwin'
-      ? (process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64')
-      : null);
+  const platform = runtimePlatformDir();
   if (!platform) return null;
   // resources/runtime 相对应用根（out/src/plugins/cuckoo-plugins → ../../../..）
   const appRoot = path.join(import.meta.dirname, '..', '..', '..', '..');

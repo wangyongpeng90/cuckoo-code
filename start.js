@@ -46,8 +46,17 @@ const envPort = process.env.CUCKOO_DEBUG_PORT;
 const debugPort = (envPort === 'off' || envPort === '0') ? '' : (envPort || '9334');
 const debugArg = debugPort ? ' --remote-debugging-port=' + debugPort : '';
 if (debugPort) console.log('[start.js] 开启远程调试端口: ' + debugPort + '（CDP；CUCKOO_DEBUG_PORT=off 可关）');
+// Linux 开发机通常没把 chrome-sandbox 设为 root:4755，Chromium 的 SUID 沙箱会直接 abort。
+// 这里默认加 --no-sandbox（仅影响开发启动；设 CUCKOO_ELECTRON_SANDBOX=1 可关掉此行为，
+// 或自行 sudo chown root:root + chmod 4755 node_modules/electron/dist/chrome-sandbox）。
+let sandboxArg = '';
+if (process.platform === 'linux' && process.env.CUCKOO_ELECTRON_SANDBOX !== '1') {
+  sandboxArg = ' --no-sandbox';
+  console.log('[start.js] Linux：启动参数加 --no-sandbox（CUCKOO_ELECTRON_SANDBOX=1 可关闭）');
+}
 // 开关必须在应用路径（.）之前，否则会被当成应用参数
-const cmd = isWin ? ('chcp 65001 > nul && electron' + debugArg + ' .') : ('electron' + debugArg + ' .');
+const electronArgs = debugArg + sandboxArg;
+const cmd = isWin ? ('chcp 65001 > nul && electron' + electronArgs + ' .') : ('electron' + electronArgs + ' .');
 const child = spawn(cmd, { shell: true, stdio: ['inherit', 'pipe', 'pipe'] });
 
 child.stdout.pipe(logStream);
