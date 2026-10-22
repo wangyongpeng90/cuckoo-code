@@ -12,6 +12,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
+import { runtimePlatformDir } from './runtime-platform.js';
 
 // electron 特殊：其 index.js 导出字符串，须用 createRequire（见 P3a 手册 1.5）
 const require = createRequire(import.meta.url);
@@ -37,11 +38,7 @@ export function resolveSrc(rel: string): string {
  * @returns bin 目录绝对路径（不存在返回 null）
  */
 export function resolveRuntimeBinDir(): string | null {
-  const platform = process.platform === 'win32'
-    ? 'win-x64'
-    : (process.platform === 'darwin'
-      ? (process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64')
-      : null);
+  const platform = runtimePlatformDir();
   if (!platform) return null;
   const candidates = [
     path.join(process.resourcesPath || '', 'runtime', platform, 'bin'),

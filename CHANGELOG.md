@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- **Linux 开发环境支持**：`scripts/fetch-runtime.mjs` 支持 linux-x64/linux-arm64（不再抛「不支持的平台: linux-x64」），`resolveRuntimeBinDir()`/插件安装器的运行时目录解析同步兼容；`start.js` 在 Linux 默认加 `--no-sandbox`（`CUCKOO_ELECTRON_SANDBOX=1` 可关）以避开 chrome-sandbox SUID 报错。
+
+### Fixed
+- **自带运行时目录布局**（影响 macOS/Linux）：以前 node tarball 被平铺成 `bin/bin/node`、uv 解压多一层子目录，导致 `resources/runtime/<platform>/bin/` 里找不到 node/npm/uvx。现按官方前缀目录铺开（`bin/node`、`bin/npm -> ../lib/node_modules/npm/…`）并保留符号链接；`.installed.json` 新增 `layout` 版本，旧布局自动重新下载。
+
 ## [0.8.17] - 2026-10-20
 
 ### Fixed
