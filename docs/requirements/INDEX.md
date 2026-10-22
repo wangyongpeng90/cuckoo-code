@@ -32,5 +32,6 @@
 | 026 | fix | [edit 编辑混合换行符文件时保留未编辑区域](./026-edit-preserve-eol.md) | done | fix/023-edit-preserve-eol | 2026-10-15 |
 | 027 | feature | [用户记忆系统](./027-memories.md) | review | feat/024-memories | 2026-10-15 |
 | 028 | feature | [用户记忆功能默认关闭 + 开关](./028-memories-default-off.md) | review | feat/028-memories-default-off | 2026-10-15 |
+| 029 | feature | [技能开关（决定是否加入上下文）](./029-skill-toggle.md) | review | feat/029-skill-toggle | 2026-10-21 |
 
-共 27 个需求。
+共 28 个需求。

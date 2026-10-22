@@ -9,7 +9,7 @@ import * as mcpClient from '../mcp/client.js';
 import { resolveSrc, resolveToolSpec, resolveToolSpecFeature } from '../infra/paths.js';
 import { getEnabledToolFeatures } from '../infra/config.js';
 import { registry as toolRegistry } from '../tools/index.js';
-import { scanSkills, buildSkillsSection } from '../skills/index.js';
+import { scanSkills, buildSkillsSection, filterEnabledSkills } from '../skills/index.js';
 import { scanAgents, buildAgentsSection } from '../agents/index.js';
 import { scanRules, getUnscopedRules, buildUnscopedRulesSection } from '../rules/index.js';
 // 直接引 roots 子模块（不走 plugins 的 barrel），避免把整个插件模块图拉进来
@@ -193,7 +193,7 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     console.warn('[Cuckoo Code] 读取插件扫描根失败:', err && err.message ? err.message : String(err));
   }
 
-  const skillsSection = buildSkillsSection(scanSkills(selectedDir, pluginRoots.skillDirs));
+  const skillsSection = buildSkillsSection(filterEnabledSkills(scanSkills(selectedDir, pluginRoots.skillDirs), selectedDir));
   const agentsSection = buildAgentsSection(scanAgents(selectedDir, pluginRoots.agentDirs));
   // 无 paths 的规则：始终注入（「## 项目规则」章节）
   const rulesSection = buildUnscopedRulesSection(getUnscopedRules(scanRules(selectedDir, pluginRoots.ruleDirs)));

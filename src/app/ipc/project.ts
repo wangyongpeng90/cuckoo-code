@@ -9,6 +9,7 @@ import * as windowState from '../window.js';
 import * as mcpClient from '../../mcp/client.js';
 import { initProject } from '../../session/project-context.js';
 import { scanSkills } from '../../skills/index.js';
+import { filterEnabledSkills, isSkillEnabled, setSkillEnabled } from '../../skills/state.js';
 import { buildSkillsSection } from '../../skills/prompt.js';
 import { scanAgents } from '../../agents/index.js';
 import { buildAgentsSection } from '../../agents/prompt.js';
@@ -49,6 +50,7 @@ function registerProjectIpc(): void {
           whenToUse: s.whenToUse || '',
           source: s.source,
           skillPath: s.skillPath,
+          enabled: isSkillEnabled(s.name, projectDir || null),
         })),
       };
     } catch (err: any) {
@@ -186,6 +188,19 @@ function registerProjectIpc(): void {
     }
   });
 
+  // 设置技能开关（决定是否加入上下文）
+  ipcMain.handle('set-skill-enabled', async (event: any, { name, source, enabled }: any) => {
+    try {
+      const ctx = windowState.getContextByWebContents(event.sender);
+      const store = ctx ? ctx.sessionStore : null;
+      const projectDir = store ? store.state.selectedProjectDir : null;
+      const ok = setSkillEnabled(String(name || ''), source || 'user', projectDir || null, enabled === true);
+      return { success: ok, error: ok ? null : '保存失败' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   // 重新扫描技能 + 代理，返回合并清单文本（供「刷新技能与代理」按钮使用）
   ipcMain.handle('refresh-skills', async (event: any) => {
     try {
@@ -193,9 +208,10 @@ function registerProjectIpc(): void {
       const store = ctx ? ctx.sessionStore : null;
       const projectDir = store ? store.state.selectedProjectDir : null;
       const skills = scanSkills(projectDir || null, getPluginScanRoots().skillDirs);
+      const enabledSkills = filterEnabledSkills(skills, projectDir || null);
       const agents = scanAgents(projectDir || null, getPluginScanRoots().agentDirs);
       // 合并：技能章节 + 代理章节（各自无内容时返回空串）
-      const sections = [buildSkillsSection(skills), buildAgentsSection(agents)].filter((s) => s && s.trim());
+      const sections = [buildSkillsSection(enabledSkills), buildAgentsSection(agents)].filter((s) => s && s.trim());
       const section = sections.join('\n');
       return { success: true, section, skillCount: skills.length, agentCount: agents.length };
     } catch (err: any) {

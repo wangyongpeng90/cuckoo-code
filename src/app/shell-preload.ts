@@ -141,6 +141,8 @@ const shellAPI = {
   },
   // ========== 技能 ==========
   listSkills: () => ipcRenderer.invoke('list-skills'),
+  setSkillEnabled: (name: string, source: string, enabled: boolean) =>
+    ipcRenderer.invoke('set-skill-enabled', { name, source, enabled }),
   // ========== 子代理 ==========
   listAgents: () => ipcRenderer.invoke('list-agents'),
   createAgentFile: (name: string, scope: string) => ipcRenderer.invoke('create-agent-file', { name, scope }),

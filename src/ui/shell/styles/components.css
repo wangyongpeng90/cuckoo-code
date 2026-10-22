@@ -130,6 +130,9 @@
   .ck-skill-item:hover + .ck-skill-item { border-top-color: transparent; }
   .ck-skill-top { display: flex; align-items: center; gap: 8px; }
   .ck-skill-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ck-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 技能已关闭（不加入上下文）：整体淡化，仅开关保持可操作 */
+  .ck-skill-item.ck-skill-off .ck-skill-name,
+  .ck-skill-item.ck-skill-off .ck-skill-desc { opacity: .45; }
   .ck-skill-src { font-size: 10px; color: var(--ck-text-dim); padding: 2px 7px; background: var(--ck-surface); border-radius: 6px; flex-shrink: 0; }
   .ck-skill-desc {
     font-size: 11.5px; color: var(--ck-text-2); line-height: 1.5;

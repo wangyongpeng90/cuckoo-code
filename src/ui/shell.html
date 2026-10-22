@@ -404,6 +404,9 @@
   .ck-skill-item:hover + .ck-skill-item { border-top-color: transparent; }
   .ck-skill-top { display: flex; align-items: center; gap: 8px; }
   .ck-skill-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: var(--ck-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* 技能已关闭（不加入上下文）：整体淡化，仅开关保持可操作 */
+  .ck-skill-item.ck-skill-off .ck-skill-name,
+  .ck-skill-item.ck-skill-off .ck-skill-desc { opacity: .45; }
   .ck-skill-src { font-size: 10px; color: var(--ck-text-dim); padding: 2px 7px; background: var(--ck-surface); border-radius: 6px; flex-shrink: 0; }
   .ck-skill-desc {
     font-size: 11.5px; color: var(--ck-text-2); line-height: 1.5;
@@ -3415,7 +3418,10 @@
         listEl2.innerHTML = '<div class="ck-list-empty">\u672A\u53D1\u73B0\u6280\u80FD<br>\uFF08.cuckoo/skills/ \u6216 ~/.cuckoo/skills/\uFF09</div>';
         return;
       }
-      const skillCard = (s) => '<div class="ck-skill-item" data-name="' + escapeHtml(s.name) + '"><div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.name) + '</span></div><div class="ck-skill-desc">' + escapeHtml(s.description || "\uFF08\u65E0\u63CF\u8FF0\uFF09") + "</div></div>";
+      const skillCard = (s) => {
+        const on = s.enabled !== false;
+        return '<div class="ck-skill-item' + (on ? "" : " ck-skill-off") + '" data-name="' + escapeHtml(s.name) + '" data-source="' + escapeHtml(s.source) + '"><div class="ck-skill-top"><span class="ck-skill-name">' + escapeHtml(s.name) + '</span><label class="ck-switch" title="' + (on ? "\u5DF2\u52A0\u5165\u4E0A\u4E0B\u6587" : "\u4E0D\u52A0\u5165\u4E0A\u4E0B\u6587") + '"><input type="checkbox" class="ck-skill-toggle"' + (on ? " checked" : "") + ' /><span class="ck-switch-track"></span></label></div><div class="ck-skill-desc">' + escapeHtml(s.description || "\uFF08\u65E0\u63CF\u8FF0\uFF09") + "</div></div>";
+      };
       const userSkills = skills.filter((s) => s.source !== "project");
       const projSkills = skills.filter((s) => s.source === "project");
       let html = "";
@@ -3424,6 +3430,7 @@
       listEl2.innerHTML = html;
       listEl2.querySelectorAll(".ck-skill-item").forEach((el) => {
         el.addEventListener("click", async () => {
+          if (el.classList.contains("ck-skill-off")) return;
           if (api.appendSnippet) {
             try {
               await api.appendSnippet("\u8BF7\u4F7F\u7528 " + el.dataset.name + " \u6280\u80FD");
@@ -3431,6 +3438,26 @@
             }
           }
           addRecent("skill", el.dataset.name);
+        });
+      });
+      listEl2.querySelectorAll(".ck-skill-toggle").forEach((input2) => {
+        const label = input2.closest(".ck-switch");
+        if (label) label.addEventListener("click", (e) => e.stopPropagation());
+        input2.addEventListener("change", async (e) => {
+          e.stopPropagation();
+          const item = input2.closest(".ck-skill-item");
+          const name = item.dataset.name;
+          const source = item.dataset.source;
+          const on = input2.checked;
+          if (!api.setSkillEnabled) return;
+          const r2 = await api.setSkillEnabled(name, source, on);
+          if (!r2 || !r2.success) {
+            input2.checked = !on;
+            await ckAlert(r2 && r2.error || "\u4FDD\u5B58\u5931\u8D25");
+            return;
+          }
+          item.classList.toggle("ck-skill-off", !on);
+          if (label) label.title = on ? "\u5DF2\u52A0\u5165\u4E0A\u4E0B\u6587" : "\u4E0D\u52A0\u5165\u4E0A\u4E0B\u6587";
         });
       });
     } catch (_) {

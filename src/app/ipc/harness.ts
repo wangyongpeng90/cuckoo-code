@@ -14,6 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import * as windowState from '../window.js';
 import { scanSkills } from '../../skills/index.js';
+import { filterEnabledSkills } from '../../skills/state.js';
 import { getPluginScanRoots } from '../../plugins/roots.js';
 import { registry } from '../../tools/index.js';
 import { getProvider } from '../../providers/registry.js';
@@ -236,7 +237,7 @@ function registerHarnessIpc(): void {
     try {
       const ctx = findContext(event.sender);
       const projectDir = ctx && ctx.sessionStore ? ctx.sessionStore.state.selectedProjectDir : null;
-      const skills = scanSkills(projectDir || null, getPluginScanRoots().skillDirs)
+      const skills = filterEnabledSkills(scanSkills(projectDir || null, getPluginScanRoots().skillDirs), projectDir || null)
         .map((s: any) => ({ name: s.name, description: s.description }));
       const tools = registry.getDescriptions().map((t: any) => ({ name: t.name, description: t.description }));
       return { success: true, skills, tools };

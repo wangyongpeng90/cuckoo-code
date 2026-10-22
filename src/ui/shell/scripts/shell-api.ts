@@ -90,6 +90,7 @@ export interface ShellAPI {
   onSnippetsChanged?: (cb: () => void) => void;
   // 技能 / 子代理
   listSkills?: () => Promise<any>;
+  setSkillEnabled?: (name: string, source: string, enabled: boolean) => Promise<any>;
   listAgents?: () => Promise<any>;
   createAgentFile?: (name: string, scope: string) => Promise<any>;
   openAgentFile?: (agentPath: string) => Promise<any>;
