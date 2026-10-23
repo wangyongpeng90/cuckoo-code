@@ -108,6 +108,7 @@ const SYSTEM_MSG_TAGS = [
   'JS汇总', '飞书', '看门狗', '重试', '重试(操作频繁)',
   '压缩-摘要', 'MCP信息', '技能与代理清单', '继续',
   'JSON工具调用提示', 'XML工具调用提示', '系统提示词',
+  '安全审核续接',
 ];
 let onUserMessageSentCb: ((text: string, tag?: string) => void) | null = null;
 /** 注册"用户消息已发出"回调（返回取消注册） */

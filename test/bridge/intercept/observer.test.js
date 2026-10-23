@@ -8,6 +8,7 @@ import {
   onInterceptedResponse,
   onAiError,
   onTaskIdle,
+  isSafetyAuditOnly,
 } from '../../../src/bridge/intercept/observer.js';
 
 // 收集注册的监听器，测试后统一取消，避免模块级 Set 跨用例泄漏
@@ -253,3 +254,46 @@ test('onTaskIdle：空文本不触发', async () => {
   await processInterceptedResponse('');
   assert.strictEqual(idle, 0);
 });
+
+// ========== 安全审核伪回复（<ds_safety>）自动续接 ==========
+
+test('isSafetyAuditOnly：纯 ds_safety 块判为审核伪回复', () => {
+  const t = '<ds_safety>[用户未成年]否\n[分类]其他\n[判定]正常技术任务\n[规则]无</ds_safety>Safe';
+  assert.strictEqual(isSafetyAuditOnly(t), true);
+});
+
+test('isSafetyAuditOnly：前后带空白仍判为审核伪回复', () => {
+  const t = '  <ds_safety>xxx</ds_safety>\n Safe  ';
+  assert.strictEqual(isSafetyAuditOnly(t), true);
+});
+
+test('isSafetyAuditOnly：ds_safety 后跟随实质正文 → 不是纯伪回复', () => {
+  const t = '<ds_safety>xxx</ds_safety>Safe\n\n接下来我继续执行任务：读取文件';
+  assert.strictEqual(isSafetyAuditOnly(t), false);
+});
+
+test('isSafetyAuditOnly：普通文本不含 ds_safety → false', () => {
+  assert.strictEqual(isSafetyAuditOnly('一段普通回复'), false);
+});
+
+test('isSafetyAuditOnly：空串 / 无 ds_safety 标签 → false', () => {
+  assert.strictEqual(isSafetyAuditOnly(''), false);
+  assert.strictEqual(isSafetyAuditOnly('<div>普通标签</div>'), false);
+});
+
+test('processInterceptedResponse：安全审核伪回复不触发 onTaskIdle（不误判任务完成）', async () => {
+  setupGlobals();
+  let idle = 0;
+  track(onTaskIdle(() => idle++));
+  await processInterceptedResponse('<ds_safety>[判定]正常技术任务</ds_safety>Safe');
+  assert.strictEqual(idle, 0, '安全审核伪回复不应派发任务空闲');
+});
+
+test('processInterceptedResponse：含 ds_safety 但有实质正文时正常视为完成', async () => {
+  setupGlobals();
+  let idle = 0;
+  track(onTaskIdle(() => idle++));
+  await processInterceptedResponse('<ds_safety>xxx</ds_safety>Safe\n\n继续回答：这是正常正文');
+  assert.strictEqual(idle, 1, '有实质正文应正常派发任务空闲');
+});
+

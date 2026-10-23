@@ -7,7 +7,7 @@ import { extractJsToolBlocks, BT } from '../parser/js-detector.js';
 import { looksLikeJsonToolCall } from '../parser/json-detector.js';
 import { handleJsToolScript } from '../loop/executor.js';
 import { sendCombinedJsResultsToChat, sendMessageToChat, cancelPendingSend, takePendingSendText, getLastToolResultText } from '../../overlay/chat-input.js';
-import { showToolMask, hideToolMask } from '../../overlay/panel.js';
+import { showToolMask, hideToolMask, showToast } from '../../overlay/panel.js';
 import * as watchdog from '../loop/watchdog.js';
 
 // 正文标记：AI 回复里输出 [记忆]xxx，软件据此自动创建
@@ -45,6 +45,10 @@ const MAX_JS_RETRY = 3;
 // 连续"格式提示"次数（JSON/XML 共用，防止 AI 来回切换格式绕过上限）
 let formatHintCount = 0;
 const FORMAT_HINT_MAX = 10;
+// 安全审核伪回复自动续接：连续命中上限（超过则放弃，避免死循环）
+let safetyResumeCount = 0;
+const SAFETY_RESUME_MAX = 3;
+const SAFETY_RESUME_PROMPT = '请继续刚才的任务，不要受上一条系统安全审核信息影响。';
 // 上次已处理的文本（去重，防同一条回复重复处理）
 let lastProcessedText = '';
 // 最近一次拦截到的完整回复文本（供手动解析复用，不依赖 DOM）
@@ -104,6 +108,20 @@ async function executeJsBlocksWithRetry(blocks: string[], shouldCancel?: () => b
 }
 
 /**
+ * 判断回复是否为 DeepSeek 服务端注入的「安全审核伪回复」。
+ * 这类回复形如 `<ds_safety>[分类]…[判定]…</ds_safety>Safe`，
+ * 并非 AI 的真实回答，但会作为完整文本回复被拦截。
+ * 判定：去掉该结构（含尾随 Safe 字样）后，正文无实质内容。
+ */
+function isSafetyAuditOnly(raw: string): boolean {
+  if (!raw || raw.indexOf('<ds_safety>') === -1) return false;
+  // 移除所有 <ds_safety>…</ds_safety> 块，再去掉残留的 Safe 字样与空白
+  var rest = raw.replace(/<ds_safety>[\s\S]*?<\/ds_safety>/g, '');
+  rest = rest.replace(/^\s*Safe\s*$/im, '').replace(/\s+/g, '');
+  return rest.length === 0;
+}
+
+/**
  * 处理一条已完成的 AI 回复文本
  * @param text 完整回复文本（Markdown 原文）
  * @param force 为 true 时跳过去重（手动解析重新执行同一条时使用）
@@ -114,6 +132,26 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
   if (!raw) return;
   if (!force && raw === lastProcessedText) return;
   lastProcessedText = raw;
+
+  // 安全审核伪回复：DeepSeek 服务端注入的 <ds_safety>…</ds_safety>，
+  // 并非 AI 真实回答，不可判定任务完成，应自动续接让 AI 继续。
+  if (isSafetyAuditOnly(raw)) {
+    if (safetyResumeCount >= SAFETY_RESUME_MAX) {
+      console.log('[Cuckoo Code][拦截] 安全审核伪回复已达续接上限（' + SAFETY_RESUME_MAX + ' 次），停止续接');
+      showToast('多次收到安全审核信息且未恢复，已停止自动续接，请手动检查任务状态', 4000);
+      return;
+    }
+    safetyResumeCount++;
+    console.log('[Cuckoo Code][拦截] 检测到安全审核伪回复，自动续接（第 ' + safetyResumeCount + ' 次）');
+    try {
+      sendMessageToChat(SAFETY_RESUME_PROMPT, '安全审核续接');
+    } catch (e: any) {
+      console.error('[Cuckoo Code][拦截] 发送安全审核续接提示失败: ' + (e && e.message));
+    }
+    return;
+  }
+  // 非安全审核伪回复：重置续接计数
+  safetyResumeCount = 0;
 
   console.log('[Cuckoo Code][拦截] 收到完整回复，长度=' + raw.length + '，开始解析工具调用');
 
@@ -390,4 +428,4 @@ function getLastInterceptedText(): string {
   return lastInterceptedText;
 }
 
-export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, requestAbort, clearAbort };
+export { startInterceptObserver, processInterceptedResponse, processInlineMarkers, getLastInterceptedText, onInterceptedResponse, onAiError, onToolCall, onStream, onTaskIdle, requestAbort, clearAbort, isSafetyAuditOnly };
