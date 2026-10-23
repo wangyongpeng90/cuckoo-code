@@ -241,7 +241,16 @@ function registerSessionIpc(): void {
       }, 2000);
     };
     try { wc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
-    try { await wc.loadURL(homeUrl); } catch (err: any) { return { success: false, error: err.message }; }
+    // [022] 加 cuckoo_no_prompt=1 标记——自动流程不该弹初始化遮罩（store.ts 会识别并跳过）
+    let targetUrl = homeUrl;
+    try {
+      const u = new URL(homeUrl);
+      u.searchParams.set('cuckoo_no_prompt', '1');
+      targetUrl = u.toString();
+    } catch {
+      targetUrl = homeUrl + (homeUrl.includes('?') ? '&' : '?') + 'cuckoo_no_prompt=1';
+    }
+    try { await wc.loadURL(targetUrl); } catch (err: any) { return { success: false, error: err.message }; }
     return { success: true, projectDir: projectDir || null, pendingTextLen: pendingText.length };
   });
 

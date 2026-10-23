@@ -334,7 +334,8 @@ async function checkPendingCompact(): Promise<boolean> {
     logStep('api', '全量消息 ' + allMsgs.length + ' 条（叶子=' + (currentMessageId || '?') + '），保留最近 ' + tailIds.length + ' 条（成对）');
 
     const shareId = await createShare(sessionId, tailIds, headers);
-    const link = 'https://chat.deepseek.com/share/' + shareId;
+    // [022] 加 cuckoo_no_prompt=1 标记——压缩跳分享页是自动流程，不该弹初始化遮罩
+    const link = 'https://chat.deepseek.com/share/' + shareId + '?cuckoo_no_prompt=1';
     logStep('api', '分享链接: ' + link);
 
     showToast('压缩完成，正在打开新会话...', 3000);

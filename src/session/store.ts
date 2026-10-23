@@ -355,10 +355,16 @@ function createSessionStore(profileId: string, db: DatabaseSync, windowState: an
       } catch (_) { /* ignore */ }
       
       // 【终极统一】落到首页时通知壳页面弹窗
-      // [022] 但插件驱动（URL 带 cuckoo_logic_id）时**不弹窗**——插件自己通过 meta.cwd 指定了目录，
-      // 弹窗是给"用户手动新建"的引导，不该强加给插件。对齐 DSH 语义（无 cwd 会话合法存在）。
-      // 详见 docs/dsh-compat-decisions.md 9.1 + 本次真机验证发现。
-      if (!urlLogicId) {
+      // [022] 两种情况不弹窗：
+      //   ① 插件驱动（URL 带 cuckoo_logic_id）——插件自己通过 meta.cwd 指定了目录
+      //   ② 自动流程（URL 带 cuckoo_no_prompt=1）——压缩上下文 / 上下文耗尽续接 / 窗口组转移
+      // 弹窗只给"用户手动新建"的引导，不该强加给插件和自动流程。
+      // 详见 docs/dsh-compat-decisions.md 9.1 + 真机验证发现（压缩时误弹遮罩）。
+      let autoFlow = false;
+      try {
+        autoFlow = new URL(url).searchParams.get('cuckoo_no_prompt') === '1';
+      } catch { /* ignore */ }
+      if (!urlLogicId && !autoFlow) {
         const ctx = windowState && windowState.getContextByWebContents ? windowState.getContextByWebContents(wc) : null;
         if (ctx && ctx.win && !ctx.win.isDestroyed()) {
           ctx.win.webContents.send('shell-show-init-prompt', { projectDir: urlProjectDir });

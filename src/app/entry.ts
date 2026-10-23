@@ -977,7 +977,8 @@ async function runSwitchForGroup(groupId: string, fromProfileId: string): Promis
     const twc = tctx.view.webContents;
 
     // 8) 导航到分享链接；加载完成后初始化项目
-    const shareUrl = 'https://chat.deepseek.com/share/' + share.shareId;
+    // [022] 加 cuckoo_no_prompt=1 标记——窗口组转移是自动流程，不该弹初始化遮罩
+    const shareUrl = 'https://chat.deepseek.com/share/' + share.shareId + '?cuckoo_no_prompt=1';
     const onLoad = () => {
       try { twc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
       setTimeout(async () => {
