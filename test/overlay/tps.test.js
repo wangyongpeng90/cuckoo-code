@@ -12,9 +12,10 @@ test('estimateTokens 中文约 0.7 token/字', () => {
   assert.strictEqual(estimateTokens('你好世界'), 3); // 4*0.7=2.8→3
 });
 
-test('estimateTokens 英文约 0.28 token/字符', () => {
-  assert.strictEqual(estimateTokens('abcdefgh'), 2);
-  assert.strictEqual(estimateTokens('abcd'), 1);
+test('estimateTokens 英文约 0.27 token/字符（含 1.05 保守上偏）', () => {
+  // 8*0.27*1.05=2.27→3；4*0.27*1.05=1.13→2
+  assert.strictEqual(estimateTokens('abcdefgh'), 3);
+  assert.strictEqual(estimateTokens('abcd'), 2);
 });
 
 test('estimateTokens 数字权重', () => {

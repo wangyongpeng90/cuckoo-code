@@ -6,9 +6,12 @@
 
 // 反引号与围栏（共享常量，见 infra/markdown）
 import { BT, FENCE } from '../../infra/markdown.js';
+// 工具名清单（由 scripts/build-tool-api.mjs 从 apiMetas 生成，避免手写白名单与注册表漂移）
+import { TOOL_NAMES } from '../generated/tool-names.generated.js';
 
 // 工具调用特征：必须出现 "await 工具函数名(" 形式的调用（防止 fs.readFile 等普通示例误判）
-const JS_TOOL_CALL_RE = /\bawait\s+(?:read|readLines|write|edit|glob|grep|todoWrite|bash|pwsh|deleteFile|webFetch|mysql|mcpCall|mcpListServers|mcpGetTools|openBrowserWindow|injectJS|attachFile)\s*\(/;
+const TOOL_NAMES_ALT = TOOL_NAMES.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+const JS_TOOL_CALL_RE = new RegExp('\\bawait\\s+(?:' + TOOL_NAMES_ALT + ')\\s*\\(');
 /**
  * 判断一段 JS 代码是否调用了工具函数
  */

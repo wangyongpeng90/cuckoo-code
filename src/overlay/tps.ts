@@ -14,15 +14,14 @@
  * 自动重置基准。这样即使上一轮被中止（未收到 finished），也不会把两轮 token 叠加。
  */
 
-/** 估算一段文本的 token 数（近似；仅在无服务端 token 时回退使用） */
+import { getTokenCounter } from '../infra/token-counter.js';
+
+/**
+ * 估算一段文本的 token 数（近似；仅在无服务端 token 时回退使用）。
+ * 委托给统一的 TokenCounter（见 infra/token-counter），可被精确 tokenizer 替换。
+ */
 export function estimateTokens(text: string): number {
-  if (!text) return 0;
-  const cjk = (text.match(/[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af\uf900-\ufaff]/g) || []).length;
-  const emoji = (text.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu) || []).length;
-  const digits = (text.match(/\d/g) || []).length;
-  const spaces = (text.match(/\s/g) || []).length;
-  const rest = Math.max(0, text.length - cjk - emoji - digits - spaces);
-  return Math.round(cjk * 0.7 + emoji * 2.5 + digits * 0.35 + spaces * 0.25 + rest * 0.28);
+  return getTokenCounter().count(text);
 }
 
 /** 最小计时窗口（秒）：过短会让 TPS 虚高 */

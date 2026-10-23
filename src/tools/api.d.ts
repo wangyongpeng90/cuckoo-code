@@ -149,7 +149,7 @@ interface BashOptions {
 }
 
 /**
- * 执行 shell 命令（Windows 使用 cmd.exe）。
+ * 执行 shell 命令（Windows 使用 cmd.exe；Linux/macOS 使用系统默认 shell，通常为 /bin/sh 或 bash）。
  * 返回纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）。
  * 必须用 log() 方法打印才能看到返回内容。
  * 非零退出不抛异常，通过 [exit code] 标记报告。
@@ -172,7 +172,7 @@ interface PwshOptions {
 }
 
 /**
- * 执行 PowerShell 命令（powershell -NoProfile -Command）。
+ * 执行命令行命令。Windows 上用 PowerShell（powershell -NoProfile -Command）；Linux/macOS 上用 bash（bash -lc）。
  * 返回纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）。
  * 必须用 log() 方法打印才能看到返回内容。
  * 非零退出不抛异常，通过 [exit code] 标记报告。

@@ -160,3 +160,19 @@ b.push('');
 b.push('export { TOOL_BOOTSTRAP };');
 fs.writeFileSync(BOOTSTRAP_OUT, b.join(NL) + NL, 'utf8');
 console.log('[build-tool-api] 生成 ' + path.relative(ROOT, BOOTSTRAP_OUT) + '（' + bootstraps.length + ' 个 bootstrap）');
+
+// ========== 工具名清单（供 js-detector 构造检测正则）==========
+// 真相源与 apiMetas 一致，避免 bridge/parser/js-detector.ts 手写白名单与注册表漂移。
+const TOOL_NAMES_OUT = path.join(ROOT, 'src', 'bridge', 'generated', 'tool-names.generated.ts');
+const toolNames = Array.from(new Set(metas.map((m) => m.name))).sort();
+const tn = [];
+tn.push('// 本文件由 scripts/build-tool-api.mjs 自动生成，请勿手动编辑。');
+tn.push('// 真相源：各工具的 apiMetas.name（src/tools/impl/*.ts）。');
+tn.push('// 供 bridge/parser/js-detector.ts 构造工具调用检测正则，避免手写白名单与注册表漂移。');
+tn.push('');
+tn.push('export const TOOL_NAMES: readonly string[] = [');
+for (const n of toolNames) tn.push('  ' + JSON.stringify(n) + ',');
+tn.push('];');
+fs.mkdirSync(path.dirname(TOOL_NAMES_OUT), { recursive: true });
+fs.writeFileSync(TOOL_NAMES_OUT, tn.join(NL) + NL, 'utf8');
+console.log('[build-tool-api] 生成 ' + path.relative(ROOT, TOOL_NAMES_OUT) + '（' + toolNames.length + ' 个工具名）');

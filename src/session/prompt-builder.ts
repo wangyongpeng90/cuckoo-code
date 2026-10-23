@@ -1,6 +1,9 @@
 /**
  * 系统提示词组装：读取模板、填充占位符、拼装 MCP/平台/项目章节
  * 由 project-context.ts 拆分而来（P4.5）。
+ *
+ * 分层（P2 重构）：章节构建/占位符替换抽到 prompt/sections.ts；
+ * 本文件只负责编排与数据采集，并 re-export 兼容既有调用方与测试。
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,6 +21,12 @@ import type { PluginScanRoots } from '../plugins/roots.js';
 // DSH 插件注册的提示词段（C4）
 import { getPromptSections as getDshPromptSections } from '../plugins/dsh-compat/prompt-sections.js';
 import { buildMemorySection } from '../infra/memories.js';
+import {
+  buildPlatformInfo,
+  buildMcpSection,
+  readProjectIntro,
+  applyPlaceholders,
+} from './prompt/sections.js';
 
 // 提示词模板目录（D20：锚定应用根，与 dist 结构解耦）
 const PROMPT_DIR = resolveSrc('prompt');
@@ -68,73 +77,6 @@ function loadTemplate(providerId: string): { content: string; path: string; erro
   }
 
   return { content: templateContent, path: templatePath };
-}
-
-/** 生成平台信息章节（OS/arch/命令差异） */
-function buildPlatformInfo(): string {
-  const platform = process.platform;
-  const arch = process.arch;
-  if (platform === 'win32') {
-    return '- 操作系统：Windows（' + arch + '）\n  - bash 使用 cmd.exe（Windows 命令：cd / dir / echo %cd% / type / findstr）\n  - pwsh 使用 PowerShell（Get-Location / $env:VAR / Get-ChildItem）\n  - 路径分隔符为反斜杠 \\，传给工具的相对路径统一用正斜杠 /';
-  }
-  if (platform === 'darwin') {
-    return '- 操作系统：macOS（' + arch + '）\n  - bash 使用 zsh/bash（Unix 命令：pwd / ls / cat / grep）\n  - 路径分隔符为正斜杠 /';
-  }
-  return '- 操作系统：Linux（' + arch + '）\n  - bash 使用 bash（Unix 命令：pwd / ls / cat / grep）\n  - 路径分隔符为正斜杠 /';
-}
-
-/** 生成 MCP 能力章节 */
-function buildMcpSection(selectedDir: string | null): string {
-  const enabledMcpServers = mcpClient.listConfiguredServers(selectedDir).filter(s => s.enabled);
-  const mcpServerList = enabledMcpServers.length
-    ? enabledMcpServers.map(s => '- ' + s.name + '（' + s.type + '，' + (s.connected ? '已连接' : '未连接') + '，工具数 ' + s.toolCount + '）').join('\n')
-    : '（当前没有已配置且启用的 MCP server）';
-  const mcpCwd = mcpClient.getDefaultMcpCwd();
-  const mcpCwdLine = mcpCwd
-    ? 'MCP 子进程的工作目录（cwd）：' + mcpCwd + '\n注意：MCP 工具（如截图、下载）返回的路径多为相对路径，实际文件位于该 cwd 下。若需读取/上传这些文件（如 attachFile），请把该 cwd 与相对路径用 / 拼接成绝对路径传入，例如：' + mcpCwd + '/page-xxx.png'
-    : 'MCP 子进程的工作目录（cwd）：未确定（继承父进程）。MCP 工具返回的相对路径请以实际返回为准。';
-
-  return [
-    '## MCP 能力',
-    '',
-    '本应用支持 MCP（Model Context Protocol）外部工具扩展。',
-    '',
-    mcpCwdLine,
-    '',
-    '当前已配置且启用的 MCP server：',
-    mcpServerList,
-    '',
-    '**使用 MCP 的强制流程（务必遵守）**：',
-    '1. 先调 mcpListServers() 看有哪些 server、是否已连接',
-    '2. **调用任何工具前，必须先调 mcpGetTools(server) 查看该 server 的工具列表与参数**（每个工具的名称、描述、参数名/类型都在这里）。不同 server/版本参数名可能不同，凭记忆猜参数极易失败。',
-    '3. 按 mcpGetTools 返回的准确参数，通过 mcpCall(server, tool, args) 调用',
-    '4. 工具返回的错误要仔细读（通常已说明失败原因，如参数缺失、引用过期），据此调整后重试',
-    '',
-    '注意：MCP server 可能未连接或未启用，以 mcpListServers() 的实时返回为准。',
-    '',
-    '如果你需要使用某个 MCP（例如浏览器自动化、数据库访问等），可以提示用户安装并配置对应的 MCP server。'
-  ].join('\n');
-}
-
-/**
- * 读取项目介绍（CUCKOO.md），无则返回空串。
- * 优先新路径 `.cuckoo/CUCKOO.md`，兼容旧路径 `.cuckooCode/CUCKOO.md`。
- */
-function readProjectIntro(selectedDir: string): string {
-  const candidates = [
-    path.join(selectedDir, '.cuckoo', 'CUCKOO.md'),
-    path.join(selectedDir, '.cuckooCode', 'CUCKOO.md'),
-  ];
-  const cuckooMdPath = candidates.find((p) => fs.existsSync(p));
-  if (!cuckooMdPath) return '';
-  try {
-    const content = fs.readFileSync(cuckooMdPath, 'utf-8');
-    console.log('[Cuckoo Code] 已读取 CUCKOO.md 内容:', cuckooMdPath);
-    return content;
-  } catch (err: any) {
-    console.error('[Cuckoo Code] 读取 CUCKOO.md 失败:', err.message);
-    return '';
-  }
 }
 
 /**
@@ -216,11 +158,7 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     '{{PROJECT_RULES_SECTION}}': rulesSection,
     '{{MEMORY_SECTION}}': memorySection,
   };
-  let combined = tpl.content;
-  for (const [key, value] of Object.entries(placeholders)) {
-    combined = combined.split(key).join(value);
-  }
-
+  let combined = applyPlaceholders(tpl.content, placeholders);
 
   // 压缩后初始化：末尾追加提示，让 AI 接着之前的工作继续
   if (isCompaction) {
@@ -230,4 +168,13 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   return { prompt: combined };
 }
 
-export { PROMPT_DIR, loadTemplate, buildPrompt };
+export {
+  PROMPT_DIR,
+  loadTemplate,
+  buildPrompt,
+  // 章节构建（re-export，便于单测与其它模块按需引用）
+  buildPlatformInfo,
+  buildMcpSection,
+  readProjectIntro,
+  applyPlaceholders,
+};
