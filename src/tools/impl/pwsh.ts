@@ -24,7 +24,7 @@ export const apiMetas: ToolApiMeta[] = [
       '}',
     ].join('\n'),
     doc: [
-      '执行 PowerShell 命令（powershell -NoProfile -Command）。',
+      '执行命令行命令。Windows 上用 PowerShell（powershell -NoProfile -Command）；Linux/macOS 上用 bash（bash -lc）。',
       '返回纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）。',
       '必须用 log() 方法打印才能看到返回内容。',
       '非零退出不抛异常，通过 [exit code] 标记报告。',
@@ -54,7 +54,7 @@ class PwshTool extends Tool {
   constructor() {
     super(
       'pwsh',
-      '执行 PowerShell 命令（powershell -NoProfile -Command）。非零退出以 [exit code] 标记返回，不视为错误。',
+      '执行命令行命令（Windows 用 PowerShell；Linux/macOS 用 bash）。非零退出以 [exit code] 标记返回，不视为错误。',
       {
         type: 'object',
         properties: {
@@ -87,7 +87,7 @@ class PwshTool extends Tool {
     return {
       name: 'tool:pwsh',
       order: 106,
-      text: '执行 PowerShell 命令（powershell -NoProfile -Command）并返回 stdout/stderr。每次调用在全新 pwsh 进程中运行：状态不会跨调用保留——请用 workdir 参数而非 cd。路径使用 Windows 原生形式（C:\\...）；用 $env:NAME 读取环境变量。非零退出以 [exit code: N] 标记报告。'
+      text: '执行命令行命令并返回 stdout/stderr（Windows 用 PowerShell 的 powershell -NoProfile -Command；Linux/macOS 用 bash -lc，语法按对应平台写：Windows 用 $env:NAME，Unix 用 $NAME）。每次调用在全新 shell 进程中运行：状态不会跨调用保留——请用 workdir 参数而非 cd。非零退出以 [exit code: N] 标记报告。'
     };
   }
 
@@ -119,17 +119,23 @@ class PwshTool extends Tool {
       } else if (projectDir) {
         workDir = projectDir;
       } else {
-        workDir = process.env.USERPROFILE || process.env.HOME || 'C:\\';
+        workDir = process.env.HOME || process.env.USERPROFILE || (process.platform === 'win32' ? 'C:\\' : '/');
       }
 
       const timeout = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 30000;
 
       console.log('[PwshTool] 执行命令: ' + trimmed + ', cwd=' + workDir);
 
+      // 非 Windows（Linux/macOS）无 PowerShell：用系统 bash 执行等价命令，
+      // 保持返回格式一致（stdout + [stderr] + [exit code]/[timed out]）。
+      const isWin = process.platform === 'win32';
+      const shellCmd = isWin ? 'powershell' : 'bash';
+      const shellArgs = isWin ? ['-NoProfile', '-Command', trimmed] : ['-lc', trimmed];
+
       return await new Promise<ToolResult>((resolve) => {
         execFile(
-          'powershell',
-          ['-NoProfile', '-Command', trimmed],
+          shellCmd,
+          shellArgs,
           { cwd: workDir, timeout, maxBuffer: 1024 * 1024, windowsHide: true, encoding: 'buffer' },
           (error, stdout, stderr) => {
             const out = decodeOutput(stdout);

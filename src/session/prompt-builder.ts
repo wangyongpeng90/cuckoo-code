@@ -80,7 +80,7 @@ function buildPlatformInfo(): string {
   if (platform === 'darwin') {
     return '- 操作系统：macOS（' + arch + '）\n  - bash 使用 zsh/bash（Unix 命令：pwd / ls / cat / grep）\n  - 路径分隔符为正斜杠 /';
   }
-  return '- 操作系统：Linux（' + arch + '）\n  - bash 使用 bash（Unix 命令：pwd / ls / cat / grep）\n  - 路径分隔符为正斜杠 /';
+  return '- 操作系统：Linux（' + arch + '，常见为 Ubuntu 24.04）\n  - bash 使用 bash（Unix 命令：pwd / ls / cat / grep / apt）\n  - pwsh 在 Linux 上内部以 bash -lc 执行，按 bash 语法书写命令\n  - 路径分隔符为正斜杠 /；家目录用 $HOME 或 ~';
 }
 
 /** 生成 MCP 能力章节 */

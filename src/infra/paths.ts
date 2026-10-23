@@ -41,7 +41,9 @@ export function resolveRuntimeBinDir(): string | null {
     ? 'win-x64'
     : (process.platform === 'darwin'
       ? (process.arch === 'arm64' ? 'mac-arm64' : 'mac-x64')
-      : null);
+      : (process.platform === 'linux'
+        ? (process.arch === 'arm64' ? 'linux-arm64' : 'linux-x64')
+        : null));
   if (!platform) return null;
   const candidates = [
     path.join(process.resourcesPath || '', 'runtime', platform, 'bin'),

@@ -36,6 +36,25 @@ try {
 app.setPath('userData', USER_DATA_DIR);
 console.log('[Cuckoo Code] Session 数据目录:', app.getPath('userData'));
 
+// ========== Ubuntu 24.04+ 沙箱兼容 ==========
+// Ubuntu 23.10 起默认通过 AppArmor 限制非特权 user namespace，
+// 导致 Electron 的 SUID sandbox 无法启动，表现为启动即崩溃（SIGTRAP / exit 133）。
+// 开发态（electron 二进制）与 AppImage 打包态均受影响。
+// 探测方式：unshare -Ur true —— 成功说明当前环境允许非特权 userns，无需回退。
+if (process.platform === 'linux') {
+  try {
+    const { spawnSync } = require('node:child_process');
+    const probe = spawnSync('unshare', ['-Ur', 'true'], { timeout: 3000 });
+    if (probe.status !== 0) {
+      console.warn('[Cuckoo Code] 非特权 user namespace 受限（Ubuntu 24.04 常见），回退 --no-sandbox');
+      app.commandLine.appendSwitch('no-sandbox');
+    }
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 沙箱探测失败，回退 --no-sandbox:', err.message);
+    app.commandLine.appendSwitch('no-sandbox');
+  }
+}
+
 // 渲染进程日志输出目录（仅开发环境持久化；打包版不写日志文件）
 const RENDERER_LOG_DIR = app.isPackaged
   ? null

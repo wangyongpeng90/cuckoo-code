@@ -24,7 +24,7 @@ export const apiMetas: ToolApiMeta[] = [
       '}',
     ].join('\n'),
     doc: [
-      '执行 shell 命令（Windows 使用 cmd.exe）。',
+      '执行 shell 命令（Windows 使用 cmd.exe；Linux/macOS 使用系统默认 shell，通常为 /bin/sh 或 bash）。',
       '返回纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）。',
       '必须用 log() 方法打印才能看到返回内容。',
       '非零退出不抛异常，通过 [exit code] 标记报告。',
@@ -98,7 +98,7 @@ class BashTool extends Tool {
     return {
       name: 'tool:bash',
       order: 105,
-      text: '执行 bash 命令并返回 stdout/stderr。每次调用在全新 shell 中运行：状态（cwd、变量、函数）不会跨调用保留——请用 workdir 参数而非 cd。非零退出以 [exit code: N] 标记报告。长输出会截断为尾部。'
+      text: '执行 shell 命令并返回 stdout/stderr（Windows 用 cmd.exe；Linux/macOS 用系统 shell）。每次调用在全新 shell 中运行：状态（cwd、变量、函数）不会跨调用保留——请用 workdir 参数而非 cd。非零退出以 [exit code: N] 标记报告。长输出会截断为尾部。'
     };
   }
 
@@ -130,7 +130,7 @@ class BashTool extends Tool {
       } else if (projectDir) {
         workDir = projectDir;
       } else {
-        workDir = process.env.USERPROFILE || process.env.HOME || 'C:\\';
+        workDir = process.env.HOME || process.env.USERPROFILE || (process.platform === 'win32' ? 'C:\\' : '/');
       }
 
       const timeout = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 30000;

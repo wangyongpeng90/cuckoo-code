@@ -22,11 +22,13 @@
     "build:win:nsis": "npm run compile && electron-builder --win --config.win.target=nsis --publish always",
     "build:mac": "npm run compile && electron-builder --mac --publish always",
     "build:mac:dmg": "npm run compile && electron-builder --mac --config.mac.target=dmg --publish always",
+    "build:linux": "npm run compile && electron-builder --linux --publish always",
     "build:local": "npm run compile && electron-builder --publish never",
     "build:win:local": "npm run compile && electron-builder --win --publish never",
     "build:win:nsis:local": "npm run compile && electron-builder --win --config.win.target=nsis --publish never",
     "build:mac:local": "npm run compile && electron-builder --mac --publish never",
-    "build:mac:dmg:local": "npm run compile && electron-builder --mac --config.mac.target=dmg --publish never"
+    "build:mac:dmg:local": "npm run compile && electron-builder --mac --config.mac.target=dmg --publish never",
+    "build:linux:local": "npm run compile && electron-builder --linux --publish never"
   },
   "keywords": [
     "deepseek",
@@ -39,6 +41,7 @@
   ],
   "author": {
     "name": "Cuckoo Code Contributors",
+    "email": "contributors@cuckoo-code.local",
     "url": "https://github.com/wangyongpeng90/cuckoo-code"
   },
   "license": "GPL-3.0-only",
@@ -111,6 +114,15 @@
       ],
       "artifactName": "cuckoo-code-mac-v${version}-${arch}.${ext}"
     },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "artifactName": "cuckoo-code-linux-v${version}-${arch}.${ext}"
+    },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
@@ -120,7 +132,8 @@
     },
     "asarUnpack": [
       "**/node_modules/@vscode/ripgrep/**",
-      "**/node_modules/@vscode/ripgrep-win32-x64/**"
+      "**/node_modules/@vscode/ripgrep-win32-x64/**",
+      "**/node_modules/@vscode/ripgrep-linux-x64/**"
     ],
     "extraResources": [
       {
