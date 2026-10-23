@@ -182,7 +182,23 @@ async function initProject(
   const sessionStore = ctx ? ctx.sessionStore : null;
 
   if (isCompaction && parentSessionId && sessionStore) {
-    sessionStore.state.pendingLineage = { parentId: parentSessionId, kind: 'compaction', agentName: null };
+    // [022] parentSessionId 可能是 webId（压缩时从 URL 拿的），要翻译成 logicId
+    // 否则 setSessionLineage 按 logic_id 匹配不到父会话 → superseded 标记失败 → 压缩历史为空
+    let parentLogicId = parentSessionId;
+    try {
+      if (typeof (sessionStore as any).logicIdOf === 'function') {
+        const lid = (sessionStore as any).logicIdOf(parentSessionId);
+        if (lid) {
+          parentLogicId = lid;
+          console.log('[Cuckoo Code] 压缩父会话 webId=' + parentSessionId + ' → logicId=' + lid);
+        } else {
+          console.warn('[Cuckoo Code] 压缩父会话 webId=' + parentSessionId + ' 在数据库里找不到对应 logicId，将原样使用');
+        }
+      }
+    } catch (e: any) {
+      console.warn('[Cuckoo Code] 压缩父会话 logicId 翻译失败:', e && e.message);
+    }
+    sessionStore.state.pendingLineage = { parentId: parentLogicId, kind: 'compaction', agentName: null };
   }
 
   // 1. 选目录

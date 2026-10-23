@@ -15,6 +15,8 @@ interface SessionStoreApi {
   updateSessionTitle(logicId: LogicId, title: string): void;
   setSessionTitle(title: string): any;
   setSessionLineage(logicId: LogicId, lineage: { parentId?: string | null; kind?: string | null; agentName?: string | null }): void;
+  /** [022] 按 web_id 反查 logic_id（压缩时把 parentId 的 webId 翻译成 logicId） */
+  logicIdOf(webId: string): LogicId | null;
   supersedeSession(logicId: LogicId): void;
   setSessionArchived(logicId: LogicId, archived: boolean): void;
   getArchivedProjects(): string[];
@@ -200,6 +202,15 @@ function createSessionStore(profileId: string, db: DatabaseSync, windowState: an
       db.prepare('UPDATE sessions SET superseded = 1 WHERE logic_id = ?').run(lineage.parentId);
     }
     console.log('[Cuckoo Code][' + profileId + '] 已记血缘: ' + logicId + ' <- ' + (lineage.parentId || '?') + ' (' + (lineage.kind || '?') + ')');
+  }
+
+  /** [022] 按 web_id 反查 logic_id */
+  function logicIdOf(webId: string): LogicId | null {
+    if (!webId || noPersist) return null;
+    try {
+      const row = db.prepare('SELECT logic_id FROM sessions WHERE web_id = ?').get(webId) as any;
+      return row && row.logic_id ? (row.logic_id as LogicId) : null;
+    } catch { return null; }
   }
 
   /** 标记会话"已被取代" */
@@ -389,6 +400,7 @@ function createSessionStore(profileId: string, db: DatabaseSync, windowState: an
     updateSessionTitle,
     setSessionTitle,
     setSessionLineage,
+    logicIdOf,
     supersedeSession,
     setSessionArchived,
     getArchivedProjects,

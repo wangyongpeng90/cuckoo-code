@@ -33,6 +33,10 @@ let electronAPI: any = {
   updateProjectDir: () => {
     return ipcRenderer.invoke('init-project', { skipPrompt: true });
   },
+  // [022] 压缩前清空 currentSessionId（避免新 webId 覆盖旧 logicId 记录）
+  resetCurrentSession: () => {
+    return ipcRenderer.invoke('reset-current-session');
+  },
   // 窗口组转移：源窗口刷新后完成全量分享，上报 shareId（或错误）给主进程
   switchShareReady: (payload: any) => {
     const p = Object.assign({ ok: !(payload && payload.error) }, payload || {});

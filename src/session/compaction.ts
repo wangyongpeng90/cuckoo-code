@@ -286,6 +286,19 @@ async function runCompaction(projectDir?: string): Promise<void> {
     const url = new URL(location.href);
     url.searchParams.set(COMPACT_URL_FLAG, '1');
     logStep('reload', '刷新页面以让 DeepSeek 重建 IDB: ' + url.toString());
+
+    // [022] 清空主进程的 currentSessionId——否则刷新后新 webId 会覆盖旧 logicId 的记录
+    // 关键：必须 await，否则 location.href 跳转后 IPC 可能发不出去
+    try {
+      const anyApi = (window as any).electronAPI;
+      if (anyApi && typeof anyApi.resetCurrentSession === 'function') {
+        await anyApi.resetCurrentSession();
+        logStep('reload', '已清空 currentSessionId（压缩前）');
+      }
+    } catch (e: any) {
+      console.warn('[Cuckoo Compact] 清空 currentSessionId 失败（继续压缩）:', e && e.message);
+    }
+
     showToast('压缩中，正在刷新页面...', 3000);
     location.href = url.toString();
   } catch (err: any) {

@@ -270,6 +270,18 @@ function registerSessionIpc(): void {
     return norm(a) === norm(b);
   }
 
+  // [022] 清空当前窗口的 currentSessionId（压缩时用：避免新 webId 覆盖旧 logicId 的记录）
+  // 背景：压缩跳分享页后会生成新 webId，如果内存里还留着旧 logicId，handleUrlChange 会 UPDATE 旧记录
+  // 详见 docs/dsh-compat-decisions.md 9.1 + 真机验证发现（压缩把原记录改造而非创建新记录）
+  ipcMain.handle('reset-current-session', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx || !ctx.sessionStore) return { success: false, error: 'no-context' };
+    const old = ctx.sessionStore.state.currentSessionId;
+    ctx.sessionStore.state.currentSessionId = null;
+    console.log('[Cuckoo Code] 已清空 currentSessionId（压缩前）: ' + (old || '(空)'));
+    return { success: true, previous: old };
+  });
+
   // 导航到会话
   ipcMain.handle('navigate-session', async (event: any, { sessionId }: any) => {
     if (!sessionId) return { success: false, error: '缺少会话ID' };
