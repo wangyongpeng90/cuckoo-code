@@ -68,7 +68,7 @@ import { registerIpcHandlers } from './ipc/index.js';
 import { injectSessionDeps } from './ipc/session.js';
 import { buildChromeUserAgent, buildClientHintsHeaders } from '../infra/user-agent.js';
 import { initFeishu } from './ipc/feishu.js';
-import { injectSubagentDeps, runAgent as runAgentImpl } from './subagent.js';
+import { injectSubagentDeps, runAgent as runAgentImpl, runGatewayQuery as runGatewayQueryImpl } from './subagent.js';
 import { injectAgentRunner, injectSubagentChecker } from '../tools/impl/run-agent.js';
 import { injectGoalDonePusher } from '../tools/impl/goal-done.js';
 import { isSubagentWindow, pushGoalDone } from './goal.js';
@@ -844,6 +844,11 @@ injectAgentRunner(async ({ agent, task, currentWindowId }: any) => {
 });
 // 给 runAgent 工具注入"是否子代理窗口"判定（防递归；tools 层不依赖 app）
 injectSubagentChecker(isSubagentWindow);
+
+// ========== 网关查询入口（供主进程插件调用）==========
+// 插件（providers/*.js）在主进程运行，可通过 globalThis.__cuckooRunGatewayQuery 调用。
+// 它在独立隐藏窗口里跑一次问答：工具循环天然正常、不污染用户对话。
+(globalThis as any).__cuckooRunGatewayQuery = runGatewayQueryImpl;
 // 给 goalDone 工具注入"推送目标完成事件"实现（tools 层不依赖 app）
 injectGoalDonePusher(pushGoalDone);
 // 给 nameConversation 工具注入"设置当前会话标题"实现
