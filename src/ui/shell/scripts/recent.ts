@@ -63,6 +63,15 @@ export function addRecent(type: RecentType, name: string, extra?: { payload?: st
   if (list.length > MAX) list = list.slice(0, MAX);
   saveRecent(list);
   renderRecent();
+  // React 状态栏监听（feat/shell-react）：广播变更
+  try { window.dispatchEvent(new CustomEvent('cuckoo-recent-changed')); } catch (_) { /* ignore */ }
+}
+
+/** 订阅最近使用变更（React 用） */
+export function onRecentChanged(cb: () => void): () => void {
+  const handler = () => cb();
+  window.addEventListener('cuckoo-recent-changed', handler);
+  return () => window.removeEventListener('cuckoo-recent-changed', handler);
 }
 
 /** 渲染底部状态栏的最近使用条 */

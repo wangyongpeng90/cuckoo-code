@@ -141,17 +141,22 @@ export function restorePreview(): void {
   openPreview(currentRelPath);
 }
 
-// ✕ 关闭按钮
-document.getElementById("ck-preview-close")?.addEventListener("click", dismissPreview);
-// 系统程序打开
-document.getElementById("ck-preview-ext")?.addEventListener("click", () => {
-  if (currentRelPath && (api as any).openFileExternal) (api as any).openFileExternal(currentRelPath).catch(() => {});
-});
-
-// 左条（树/内容之间）：改树宽（总宽不变 → AI 不变）
-{
+// 事件绑定（由 React 渲染完后调用 initPreviewBindings()）
+let previewBound = false;
+/** 绑定预览区事件（幂等）。React 渲染出 #ck-preview-* 后调用。 */
+export function initPreviewBindings(): void {
+  if (previewBound) return;
+  const closeBtn = document.getElementById("ck-preview-close");
+  const extBtn = document.getElementById("ck-preview-ext");
+  if (!closeBtn && !extBtn) return; // 还没渲染
+  previewBound = true;
+  closeBtn?.addEventListener("click", dismissPreview);
+  extBtn?.addEventListener("click", () => {
+    if (currentRelPath && (api as any).openFileExternal) (api as any).openFileExternal(currentRelPath).catch(() => {});
+  });
+  // 左条（树/内容之间）：改树宽（总宽不变 → AI 不变）
   const p = pane();
-  if (p) {
+  if (p && !p.querySelector('.ck-preview-resizer')) {
     const rz = document.createElement("div");
     rz.className = "ck-preview-resizer";
     rz.title = "拖动调整：文件树 / 内容区";
@@ -175,7 +180,6 @@ document.getElementById("ck-preview-ext")?.addEventListener("click", () => {
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup", onUp);
-        // 记忆预览宽（= 总宽 - 树宽）
         const treeW = l.getBoundingClientRect().width;
         savePreviewWidth(Math.max(MIN_PREVIEW_W, Math.round(totalW - treeW)));
       };

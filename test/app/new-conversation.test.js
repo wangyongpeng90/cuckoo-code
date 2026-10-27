@@ -87,18 +87,15 @@ test('主进程发送独立的 reset 事件（不复用 session-changed）', () 
   assert.ok(body.includes("type: 'reset'"), '应发送 type: reset');
 });
 
-test('harness 自己的新对话入口调用公共重置', () => {
-  const body = bodyFrom(HARNESS_IPC, "ipcMain.handle('harness-new-conversation'");
-  assert.ok(body.includes('prepareNewConversation('), 'harness-new-conversation 应调 prepareNewConversation');
-});
+test('新对话入口只做导航，不再调用任何状态重置', () => {
+  // [022] 决策变更：新对话点击加号 = 纯粹打开首页，由 handleUrlChange 全权接管状态流转。
+  const harnessBody = bodyFrom(HARNESS_IPC, "ipcMain.handle('harness-new-conversation'");
+  assert.ok(harnessBody.includes('loadURL('), 'harness-new-conversation 必须导航');
+  assert.ok(!harnessBody.includes('prepareNewConversation('), '不再调用 prepareNewConversation');
 
-test('壳页面侧栏的新对话入口也调用公共重置（曾经完全没通知 harness）', () => {
-  const body = bodyFrom(SHELL_IPC, "ipcMain.handle('web-new-conversation'");
-  assert.ok(
-    body.includes('prepareNewConversation('),
-    'web-new-conversation 必须也重置 harness —— 这里曾只做 loadURL，导致新对话后满屏残留'
-  );
-  assert.ok(SHELL_IPC.includes("from './harness.js'"), '应从 harness.ts 复用同一段逻辑');
+  const shellBody = bodyFrom(SHELL_IPC, "ipcMain.handle('web-new-conversation'");
+  assert.ok(shellBody.includes('loadURL('), 'web-new-conversation 必须导航');
+  assert.ok(!shellBody.includes('prepareNewConversation('), '不再调用 prepareNewConversation');
 });
 
 test('prepareNewConversation 同时清 todo 缓存并通知重置', () => {

@@ -182,11 +182,13 @@
 | **shell / shellEnv** | 命令/环境 | bash/pwsh | ❌ | 🟡 |
 | **workspaceFiles / Registry / Changes** | 工作区 | 文件树 | ✅ | — |
 | **tokenMeter** | token 统计 | token-stats | ✅ | — |
-| **mcpResources** | MCP 资源 | Cuckoo MCP | ❌ | 🟢 |
-| **web / webServer** | 网络/HTTP | webFetch | ❌ | 🟢 |
-| **terminals / ssh / lsp** | 终端/SSH/LSP | ❌ | ❌ | 🟢 |
-| **browserUse / computerUse** | 浏览器/电脑 | openBrowserWindow | ❌ | 🟢 |
-| **attachments / approval / userQuestions** | 附件/审批/询问 | attachFile | ❌ | 🟢 |
+| **mcpResources** | MCP 资源 | mcpCall/List | ✅ | — |
+| **web / webServer** | 网络/HTTP | webFetch | ✅ | — |
+| **terminals** | 终端 | bash/pwsh | ✅ | — |
+| **browserUse** | 浏览器 | openBrowserWindow/injectJS | ✅ | — |
+| **attachments** | 附件 | attachFile | ✅ | — |
+| **ssh / lsp / computerUse** | SSH/LSP/电脑 | ❌ | ❌ | 🟢 |
+| **approval / userQuestions** | 审批/询问 | ❌ | ❌ | 🟢 |
 | **sandbox / jobs / schedule / spillStore** | 沙箱/任务/调度 | ❌ | ❌ | 🟢 |
 | **llm** | LLM 调用 | **Cuckoo 用网页**（无此层）| ❌ | 🟢 **不适用** |
 | **telemetry / otel / hmr / typert / …** | 遥测/框架内部 | ❌ | ❌ | 🟢 **不做** |
@@ -204,6 +206,8 @@
 | **C4-C** | **agents**（子代理）| ✅ **已完成（2026-10-08）** |
 | **C5** | **storage 落盘**（JSONL + 重放）| ✅ **已完成（2026-10-08）** |
 | **C6** | skills / commands / goals / compaction 等（7 个）| ✅ **已完成（2026-10-08）** |
+| **C7** | **subagents / shell / sessionQuery** | ✅ **已完成（2026-10-08，分支 feat/022-dsh-compat-c7）** |
+| **C8** | **mcpResources / web / browserUse / attachments / terminals** | ✅ **已完成（2026-10-08，同分支）** |
 | **P3** | UI/主题等 DSH 客户端能力 | 🟢 待做 |
 
 **完成标准**：主流 DSH 插件（工具/事件/存储类）**原样能跑、行为一致**（对照测试验证）。

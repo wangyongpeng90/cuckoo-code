@@ -1,3 +1,26 @@
+
+          <!-- 初始化项目输入弹窗 -->
+          <div id="init-prompt-modal" class="ck-modal-mask cuckoo-hidden" style="position: fixed; z-index: 9999;">
+            <div class="ck-modal" style="max-width: 600px; width: 90%;">
+              <span class="ck-modal-title">初始化项目</span>
+              <div class="ck-field" style="margin-bottom: 12px;">
+                <span class="ck-field-label">项目目录</span>
+                <div style="display: flex; gap: 8px;">
+                  <input class="ck-input" id="init-prompt-dir" placeholder="请先选择项目目录" readonly style="flex: 1;" />
+                  <button class="ck-btn" id="init-prompt-select-dir">选择目录</button>
+                </div>
+              </div>
+              <div class="ck-field">
+                <span class="ck-field-label">请输入你要对 AI 说的内容（发送时将自动附加系统提示词）</span>
+                <textarea class="ck-textarea" id="init-prompt-textarea" placeholder="例如：帮我看看这个项目的入口文件在哪里..." style="min-height: 120px;"></textarea>
+              </div>
+              <div class="ck-modal-foot" style="justify-content: flex-end;">
+                <button class="ck-btn" id="init-prompt-cancel">取消</button>
+                <button class="ck-btn ck-btn-primary" id="init-prompt-send">发送</button>
+              </div>
+            </div>
+          </div>
+
           <div class="ck-modal-mask cuckoo-hidden" id="snip-modal">
             <div class="ck-modal">
               <span class="ck-modal-title" id="snip-modal-title">编辑提示词</span>

@@ -75,7 +75,16 @@ function mountSidebar(m: MountSpec): void {
   bar.appendChild(panel);
 }
 
-/** 通用槽位渲染（对标 DSH slots）：按 slot 找容器，按 order 排序插入 */
+/**
+ * 【Cuckoo 自造挂载点】——注意：这里的 3 个名字（activitybar/toolbar/statusbar）
+ * 是 Cuckoo 早期"插件 UI 挂载"自造的名字，**不是 DSH 生态的插槽名**。
+ *
+ * DSH 插槽（40 个，如 sidebar.panellist / conversation.input.left）**不走这里**：
+ * 它们由对应的 React 页面自己订阅（onPluginSlotRegister）+ 渲染。
+ * 例如 sidebar.panellist → 主页（pages/home-react.tsx）。
+ *
+ * 本函数只服务 Cuckoo 老插件机制的 3 个挂载点。
+ */
 function mountSlot(m: any): void {
   if (!m || !m.slot || !m.id) return;
   const key = m.pluginId + ':' + m.slot + ':' + m.id;

@@ -84,7 +84,7 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          draft: false
+          draft: true   # 创建草稿，人工编辑 release-notes 后手动发布
           make_latest: false   # 不自动设为 Latest（由人工确认后手动切换）
           generate_release_notes: true
           files: |

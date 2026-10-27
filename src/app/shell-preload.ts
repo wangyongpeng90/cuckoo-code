@@ -13,6 +13,13 @@ const platform = platformArg ? platformArg.slice('--cuckoo-platform='.length) : 
 
 const shellAPI = {
   platform,
+  selectProjectDir: () => ipcRenderer.invoke('select-project-dir'),
+  cancelInitPrompt: () => ipcRenderer.send('cancel-init-prompt'),
+  sendNormalMessage: (text: string) => ipcRenderer.invoke('send-normal-message', { text }),
+  sendInitMessage: (text: string, projectDir: string) => ipcRenderer.invoke('send-init-message', { text, projectDir }),
+  onShowInitPrompt: (cb: (data?: any) => void) => {
+    ipcRenderer.on('shell-show-init-prompt', (_e: any, data?: any) => cb(data));
+  },
   navigate: (url: string) => ipcRenderer.invoke('shell-navigate', { url }),
   back: () => ipcRenderer.invoke('shell-back'),
   forward: () => ipcRenderer.invoke('shell-forward'),
@@ -30,6 +37,8 @@ const shellAPI = {
   onTotalUpdated: (cb: (data: any) => void) => {
     ipcRenderer.on('shell-total-updated', (_e: any, data: any) => cb(data));
   },
+  /** 拉取最近一次 token / tps（页面挂载时用） */
+  getTokenUsage: () => ipcRenderer.invoke('get-token-usage'),
   getSystemTotal: () => ipcRenderer.invoke('get-system-total'),
   getProjectDir: () => ipcRenderer.invoke('get-project-dir'),
   // 点击"项目目录" → 弹目录选择框 + 重新初始化（复用 init-project 通道）
@@ -38,6 +47,8 @@ const shellAPI = {
     ipcRenderer.on('shell-project-dir', (_e: any, dir: any) => cb(dir));
   },
   toggleSidebar: (width: number) => ipcRenderer.invoke('shell-toggle-sidebar', { width }),
+  // 隐藏/显示 AI 视图（壳页面弹窗需要盖过 AI 区域时用）
+  setAiViewVisible: (visible: boolean) => ipcRenderer.invoke('shell-set-ai-view-visible', { visible }),
   // 侧边栏拖拽调宽（AI 视图会临时移出，鼠标事件全落在壳页面；主进程轮询算宽度后推回）
   startSidebarDrag: () => ipcRenderer.send('shell-sidebar-drag-start'),
   endSidebarDrag: () => ipcRenderer.send('shell-sidebar-drag-end'),
@@ -78,9 +89,24 @@ const shellAPI = {
   commandInvoke: (commandId: string) => ipcRenderer.invoke('plugin-command-invoke', { commandId }),
   commandList: () => ipcRenderer.invoke('plugin-command-list'),
   // 通用槽位
+  // P2：DSH remote.$on 事件（plugin-manager/changed 等）
+  onRemoteEvent: (cb: (evt: string, data: any) => void) => {
+    ipcRenderer.on('plugin-manager-changed', (_e: any, d: any) => cb('plugin-manager/changed', d));
+    ipcRenderer.on('plugin-manager-install-log', (_e: any, d: any) => cb('plugin-manager/install-log', d));
+    ipcRenderer.on('plugin-manager-install-state', (_e: any, d: any) => cb('plugin-manager/install-state', d));
+  },
+  // HMR：主进程通知壳页面重载 DSH client（插件启用/禁用后）
+  onCuckooReload: (cb: (data: any) => void) => {
+    ipcRenderer.on('cuckoo-reload-dsh-clients', (_e: any, d: any) => cb(d));
+  },
   onPluginSlotRegister: (cb: (m: any) => void) => { ipcRenderer.on('shell-slot-register', (_e: any, m: any) => cb(m)); },
   onPluginSlotUnregister: (cb: (m: any) => void) => { ipcRenderer.on('shell-slot-unregister', (_e: any, m: any) => cb(m)); },
   listPluginSlots: () => ipcRenderer.invoke('plugin-slot-list'),
+  // 插件本地 HTTP 服务端口（壳页面 fetch /api/* 需要）
+  webServerInfo: () => ipcRenderer.invoke('plugin-webserver-info'),
+  webRoutes: () => ipcRenderer.invoke('plugin-web-routes'),
+  // 壳页面令牌（fetch 时带 X-Cuckoo-Shell 头，让插件的同源检查放行）
+  getShellToken: () => ipcRenderer.invoke('shell-token'),
   // 插件配置
   pluginConfigGet: (pluginId: string) => ipcRenderer.invoke('plugin-config-get', { pluginId }),
   pluginConfigSet: (pluginId: string, values: any) => ipcRenderer.invoke('plugin-config-set', { pluginId, values }),
@@ -170,9 +196,20 @@ const shellAPI = {
   // ===== Cuckoo 插件（DSH 兼容）=====
   cuckooPluginList: () => ipcRenderer.invoke('cuckoo-plugin-list'),
   cuckooPluginInstall: (pkgName: string) => ipcRenderer.invoke('cuckoo-plugin-install', { pkgName }),
+  /** DSH 插件 client 入口源码 */
+  cuckooPluginClientSources: () => ipcRenderer.invoke('cuckoo-plugin-client-sources'),
   cuckooPluginUninstall: (id: string) => ipcRenderer.invoke('cuckoo-plugin-uninstall', { id }),
   cuckooPluginToggle: (id: string, enabled: boolean) => ipcRenderer.invoke('cuckoo-plugin-toggle', { id, enabled }),
   cuckooPluginOpenDir: () => ipcRenderer.invoke('cuckoo-plugin-open-dir'),
+  // DSH plugin-manager RPC（对齐 remote.pluginManager / remote.pluginInventory）
+  pluginManagerListBundles: () => ipcRenderer.invoke('plugin-manager-list-bundles'),
+  pluginManagerListPlugins: () => ipcRenderer.invoke('plugin-manager-list-plugins'),
+  pluginManagerSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('plugin-manager-set-enabled', { id, enabled }),
+  pluginManagerRemoveBundle: (name: string) => ipcRenderer.invoke('plugin-manager-remove-bundle', { name }),
+  pluginManagerInstallBundle: (spec: string, opts?: any) => ipcRenderer.invoke('plugin-manager-install-bundle', { spec, opts }),
+  pluginManagerInspect: (spec: string) => ipcRenderer.invoke('plugin-manager-inspect', { spec }),
+  pluginManagerCancelInstall: () => ipcRenderer.invoke('plugin-manager-cancel-install'),
+  pluginInventoryList: () => ipcRenderer.invoke('plugin-inventory-list'),
   // ========== 关于 ==========
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   checkUpdate: () => ipcRenderer.invoke('check-update'),

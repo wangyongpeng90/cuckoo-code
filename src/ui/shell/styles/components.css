@@ -172,7 +172,7 @@
   .ck-set-key { font-size: 12px; color: var(--ck-text-2); }
   .ck-set-input {
     width: 100%; min-height: 32px;
-    background: var(--ck-surface); border: 1px solid transparent;
+    background: var(--ck-bg); border: 1px solid var(--ck-border);
     border-radius: 9px; padding: 7px 10px; color: var(--ck-text);
     font-size: 12.5px; font-family: inherit;
   }
@@ -182,7 +182,7 @@
   body[data-ck-dark] select.ck-set-input { color-scheme: dark; }
   select.ck-set-input option { background: var(--ck-bg); color: var(--ck-text); }
   .ck-set-textarea {
-    width: 100%; background: var(--ck-surface); border: 1px solid transparent;
+    width: 100%; background: var(--ck-bg); border: 1px solid var(--ck-border);
     border-radius: 9px; padding: 8px 10px; color: var(--ck-text);
     font-size: 12.5px; font-family: inherit; resize: vertical; line-height: 1.5;
   }
@@ -663,3 +663,494 @@
   .ck-ws-tip .ck-tip-name { font-weight: 600; font-size: 13px; margin-bottom: 5px; }
   .ck-ws-tip .ck-tip-path { word-break: break-all; opacity: .75; font-size: 11.5px; }
   .ck-ws-tip .ck-tip-time { margin-top: 5px; opacity: .6; font-size: 11px; }
+
+  /* ===== 主页：滚动区 + 固定底栏（feat/022-dsh-compat-c7） ===== */
+  .ck-tab.ck-home { flex: 1; min-height: 0; gap: 0; }
+  .ck-home-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding-right: 2px; }
+  .ck-home-footer { flex-shrink: 0; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--ck-border); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+  /* ===== DSH 设计变量（--dsw-*）：供 DSH 插件用（方案 B） ===== */
+  body {
+    --dsw-alias-bg-base: var(--ck-bg);
+    --dsw-alias-bg-document-preview: var(--ck-bg);
+    --dsw-alias-bg-layer-1: var(--ck-bg-sub);
+    --dsw-alias-bg-layer-2: var(--ck-surface);
+    --dsw-alias-bg-layer-3: var(--ck-surface-hover);
+    --dsw-alias-bg-layer-4: var(--ck-hover-bg);
+    --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.45);
+    --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.3);
+    --dsw-alias-bg-mask-drop: rgba(0, 0, 0, 0.2);
+    --dsw-alias-bg-module-platform: var(--ck-bg);
+    --dsw-alias-bg-multi-select: var(--ck-primary-soft);
+    --dsw-alias-bg-overlay: var(--ck-bg);
+    --dsw-alias-bg-skeleton: var(--ck-surface);
+    --dsw-alias-border-inverted: var(--ck-border-strong);
+    --dsw-alias-border-l1: var(--ck-border);
+    --dsw-alias-border-l2: var(--ck-border);
+    --dsw-alias-border-l2-darkmode-thin: var(--ck-border);
+    --dsw-alias-border-l3: var(--ck-border-strong);
+    --dsw-alias-border-l4: var(--ck-border-strong);
+    --dsw-alias-brand-primary: var(--ck-primary);
+    --dsw-alias-brand-primary-new-colorprimary-new-color: var(--ck-primary);
+    --dsw-alias-button-contrast-fill: var(--ck-text);
+    --dsw-alias-button-elevated-fill: var(--ck-bg);
+    --dsw-alias-button-floating-fill: var(--ck-bg);
+    --dsw-alias-button-floating-hover: var(--ck-hover-bg);
+    --dsw-alias-button-ghost-active-fill: var(--ck-hover-bg);
+    --dsw-alias-button-info-fill: var(--ck-primary);
+    --dsw-alias-button-info-hover: var(--ck-primary-strong);
+    --dsw-alias-button-primary-dimmed: var(--ck-primary-soft);
+    --dsw-alias-button-primary-fill: var(--ck-primary);
+    --dsw-alias-button-primary-hover: var(--ck-primary-strong);
+    --dsw-alias-button-tool-bar-fill: var(--ck-surface);
+    --dsw-alias-file-diff-added-bg: rgba(48, 164, 108, 0.12);
+    --dsw-alias-file-diff-added-gutter: rgba(48, 164, 108, 0.06);
+    --dsw-alias-file-diff-added-marker: var(--ck-green);
+    --dsw-alias-file-diff-deleted-bg: rgba(229, 72, 77, 0.12);
+    --dsw-alias-file-diff-deleted-gutter: rgba(229, 72, 77, 0.06);
+    --dsw-alias-file-diff-deleted-marker: var(--ck-danger);
+    --dsw-alias-interactive-bg-active: var(--ck-primary-soft);
+    --dsw-alias-interactive-bg-hover: var(--ck-hover-bg);
+    --dsw-alias-interactive-bg-hover-danger: rgba(229, 72, 77, 0.1);
+    --dsw-alias-interactive-bg-hover-solid: var(--ck-hover-bg);
+    --dsw-alias-label-caption: var(--ck-text-dim);
+    --dsw-alias-label-deep-diving: var(--ck-primary);
+    --dsw-alias-label-deep-diving-shimmer: var(--ck-primary-soft);
+    --dsw-alias-label-dimmed: var(--ck-text-dim);
+    --dsw-alias-label-primary: var(--ck-text);
+    --dsw-alias-label-primary-bluish: var(--ck-text);
+    --dsw-alias-label-primary-dimmed: var(--ck-text-2);
+    --dsw-alias-label-primary-foreground: #fff;
+    --dsw-alias-label-primary-inverted: var(--ck-bg);
+    --dsw-alias-label-secondary: var(--ck-text-2);
+    --dsw-alias-label-tertiary: var(--ck-text-dim);
+    --dsw-alias-link: var(--ck-primary);
+    --dsw-alias-markdown-citation: var(--ck-surface);
+    --dsw-alias-markdown-code-block: var(--ck-surface);
+    --dsw-alias-markdown-code-block-banner: var(--ck-surface);
+    --dsw-alias-menu-icon: var(--ck-text-2);
+    --dsw-alias-onboarding-accent: var(--ck-primary);
+    --dsw-alias-onboarding-card-fill: var(--ck-bg);
+    --dsw-alias-onboarding-checkbox-border: var(--ck-border-strong);
+    --dsw-alias-onboarding-secondary-fill: var(--ck-surface);
+    --dsw-alias-scrollbar-bg-l1: var(--ck-scroll-thumb);
+    --dsw-alias-scrollbar-bg-l2: var(--ck-scroll-thumb);
+    --dsw-alias-scrollbar-hover-l1: var(--ck-scroll-hover);
+    --dsw-alias-scrollbar-hover-l2: var(--ck-scroll-hover);
+    --dsw-alias-settings-card-fill: var(--ck-surface);
+    --dsw-alias-settings-card-stroke: var(--ck-border);
+    --dsw-alias-state-business-primary: var(--ck-primary);
+    --dsw-alias-state-business-tertiary: var(--ck-primary-soft);
+    --dsw-alias-state-error-primary: var(--ck-danger);
+    --dsw-alias-state-error-secondary: var(--ck-danger);
+    --dsw-alias-state-success-primary: var(--ck-green);
+    --dsw-alias-state-success-secondary: var(--ck-green);
+    --dsw-alias-state-success-tertiary: rgba(48, 164, 108, 0.12);
+    --dsw-alias-state-warn-label: #a3732a;
+    --dsw-alias-state-warn-primary: #c08a33;
+    --dsw-alias-state-warn-secondary: #d9a94f;
+    --dsw-alias-state-warn-tertiary: #f7ecd8;
+    --dsw-alias-tooltip-bg: var(--ck-text);
+    --dsw-alias-turn-trigger-bg: var(--ck-surface);
+    --dsw-alias-turn-trigger-bg-hover: var(--ck-hover-bg);
+    --dsw-corner-shape: superellipse(1.5);
+    --dsw-elevation-panel: var(--ck-shadow-lg);
+    --dsw-elevation-prominent: var(--ck-shadow-lg);
+    --dsw-elevation-soft: var(--ck-shadow-sm);
+    --dsw-elevation-stroke: var(--ck-shadow-sm);
+    --dsw-elevation-stroke-color: var(--ck-border);
+    --dsw-focus-ring-width: 2px;
+    --dsw-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --dsw-font-family-brand: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --dsw-font-l-20: 500 20px/28px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --dsw-font-markdown-code-block: 11px/19px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --dsw-font-markdown-code-block-small: 11px/16px ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --dsw-font-s-14: 14px/22px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --dsw-font-xs-13: 13px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --dsw-font-xs-strong-13: 500 13px/20px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --dsw-font-xxs-12: 12px/18px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --dsw-font-xxxs-11: 11px/14px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    --dsw-gradient-onboarding-blue-stops: var(--ck-primary) 18.75%, var(--ck-primary-strong) 51.78%, #6dccff 86.252%, var(--ck-primary);
+    --dsw-gradient-onboarding-cyan-stops: #0293b4 21.154%, #2dc8eb 50.954%, #aff0ff 85.326%, #0293b4;
+    --dsw-gradient-onboarding-violet-stops: #2a2fb6 33.102%, #8b76f6 50.954%, #c5c0ff 85.326%, #2a2fb6;
+    --dsw-mask-blur: none;
+    --dsw-menu-backdrop-filter: blur(40px) saturate(150%);
+    --dsw-menu-surface-fill: var(--ck-bg);
+    --dsw-radius-lg: 12px;
+    --dsw-radius-md: 10px;
+    --dsw-radius-panel: 14px;
+    --dsw-radius-sm: 8px;
+    --dsw-radius-xl: 14px;
+    --dsw-radius-xs: 4px;
+    --dsw-shadow-lv1: var(--ck-shadow-sm);
+    --dsw-shadow-lv2: var(--ck-shadow);
+    --dsw-shadow-lv3: var(--ck-shadow-lg);
+    --dsw-specific-bubble: var(--ck-primary-soft);
+    --dsw-specific-input-major: var(--ck-bg);
+    --dsw-specific-menu: var(--ck-bg);
+    --dsw-specific-selector: var(--ck-surface);
+    --dsw-specific-sidebar-fill: var(--ck-bg-sub);
+    --dsw-specific-sidebar-nav-item-active: var(--ck-primary-soft);
+    --dsw-specific-sidebar-nav-item-active-accent: var(--ck-primary);
+    --dsw-specific-sidebar-nav-item-hover: var(--ck-hover-bg);
+    --dsw-static-amber-100: #fef5e7;
+    --dsw-static-amber-400: #f7ad31;
+    --dsw-static-amber-500: #f59e0b;
+    --dsw-static-amber-600: #dd8629;
+    --dsw-static-amber-900: #27241f;
+    --dsw-static-blue-300: #93c5fd;
+    --dsw-static-blue-450: #4d93f8;
+    --dsw-static-blue-500: #3b82f6;
+    --dsw-static-blue-900: #0e3074;
+    --dsw-static-blue-950: #172554;
+    --dsw-static-deepseek-100: #e4edfd;
+    --dsw-static-deepseek-200: #d3e2ff;
+    --dsw-static-deepseek-400: #7aaaff;
+    --dsw-static-deepseek-450: #5686fe;
+    --dsw-static-deepseek-50: #edf3fe;
+    --dsw-static-deepseek-500: #4176e6;
+    --dsw-static-deepseek-800: #34415b;
+    --dsw-static-green-100: #e6faed;
+    --dsw-static-green-400: #4ed17e;
+    --dsw-static-green-500: #22c55e;
+    --dsw-static-green-500-a08: #22c55e14;
+    --dsw-static-green-500-a12: #22c55e1f;
+    --dsw-static-green-900: #233c2c;
+    --dsw-static-neutral-00: #fff;
+    --dsw-static-neutral-100: #f5f5f5;
+    --dsw-static-neutral-1000: #000;
+    --dsw-static-neutral-200: #e5e5e5;
+    --dsw-static-neutral-300: #d4d4d4;
+    --dsw-static-neutral-50: #fafafa;
+    --dsw-static-neutral-550: #65676b;
+    --dsw-static-neutral-600: #545557;
+    --dsw-static-neutral-700: #3c3c3d;
+    --dsw-static-neutral-800: #292929;
+    --dsw-static-neutral-850: #212123;
+    --dsw-static-neutral-bluish-00: #fff;
+    --dsw-static-neutral-bluish-100: #ebeef2;
+    --dsw-static-neutral-bluish-1000: #0f1115;
+    --dsw-static-neutral-bluish-150: #e9ecf2;
+    --dsw-static-neutral-bluish-200: #e1e5ee;
+    --dsw-static-neutral-bluish-300: #cfd3d6;
+    --dsw-static-neutral-bluish-400: #adb2b8;
+    --dsw-static-neutral-bluish-50: #f9fafb;
+    --dsw-static-neutral-bluish-500: #979da6;
+    --dsw-static-neutral-bluish-60: #f5f6f7;
+    --dsw-static-neutral-bluish-600: #81858c;
+    --dsw-static-neutral-bluish-700: #61666b;
+    --dsw-static-neutral-bluish-75: #f1f3f5;
+    --dsw-static-neutral-bluish-750: #43454a;
+    --dsw-static-neutral-bluish-800: #353638;
+    --dsw-static-neutral-bluish-850: #2c2c2e;
+    --dsw-static-neutral-bluish-875: #232324;
+    --dsw-static-neutral-bluish-900: #1b1b1c;
+    --dsw-static-neutral-bluish-950: #151517;
+    --dsw-static-red-400: #f25a5a;
+    --dsw-static-red-400-a12: #f25a5a1f;
+    --dsw-static-red-600: #ec1313;
+    --dsw-static-red-600-a08: #ec131314;
+  }
+
+  /* ===== 插件插槽里的 SVG 兜底尺寸 ===== */
+  #ck-home-panels svg, #ck-home-footer svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+  /* ===== 设置页：左导航 + 右内容（feat/022-dsh-compat-c7） ===== */
+  .ck-tab.ck-set-tab { flex: 1; min-height: 0; gap: 0; }
+  .ck-set-layout { flex: 1; min-height: 0; display: flex; flex-direction: row; gap: 0; overflow: hidden; }
+  .ck-set-nav { width: 140px; flex-shrink: 0; display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; overflow-y: auto; border-right: 1px solid var(--ck-border); }
+  .ck-set-nav-item { text-align: left; padding: 7px 10px; border: none; border-radius: 6px; background: transparent; color: var(--ck-text-2); font-size: 12.5px; font-family: inherit; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: background .12s, color .12s; }
+  .ck-set-nav-item:hover { background: var(--ck-hover-bg); color: var(--ck-text); }
+  .ck-set-nav-item.active { background: var(--ck-primary-soft); color: var(--ck-primary); font-weight: 600; }
+  .ck-set-nav-sep { height: 1px; background: var(--ck-border); margin: 6px 4px; }
+  .ck-set-nav-title { font-size: 10.5px; color: var(--ck-text-dim); padding: 4px 10px 2px; letter-spacing: .5px; }
+  .ck-set-content { flex: 1; min-width: 0; overflow-y: auto; padding: 14px 12px; }
+  .ck-set-plugin-content { min-height: 100%; }
+
+  /* ===== 设置：居中模态 + 遮罩（feat/022-dsh-compat-c7） ===== */
+  .ck-settings-mask {
+    position: fixed; inset: 0; z-index: 9000;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, .45);
+  }
+  .ck-settings-dialog {
+    width: 1000px; max-width: 92vw;
+    height: 720px; max-height: 88vh;
+    display: flex; flex-direction: column;
+    background: var(--ck-bg); color: var(--ck-text);
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, .35);
+    border: 1px solid var(--ck-border);
+  }
+  .ck-settings-head {
+    flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px; border-bottom: 1px solid var(--ck-border);
+  }
+  .ck-settings-title { flex: 1; font-size: 15px; font-weight: 700; color: var(--ck-text); }
+  .ck-settings-close {
+    border: none; background: transparent; color: var(--ck-text-2);
+    font-size: 16px; cursor: pointer; padding: 4px 10px; border-radius: 6px;
+    font-family: inherit; transition: background .12s, color .12s;
+  }
+  .ck-settings-close:hover { background: var(--ck-hover-bg); color: var(--ck-text); }
+  .ck-settings-foot {
+    flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px; border-top: 1px solid var(--ck-border);
+  }
+  .ck-settings-dialog .ck-set-nav { width: 200px; padding: 10px 12px; }
+  .ck-settings-dialog .ck-set-nav-item { padding: 10px 14px; font-size: 13.5px; }
+  .ck-settings-dialog .ck-set-content { padding: 18px 28px 20px; }
+
+  /* ===== 设置开关卡（WorkBuddy 风格：标题+描述+大开关） ===== */
+  .ck-switch-card {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 14px;
+    background: var(--ck-surface);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background .12s;
+  }
+  .ck-switch-card:hover { background: var(--ck-hover-bg); }
+  .ck-switch-text { flex: 1; min-width: 0; }
+  .ck-switch-label { font-size: 13px; font-weight: 600; color: var(--ck-text); }
+  .ck-switch-desc { font-size: 11.5px; color: var(--ck-text-dim); margin-top: 3px; line-height: 1.5; }
+  .ck-switch.ck-switch-lg { width: 44px; height: 26px; }
+  .ck-switch.ck-switch-lg .ck-switch-track { border-radius: 13px; }
+  .ck-switch.ck-switch-lg .ck-switch-track::before { width: 20px; height: 20px; left: 3px; top: 3px; }
+  .ck-switch.ck-switch-lg input:checked + .ck-switch-track::before { transform: translateX(18px); }
+
+
+  /* ===== 设置页：卡片扁平化（去边框/背景/内边距，只留字段间距） ===== */
+  .ck-set-content .ck-card {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    gap: 12px;
+  }
+
+
+  /* ===== 设置页：右侧内容区顶部标题（像 WorkBuddy 的"账户管理"） ===== */
+  .ck-set-page-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--ck-text);
+    margin: 0 0 16px;
+    line-height: 1.3;
+  }
+
+
+  /* 顶栏：✕ 悬浮右上（内容区从顶部开始，不留白） */
+  .ck-settings-head {
+    position: absolute; top: 4px; right: 8px;
+    padding: 0; border: none; z-index: 2;
+  }
+  .ck-settings-close { padding: 4px 8px; font-size: 15px; }
+  .ck-settings-dialog { position: relative; }
+  .ck-set-layout { padding-top: 0; }
+
+
+  /* ===== 设置项卡片化（对齐 WorkBuddy：每项浅灰底圆角） ===== */
+  .ck-set-content .ck-set-field {
+    background: var(--ck-surface);
+    border-radius: 10px;
+    padding: 12px 14px;
+    gap: 8px;
+  }
+  /* 卡片内的输入框改成透明白底，与卡片区分 */
+  .ck-set-content .ck-set-field .ck-set-input,
+  .ck-set-content .ck-set-field .ck-set-textarea {
+    background: var(--ck-bg);
+    border: 1px solid var(--ck-border);
+  }
+
+
+  /* ===== 自定义下拉（替代原生 select） ===== */
+  .ck-select { position: relative; width: 100%; }
+  .ck-select-trigger {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    min-height: 34px; padding: 7px 12px;
+    background: var(--ck-bg);
+    border: 1px solid var(--ck-border);
+    border-radius: 9px;
+    font-size: 12.5px; color: var(--ck-text); font-family: inherit;
+    cursor: pointer; transition: border-color .12s, box-shadow .12s;
+    user-select: none;
+  }
+  .ck-select-trigger:hover { border-color: var(--ck-border-strong); }
+  .ck-select.open .ck-select-trigger { border-color: var(--ck-primary); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
+  .ck-select-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ck-select-placeholder { color: var(--ck-text-dim); }
+  .ck-select-menu {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 10;
+    background: var(--ck-bg);
+    border: 1px solid var(--ck-border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+    padding: 4px;
+    max-height: 260px; overflow-y: auto;
+  }
+  .ck-select-option {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 12px; border-radius: 7px;
+    font-size: 12.5px; color: var(--ck-text); cursor: pointer;
+    transition: background .1s;
+  }
+  .ck-select-option:hover { background: var(--ck-hover-bg); }
+  .ck-select-option.active { color: var(--ck-primary); font-weight: 600; }
+  .ck-select-check { display: inline-flex; color: var(--ck-primary); }
+
+
+  /* ===== 设置行（左标题+描述，右控件，对齐 WorkBuddy） ===== */
+  .ck-set-row {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--ck-surface);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .ck-set-row-text { flex: 1; min-width: 0; }
+  .ck-set-row-label { font-size: 13px; font-weight: 600; color: var(--ck-text); }
+  .ck-set-row-desc { font-size: 11.5px; color: var(--ck-text-dim); margin-top: 3px; line-height: 1.5; }
+  .ck-set-row-control { flex-shrink: 0; width: 180px; }
+
+
+  /* ===== 设置行补充：小输入框 / 纵向行 ===== */
+  .ck-set-input-sm { width: 90px; min-height: 30px; padding: 5px 8px; font-size: 12.5px; text-align: center; }
+  .ck-set-row-control .ck-set-inline { justify-content: flex-end; }
+  .ck-set-row-col {
+    display: flex; flex-direction: column; gap: 8px;
+    background: var(--ck-surface);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .ck-set-row-col .ck-set-row-label { font-size: 13px; font-weight: 600; color: var(--ck-text); }
+
+
+  /* ===== 设置：恢复默认移到左导航底部浮动 ===== */
+  .ck-set-nav-foot { margin-top: auto; padding-top: 10px; }
+  .ck-set-nav-reset {
+    width: 100%; padding: 9px 12px;
+    background: transparent; border: 1px solid var(--ck-border);
+    border-radius: 8px; color: var(--ck-text-2);
+    font-size: 12.5px; font-family: inherit; cursor: pointer;
+    transition: background .12s, color .12s, border-color .12s;
+  }
+  .ck-set-nav-reset:hover { background: var(--ck-hover-bg); color: var(--ck-text); border-color: var(--ck-border-strong); }
+  .ck-set-nav-reset:disabled { opacity: .5; cursor: default; }
+  /* 顶栏下方的"已保存"提示 */
+  .ck-settings-saved-top {
+    position: absolute; top: 8px; left: 20px; z-index: 2;
+    font-size: 12px; color: var(--ck-primary);
+  }
+
+
+  /* ===== 确认弹窗（ck-dialog）在设置模态之上 ===== */
+  #ck-dialog { position: fixed; z-index: 9500; }
+
+
+  /* ===== DSH UI Primitives（ck-dp-*）：对齐 Cuckoo 设计（--ck-*） ===== */
+  .ck-dp-btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid transparent; border-radius: 8px; font-size: 13px; font-family: inherit; cursor: pointer; transition: background .12s, border-color .12s, color .12s; white-space: nowrap; }
+  .ck-dp-btn-md { padding: 7px 14px; min-height: 34px; }
+  .ck-dp-btn-sm { padding: 4px 10px; min-height: 28px; font-size: 12px; }
+  .ck-dp-btn-primary { background: var(--ck-primary); color: #fff; border-color: var(--ck-primary); }
+  .ck-dp-btn-primary:hover { background: var(--ck-primary-strong); border-color: var(--ck-primary-strong); }
+  .ck-dp-btn-ghost { background: transparent; color: var(--ck-text); }
+  .ck-dp-btn-ghost:hover { background: var(--ck-hover-bg); }
+  .ck-dp-btn-outline { background: transparent; border-color: var(--ck-border); color: var(--ck-text); }
+  .ck-dp-btn-outline:hover { background: var(--ck-hover-bg); border-color: var(--ck-border-strong); }
+  .ck-dp-btn-toolbar { background: transparent; color: var(--ck-text-2); }
+  .ck-dp-btn-toolbar:hover { background: var(--ck-hover-bg); color: var(--ck-text); }
+  .ck-dp-btn:disabled { opacity: .5; cursor: default; }
+  .ck-dp-btn-icon { display: inline-flex; align-items: center; }
+  .ck-dp-pill { display: inline-flex; align-items: center; padding: 5px 12px; border-radius: 999px; border: 1px solid var(--ck-border); background: transparent; color: var(--ck-text-2); font-size: 12.5px; font-family: inherit; cursor: pointer; transition: background .12s, color .12s, border-color .12s; }
+  .ck-dp-pill:hover { background: var(--ck-hover-bg); color: var(--ck-text); }
+  .ck-dp-pill.active { background: var(--ck-primary-soft); color: var(--ck-primary); border-color: transparent; font-weight: 600; }
+  .ck-dp-input-wrap { position: relative; display: inline-flex; align-items: center; width: 100%; }
+  .ck-dp-input { width: 100%; min-height: 32px; padding: 7px 10px; background: var(--ck-bg); border: 1px solid var(--ck-border); border-radius: 9px; color: var(--ck-text); font-size: 12.5px; font-family: inherit; }
+  .ck-dp-input:focus { outline: none; border-color: var(--ck-primary); box-shadow: 0 0 0 3px var(--ck-primary-soft); }
+  .ck-dp-input.has-icon { padding-left: 30px; }
+  .ck-dp-input-icon { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); display: inline-flex; color: var(--ck-text-dim); pointer-events: none; }
+  .ck-dp-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ck-text-dim); flex-shrink: 0; }
+  .ck-dp-dot-idle { background: var(--ck-text-dim); }
+  .ck-dp-dot-running { background: var(--ck-primary); }
+  .ck-dp-dot-success { background: var(--ck-green); }
+  .ck-dp-dot-error { background: var(--ck-danger); }
+  .ck-dp-dot-warn { background: #c08a33; }
+  .ck-dp-tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 6px; font-size: 11.5px; background: var(--ck-surface); color: var(--ck-text-2); }
+  .ck-dp-tag-outline { background: transparent; border: 1px solid var(--ck-border); }
+  .ck-dp-tag-solid { background: var(--ck-primary); color: #fff; }
+  .ck-dp-tag-neutral { background: var(--ck-surface); }
+  .ck-dp-tag-quiet { background: transparent; color: var(--ck-text-dim); }
+  .ck-dp-tag-success { background: rgba(48,164,108,.14); color: var(--ck-green); }
+  .ck-dp-tag-info { background: var(--ck-primary-soft); color: var(--ck-primary); }
+  .ck-dp-tag-warning { background: rgba(192,138,51,.14); color: #a3732a; }
+  .ck-dp-tag-danger { background: rgba(229,72,77,.14); color: var(--ck-danger); }
+  .ck-dp-disc { border: 1px solid var(--ck-border); border-radius: 9px; overflow: hidden; }
+  .ck-dp-disc-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; }
+  .ck-dp-disc-head:hover { background: var(--ck-hover-bg); }
+  .ck-dp-disc-arrow { color: var(--ck-text-dim); font-size: 11px; width: 12px; }
+  .ck-dp-disc-title { font-size: 13px; color: var(--ck-text); font-weight: 600; }
+  .ck-dp-disc-sub { font-size: 11.5px; color: var(--ck-text-dim); }
+  .ck-dp-disc-body { padding: 10px 12px; border-top: 1px solid var(--ck-border); }
+  .ck-dp-switch { position: relative; width: 38px; height: 22px; border-radius: 11px; border: none; background: var(--ck-border-strong); cursor: pointer; padding: 0; transition: background .15s; flex-shrink: 0; }
+  .ck-dp-switch.on { background: var(--ck-primary); }
+  .ck-dp-switch-thumb { position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); transition: transform .15s; }
+  .ck-dp-switch.on .ck-dp-switch-thumb { transform: translateX(16px); }
+  .ck-dp-switch.disabled { opacity: .5; cursor: default; }
+  .ck-dp-checkbox { width: 18px; height: 18px; border: 1px solid var(--ck-border-strong); border-radius: 5px; background: var(--ck-bg); cursor: pointer; padding: 0; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .ck-dp-checkbox.on { background: var(--ck-primary); border-color: var(--ck-primary); }
+  .ck-dp-checkbox-mark { color: #fff; font-size: 12px; line-height: 1; }
+  .ck-dp-checkbox.disabled { opacity: .5; cursor: default; }
+  .ck-dp-seg { display: inline-flex; padding: 3px; background: var(--ck-surface); border-radius: 9px; gap: 2px; }
+  .ck-dp-seg-item { padding: 5px 12px; border: none; border-radius: 7px; background: transparent; color: var(--ck-text-2); font-size: 12.5px; font-family: inherit; cursor: pointer; transition: background .12s, color .12s; }
+  .ck-dp-seg-item:hover { color: var(--ck-text); }
+  .ck-dp-seg-item.active { background: var(--ck-bg); color: var(--ck-text); font-weight: 600; box-shadow: var(--ck-shadow-sm); }
+  .ck-dp-toast {
+    position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%);
+    z-index: 9600; display: inline-flex; align-items: center; gap: 8px;
+    width: fit-content; max-width: min(560px, 80vw);
+    padding: 10px 18px; background: var(--ck-text); color: var(--ck-bg);
+    border-radius: 10px; font-size: 13px; line-height: 1.5;
+    box-shadow: 0 6px 24px rgba(0,0,0,.22); align-self: center;
+    animation: ck-dp-toast-in .18s ease-out;
+  }
+  @keyframes ck-dp-toast-in { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  .ck-dp-tip-wrap { display: inline-flex; }
+  .ck-dp-modal-mask { position: fixed; inset: 0; z-index: 9400; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,.45); }
+  .ck-dp-modal { width: 480px; max-width: 92vw; max-height: 86vh; display: flex; flex-direction: column; background: var(--ck-bg); border: 1px solid var(--ck-border); border-radius: 12px; box-shadow: var(--ck-shadow-lg); overflow: hidden; }
+  .ck-dp-modal-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--ck-border); }
+  .ck-dp-modal-title { flex: 1; font-size: 14px; font-weight: 700; color: var(--ck-text); }
+  .ck-dp-modal-close { border: none; background: transparent; color: var(--ck-text-2); font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 6px; font-family: inherit; }
+  .ck-dp-modal-close:hover { background: var(--ck-hover-bg); color: var(--ck-text); }
+  .ck-dp-modal-desc { padding: 10px 16px 0; font-size: 12px; color: var(--ck-text-dim); }
+  .ck-dp-modal-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; }
+  .ck-dp-modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--ck-border); }
+  .ck-dp-menu-mask { position: fixed; inset: 0; z-index: 9300; }
+  .ck-dp-menu { position: absolute; min-width: 180px; max-width: 320px; background: var(--ck-bg); border: 1px solid var(--ck-border); border-radius: 10px; box-shadow: var(--ck-shadow-lg); padding: 4px; max-height: 60vh; overflow-y: auto; }
+  .ck-dp-menu-anchor { padding: 4px 8px 6px; border-bottom: 1px solid var(--ck-border); margin-bottom: 4px; }
+  .ck-dp-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border: none; border-radius: 7px; background: transparent; color: var(--ck-text); font-size: 12.5px; font-family: inherit; cursor: pointer; text-align: left; }
+  .ck-dp-menu-item:hover { background: var(--ck-hover-bg); }
+  .ck-dp-menu-item.active { color: var(--ck-primary); font-weight: 600; }
+  .ck-dp-menu-item.danger { color: var(--ck-danger); }
+  .ck-dp-menu-item:disabled { opacity: .5; cursor: default; }
+  .ck-dp-menu-icon { display: inline-flex; color: var(--ck-text-2); }
+  .ck-dp-menu-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ck-dp-menu-sep { height: 1px; background: var(--ck-border); margin: 4px 6px; }
+  .ck-dp-menu-label { padding: 5px 10px 2px; font-size: 10.5px; color: var(--ck-text-dim); letter-spacing: .5px; }
+  .ck-dp-hover-wrap { position: relative; display: inline-flex; }
+  .ck-dp-hover-card { position: absolute; top: calc(100% + 6px); left: 0; z-index: 9200; min-width: 160px; max-width: 300px; padding: 10px 12px; background: var(--ck-bg); border: 1px solid var(--ck-border); border-radius: 10px; box-shadow: var(--ck-shadow-lg); font-size: 12px; color: var(--ck-text); }
+
+
+
+  /* 初始化项目输入弹窗专用 */
+  #init-prompt-modal {
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  #init-prompt-modal .ck-modal {
+    background: var(--ck-surface);
+    border: 1px solid var(--ck-border);
+    box-shadow: var(--ck-shadow-lg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }

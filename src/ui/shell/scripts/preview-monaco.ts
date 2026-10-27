@@ -5,6 +5,8 @@
 
 let monacoPromise: Promise<any> | null = null;
 let editor: any = null;
+/** 当前 editor 绑定的容器（容器换了要重建 editor）*/
+let editorContainer: HTMLElement | null = null;
 
 /** 扩展名 → Monaco 语言 id */
 const LANG_MAP: Record<string, string> = {
@@ -67,7 +69,9 @@ function themeName(): string {
 export async function showInMonaco(container: HTMLElement, fileName: string, content: string): Promise<void> {
   const monaco = await loadMonaco();
   const lang = langOf(fileName);
-  if (!editor) {
+  // 容器换了（如从"侧栏预览"换成"弹窗"）→ 重建 editor
+  if (!editor || editorContainer !== container) {
+    if (editor) { try { editor.dispose(); } catch (_) { /* ignore */ } }
     editor = monaco.editor.create(container, {
       value: content,
       language: lang,
@@ -81,6 +85,7 @@ export async function showInMonaco(container: HTMLElement, fileName: string, con
       renderWhitespace: "none",
       wordWrap: "off",
     });
+    editorContainer = container;
   } else {
     const model = monaco.editor.createModel(content, lang);
     const old = editor.getModel();

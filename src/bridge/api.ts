@@ -13,6 +13,13 @@ let electronAPI: any = {
   executeCommand: (command: any, id: any) => {
     return ipcRenderer.invoke('execute-command', { command, id });
   },
+
+  selectProjectDir: () => {
+    return ipcRenderer.invoke('select-project-dir');
+  },
+  requestInitPrompt: () => {
+    return ipcRenderer.send('shell-show-init-prompt-direct');
+  },
   initProject: (projectDir: any, isCompaction: any, extraPrompt: any, noDialog: any, parentSessionId: any) => {
     return ipcRenderer.invoke('init-project', {
       skipPrompt: false,

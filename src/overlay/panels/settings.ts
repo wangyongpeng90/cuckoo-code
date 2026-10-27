@@ -127,6 +127,16 @@ function lsGet(key: string): string | null {
   try { return localStorage.getItem(key); } catch (_) { return null; }
 }
 
+/** AI 回复拦截的默认正则（每行一条，任意命中即拦截） */
+const DEFAULT_AI_INTERCEPT_PATTERNS = [
+  '^<\\s*｜｜DSML｜｜',
+  '<\\s*(?:[\\w-]+:)?invoke\\s+name=',
+  '<\\s*\\/\\s*(?:[\\w-]+:)?invoke\\s*>',
+  '<\\s*(?:[\\w-]+:)?parameter\\s+name=',
+].join('\n');
+/** AI 回复拦截的默认提示语 */
+const DEFAULT_AI_INTERCEPT_PROMPT = '请使用 cuckoo 代码块进行工具调用，不要使用 XML invoke 格式。';
+
 /** 设置数据（UI 单位：时间类为"秒"；count 为整数；prompt 为文本） */
 interface SettingsData {
   retryEnabled: boolean;
@@ -146,6 +156,10 @@ interface SettingsData {
   goalMaxIterations: number;
   /** 拒绝 webFetch 访问内网/保留地址（默认关闭） */
   ssrfGuard: boolean;
+  /** AI 回复拦截的正则（每行一条，任意命中即视为 XML 工具调用） */
+  aiInterceptPatterns: string;
+  /** 拦截命中后发给 AI 的提示语 */
+  aiInterceptPrompt: string;
 }
 
 /** 读取当前设置（UI 单位：秒） */
@@ -176,6 +190,8 @@ function getSettingsData(): SettingsData {
     attachDelayMax: sec(lsGet('cuckoo-attach-delay-max'), 1),
     goalMaxIterations: int(lsGet('cuckoo-goal-max-iterations'), 50),
     ssrfGuard: lsGet('cuckoo-ssrf-guard') === '1',
+    aiInterceptPatterns: lsGet('cuckoo-ai-intercept-patterns') || DEFAULT_AI_INTERCEPT_PATTERNS,
+    aiInterceptPrompt: lsGet('cuckoo-ai-intercept-prompt') || DEFAULT_AI_INTERCEPT_PROMPT,
   };
 }
 
@@ -219,6 +235,15 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     goalMax = parseInt(data.goalMaxIterations, 10);
     if (Number.isNaN(goalMax) || goalMax <= 0) return { success: false, error: '目标最大迭代次数必须是正整数' };
   }
+  // AI 回复拦截正则：每条都必须是合法正则（提前校验，避免运行时抛错）
+  if (data && data.aiInterceptPatterns !== undefined) {
+    const lines = String(data.aiInterceptPatterns || '').split('\n').map((s: string) => s.trim()).filter(Boolean);
+    for (const line of lines) {
+      try { new RegExp(line, 'i'); } catch (e: any) {
+        return { success: false, error: 'AI 拦截正则非法：' + line + '（' + e.message + '）' };
+      }
+    }
+  }
 
   try {
     localStorage.setItem('cuckoo-retry-enabled', (data && data.retryEnabled) ? '1' : '0');
@@ -238,6 +263,9 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     if (goalMax !== null) localStorage.setItem('cuckoo-goal-max-iterations', String(goalMax));
     // ssrfGuard 仅当显式提供时才写（避免未传该字段的调用方把它清成 0）
     if (data && data.ssrfGuard !== undefined) localStorage.setItem('cuckoo-ssrf-guard', data.ssrfGuard ? '1' : '0');
+    // AI 回复拦截规则：只写非空字段（保留空列表的语义——空 = 不拦截）
+    if (data && data.aiInterceptPatterns !== undefined) localStorage.setItem('cuckoo-ai-intercept-patterns', String(data.aiInterceptPatterns || ''));
+    if (data && data.aiInterceptPrompt !== undefined) localStorage.setItem('cuckoo-ai-intercept-prompt', String(data.aiInterceptPrompt || ''));
   } catch (err: any) {
     return { success: false, error: '写入失败: ' + err.message };
   }
@@ -255,6 +283,7 @@ function resetSettingsData(): SettingsData {
     'cuckoo-watchdog-count', 'cuckoo-send-delay-min', 'cuckoo-send-delay-max',
     'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
     'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
+    'cuckoo-ai-intercept-patterns', 'cuckoo-ai-intercept-prompt',
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
   state.sendDelayMin = 2000;

@@ -53,6 +53,15 @@ function logStep(step: string, msg: string): void {
   console.log('[Cuckoo Compact] [' + step + '] ' + msg);
 }
 
+/** 在重试间隔期间展示倒计时（每秒更新一次 toast，含失败原因），等待结束后返回。 */
+async function countdownAndWait(attempt: number, maxAttempts: number, intervalMs: number, reason: string): Promise<void> {
+  const totalSec = Math.ceil(intervalMs / 1000);
+  for (let remaining = totalSec; remaining > 0; remaining--) {
+    showToast('压缩重试中（' + attempt + '/' + maxAttempts + '）：' + remaining + ' 秒后重新刷新…\n原因: ' + reason, 2000);
+    await new Promise<void>((r) => setTimeout(r, 1000));
+  }
+}
+
 interface MessageItem {
   message_id: number;
   role: string;
@@ -230,24 +239,53 @@ function pickRecentPairedIds(msgs: MessageItem[], leafId: number | null, ratio: 
   return picked.map((m) => m.message_id).sort((a, b) => b - a);
 }
 
-/** 调 share/create 创建分享，返回 share_id */
+/** 调 share/create 创建分享，返回 share_id（带超时 + 完整错误信息） */
 async function createShare(sessionId: string, messageIds: number[], headers: any): Promise<string> {
   const h = Object.assign({}, headers);
   h['content-type'] = 'application/json';
-  const resp = await fetch('/api/v0/share/create', {
-    method: 'POST',
-    headers: h,
-    body: JSON.stringify({ chat_session_id: sessionId, message_ids: messageIds }),
-  });
-  const txt = await resp.text();
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+  let resp: Response;
+  let txt: string;
+  try {
+    resp = await fetch('/api/v0/share/create', {
+      method: 'POST',
+      headers: h,
+      body: JSON.stringify({ chat_session_id: sessionId, message_ids: messageIds }),
+      signal: controller.signal,
+    });
+    txt = await resp.text();
+  } catch (err: any) {
+    if (err && err.name === 'AbortError') throw new Error('share/create 请求超时（30 秒）');
+    throw new Error('share/create 请求失败: ' + ((err && err.message) || String(err)));
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
   console.log('[Cuckoo Compact] [api] share/create HTTP ' + resp.status + ' 响应: ' + txt.slice(0, 600));
+
+  if (!resp.ok) {
+    throw new Error('share/create HTTP ' + resp.status + ': ' + txt.slice(0, 200));
+  }
+
   let json: any = null;
   try { json = JSON.parse(txt); } catch (_) {}
-  if (!json || json.code !== 0) {
-    throw new Error('创建分享失败: ' + (json ? json.msg : txt.slice(0, 200)));
+  if (!json) {
+    throw new Error('share/create 响应非 JSON: ' + txt.slice(0, 200));
+  }
+  if (json.code !== 0) {
+    throw new Error('share/create 失败: ' + (json.msg || '未知错误'));
+  }
+  const bizCode = json.data && json.data.biz_code;
+  if (bizCode !== undefined && bizCode !== 0) {
+    throw new Error('share/create 业务错误: ' + (json.data.biz_msg || '未知业务错误') + ' (biz_code=' + bizCode + ')');
   }
   const shareId = json.data && json.data.biz_data && json.data.biz_data.share_id;
-  if (!shareId) throw new Error('响应无 share_id（完整响应见日志）');
+  if (!shareId) {
+    throw new Error('share/create 响应无 share_id: ' + txt.slice(0, 200));
+  }
   return shareId;
 }
 
@@ -272,22 +310,38 @@ async function runCompaction(projectDir?: string): Promise<void> {
     const { text: summaryText } = await waitReply;
     logStep('summary', '收到摘要回复，长度=' + (summaryText || '').length);
 
-    // 清当前会话 IDB 记录，触发刷新后 DeepSeek 重新拉取完整历史
-    logStep('idb', '清除当前会话 IDB 记录');
-    await clearSessionFromIdb(sessionId);
-
-    // 存项目目录（跨页需要）
+    // [022] 摘要已收到，从这里开始任何异常都重试
+    // 段1 失败 → 清 IDB（尽力）→ 倒计时 20s → 刷新（cuckoo-compact=1&compact-retry=2）
+    // 段2 会读到 compact-retry 计数并继续重试（最多 10 次）
+    const MAX_ATTEMPTS = 10;
+    const RETRY_INTERVAL = 20000;
     try {
-      if (projectDir) localStorage.setItem(COMPACT_DIR_KEY, projectDir);
-      else localStorage.removeItem(COMPACT_DIR_KEY);
-    } catch (_) {}
+      logStep('idb', '清除 IDB');
+      await clearSessionFromIdb(sessionId);
 
-    // URL 加标记 → 刷新
-    const url = new URL(location.href);
-    url.searchParams.set(COMPACT_URL_FLAG, '1');
-    logStep('reload', '刷新页面以让 DeepSeek 重建 IDB: ' + url.toString());
-    showToast('压缩中，正在刷新页面...', 3000);
-    location.href = url.toString();
+      try {
+        if (projectDir) localStorage.setItem(COMPACT_DIR_KEY, projectDir);
+        else localStorage.removeItem(COMPACT_DIR_KEY);
+      } catch (_) {}
+
+      const url = new URL(location.href);
+      url.searchParams.set(COMPACT_URL_FLAG, '1');
+      logStep('reload', '刷新页面以让 DeepSeek 重建 IDB: ' + url.toString());
+      showToast('压缩中，正在刷新页面...', 3000);
+      location.href = url.toString();
+      return;
+    } catch (err: any) {
+      const errMsg = (err && err.message) || String(err);
+      logStep('retry', '清 IDB 失败: ' + errMsg + '，' + (RETRY_INTERVAL / 1000) + 's 后刷新重试');
+      // 尽力清 IDB（失败也继续，刷新后浏览器会重建）
+      try { await clearSessionFromIdb(sessionId); } catch (_) { /* ignore */ }
+      await countdownAndWait(1, MAX_ATTEMPTS, RETRY_INTERVAL, errMsg);
+      const url = new URL(location.href);
+      url.searchParams.set(COMPACT_URL_FLAG, '1');
+      url.searchParams.set('compact-retry', '2');
+      location.href = url.toString();
+      return;
+    }
   } catch (err: any) {
     console.error('[Cuckoo Compact] 压缩失败:', err);
     showToast('压缩失败: ' + err.message, 5000);
@@ -299,26 +353,40 @@ async function runCompaction(projectDir?: string): Promise<void> {
 
 /** 段2：刷新后同页 —— 检测 URL 标记，等 IDB 写入，创建分享并跳转 */
 async function checkPendingCompact(): Promise<boolean> {
-  let flag = '';
-  try { flag = new URL(location.href).searchParams.get(COMPACT_URL_FLAG) || ''; } catch (_) {}
+  const urlObj = new URL(location.href);
+  const flag = urlObj.searchParams.get(COMPACT_URL_FLAG) || '';
   if (!flag) return false;
 
-  // 立即清掉 URL 参数，避免重复触发（URL 天然不持久，关页再开不会误触发）
+  const MAX_ATTEMPTS = 10;
+  const RETRY_INTERVAL = 20000;
+
+  // 读取重试计数（上一轮失败刷新时带过来的）
+  let currentAttempt = 1;
   try {
-    const url = new URL(location.href);
-    url.searchParams.delete(COMPACT_URL_FLAG);
-    history.replaceState(null, '', url.pathname + url.search + url.hash);
+    const rp = urlObj.searchParams.get('compact-retry');
+    const parsed = parseInt(rp || '1', 10);
+    if (Number.isFinite(parsed) && parsed >= 1 && parsed <= MAX_ATTEMPTS) currentAttempt = parsed;
+  } catch (_) {}
+  logStep('retry', '段2 当前重试次数=' + currentAttempt + '/' + MAX_ATTEMPTS);
+
+  // 立即清掉 URL 参数，避免重复触发
+  try {
+    urlObj.searchParams.delete(COMPACT_URL_FLAG);
+    urlObj.searchParams.delete('compact-retry');
+    history.replaceState(null, '', urlObj.pathname + urlObj.search + urlObj.hash);
     logStep('reload', '已清除 URL 标记');
   } catch (_) {}
 
   let projectDir: string | null = null;
   try { projectDir = localStorage.getItem(COMPACT_DIR_KEY); } catch (_) {}
 
+  let sessionId: string | null = null;
+  try { sessionId = getSessionIdFromUrl(); } catch (_) {}
+
   try {
-    const sessionId = getSessionIdFromUrl();
     if (!sessionId) throw new Error('无法从 URL 获取 chat_session_id');
 
-    logStep('idb', '等待 DeepSeek 重建 IDB（监听写入事件）');
+    logStep('idb', '第 ' + currentAttempt + '/' + MAX_ATTEMPTS + ' 次尝试：等待 DeepSeek 重建 IDB（监听写入事件）');
     await waitForIdbWrite(IDB_WAIT_TIMEOUT);
     logStep('idb', '收到 IDB 写入事件');
 
@@ -345,8 +413,22 @@ async function checkPendingCompact(): Promise<boolean> {
     location.href = link;
     return true;
   } catch (err: any) {
-    console.error('[Cuckoo Compact] 段2失败:', err);
-    showToast('压缩失败: ' + err.message, 5000);
+    const errMsg = (err && err.message) || String(err);
+    if (currentAttempt >= MAX_ATTEMPTS) {
+      console.error('[Cuckoo Compact] 段2失败（已重试 ' + MAX_ATTEMPTS + ' 次）:', errMsg);
+      showToast('压缩失败（已重试 ' + MAX_ATTEMPTS + ' 次）: ' + errMsg, 8000);
+      return false;
+    }
+    logStep('retry', '第 ' + currentAttempt + '/' + MAX_ATTEMPTS + ' 次失败: ' + errMsg + '，' + (RETRY_INTERVAL / 1000) + 's 后刷新重试');
+    // 尽力清 IDB（失败也继续，刷新后浏览器会重建）
+    if (sessionId) {
+      try { await clearSessionFromIdb(sessionId); } catch (_) { /* ignore */ }
+    }
+    await countdownAndWait(currentAttempt, MAX_ATTEMPTS, RETRY_INTERVAL, errMsg);
+    const u = new URL(location.href);
+    u.searchParams.set(COMPACT_URL_FLAG, '1');
+    u.searchParams.set('compact-retry', String(currentAttempt + 1));
+    location.href = u.toString();
     return false;
   }
 }

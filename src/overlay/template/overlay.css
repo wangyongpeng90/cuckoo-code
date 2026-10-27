@@ -208,6 +208,7 @@
   border: 1px solid rgba(139, 147, 255, 0.28); border-radius: 12px;
   padding: 10px 16px; font-size: 13px; color: #dde1ff;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  white-space: pre-wrap; text-align: left;
   opacity: 0; pointer-events: none; transition: opacity 0.22s ease, transform 0.22s ease;
 }
 .cuckoo-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
@@ -413,4 +414,4 @@
 .cuckoo-settings-row-col { flex-direction: column; align-items: stretch; gap: 4px; }
 .cuckoo-settings-hint { font-size: 12px; color: var(--ck-text-dim); white-space: nowrap; }
 .cuckoo-settings-input { width: 90px; background: var(--ck-code-bg); border: 1px solid var(--ck-border); border-radius: 6px; padding: 4px 8px; color: var(--ck-text); font-size: 12px; }
-.cuckoo-settings-textarea { width: 100%; background: var(--ck-code-bg); border: 1px solid var(--ck-border); border-radius: 6px; padding: 6px 8px; color: var(--ck-text); font-size: 12px; resize: vertical; }
+.cuckoo-settings-textarea { width: 100%; background: var(--ck-code-bg); border: 1px solid var(--ck-border); border-radius: 6px; padding: 6px 8px; color: var(--ck-text); font-size: 12px; resize: vertical; }"\n/* ===== ԭ��ģʽ��ʼ������� ===== */\n.cuckoo-init-input-dialog {\n  position: fixed;\n  bottom: 84px;\n  left: 50%;\n  transform: translateX(-50%);\n  width: 90%;\n  max-width: 760px;\n  background: var(--ck-bg);\n  border: 1px solid var(--ck-border);\n  border-radius: 12px;\n  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);\n  z-index: 2147483647;\n  padding: 16px;\n  display: flex;\n  flex-direction: column;\n}\n.cuckoo-init-input-dialog.cuckoo-hidden { display: none !important; }\n.cuckoo-init-input-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 12px;\n  font-weight: 500;\n  font-size: 14px;\n  color: var(--ck-text);\n}\n.cuckoo-init-input-box textarea {\n  width: 100%;\n  height: 80px;\n  background: var(--ck-code-bg);\n  border: 1px solid var(--ck-border);\n  border-radius: 8px;\n  padding: 10px;\n  color: var(--ck-text);\n  font-size: 14px;\n  resize: vertical;\n  outline: none;\n  font-family: inherit;\n}\n.cuckoo-init-input-box textarea:focus {\n  border-color: var(--ck-primary);\n}\n" 

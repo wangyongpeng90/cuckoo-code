@@ -160,6 +160,9 @@ function init(): void {
 
     // URL 变化：主进程 did-navigate/-in-page 会推 'cuckoo-url-changed'
     ipcRenderer.on('cuckoo-url-changed', handleUrlChanged);
+    ipcRenderer.on('cuckoo-show-first-time-dialog', () => {
+      try { ui.showFirstTimeDialog(); } catch (_) {}
+    });
     // 设置读写（壳页面设置页 → 主进程转发 → 这里读写 localStorage，再回执）
     ipcRenderer.on('cuckoo-get-settings', (_e: any, { reqId }: any) => {
       try {

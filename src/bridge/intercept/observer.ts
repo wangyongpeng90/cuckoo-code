@@ -45,6 +45,39 @@ const MAX_JS_RETRY = 3;
 // 连续"格式提示"次数（JSON/XML 共用，防止 AI 来回切换格式绕过上限）
 let formatHintCount = 0;
 const FORMAT_HINT_MAX = 10;
+
+/** AI 回复拦截的默认正则（和 settings.ts 的 DEFAULT_AI_INTERCEPT_PATTERNS 一致） */
+const DEFAULT_AI_INTERCEPT_PATTERNS = [
+  '^<\\s*｜｜DSML｜｜',
+  '<\\s*(?:[\\w-]+:)?invoke\\s+name=',
+  '<\\s*\\/\\s*(?:[\\w-]+:)?invoke\\s*>',
+  '<\\s*(?:[\\w-]+:)?parameter\\s+name=',
+].join('\n');
+/** AI 回复拦截的默认提示语 */
+const DEFAULT_AI_INTERCEPT_PROMPT = '请使用 cuckoo 代码块进行工具调用，不要使用 XML invoke 格式。';
+
+/** 读取用户配置的拦截正则列表（已编译）。空列表 = 不拦截。 */
+function getAiInterceptRegexes(): RegExp[] {
+  let raw = '';
+  try { raw = localStorage.getItem('cuckoo-ai-intercept-patterns') || ''; } catch (_) { /* ignore */ }
+  const source = raw.trim() ? raw : DEFAULT_AI_INTERCEPT_PATTERNS;
+  const out: RegExp[] = [];
+  for (const line of source.split('\n')) {
+    const s = line.trim();
+    if (!s) continue;
+    try { out.push(new RegExp(s, 'i')); } catch (_) { /* 非法正则跳过（settings 保存时已校验） */ }
+  }
+  return out;
+}
+
+/** 读取用户配置的拦截提示语。 */
+function getAiInterceptPrompt(): string {
+  try {
+    const v = localStorage.getItem('cuckoo-ai-intercept-prompt');
+    if (v !== null) return v;
+  } catch (_) { /* ignore */ }
+  return DEFAULT_AI_INTERCEPT_PROMPT;
+}
 // 上次已处理的文本（去重，防同一条回复重复处理）
 let lastProcessedText = '';
 // 最近一次拦截到的完整回复文本（供手动解析复用，不依赖 DOM）
@@ -188,22 +221,16 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     return;
   }
 
-  // 3. XML 格式工具调用提示
-  const hasAntmlXml = /^<\s*｜｜DSML｜｜/i.test(raw);
-  const hasXmlInvoke = /<\s*(?:[\w-]+:)?invoke\s+name=/i.test(raw);
-  const hasXmlClose = /<\s*\/\s*(?:[\w-]+:)?invoke\s*>/i.test(raw);
-  const hasXmlParam = /<\s*(?:[\w-]+:)?parameter\s+name=/i.test(raw);
-  if (hasAntmlXml || (hasXmlInvoke && (hasXmlClose || hasXmlParam))) {
+  // 3. AI 回复拦截（用户可配置正则，任意命中即提示 AI 改格式）
+  const interceptRegexes = getAiInterceptRegexes();
+  if (interceptRegexes.some((re) => re.test(raw))) {
     if (formatHintCount >= FORMAT_HINT_MAX) {
       console.log('[Cuckoo Code][拦截] 已连续提示 ' + formatHintCount + ' 次格式问题，停止发送');
       return;
     }
     formatHintCount++;
-    console.log('[Cuckoo Code][拦截] 检测到 XML 格式工具调用（第 ' + formatHintCount + ' 次提示）');
-    sendMessageToChat(
-      '请使用' + BT + BT + BT + 'cuckoo' + BT + BT + BT + ' 代码块进行工具调用，不要使用 XML invoke 格式。',
-      'XML工具调用提示'
-    );
+    console.log('[Cuckoo Code][拦截] 命中 AI 回复拦截规则（第 ' + formatHintCount + ' 次提示）');
+    sendMessageToChat(getAiInterceptPrompt(), 'AI回复拦截提示');
     return;
   }
 

@@ -37,8 +37,16 @@
 
 > （仅"必须建档案"的需求走这里；可跳过的见上）
 
-### 2.1 分配 ID
-看 `docs/requirements/INDEX.md` 现有最大 ID，新的 = 最大 + 1（三位，如 003）。
+### 2.1 生成 ID
+
+**2026-10-22 起，新档案的 id 用 `YYMMDD-<6位随机base36>`**，不再手动递增三位序号（避免多分支并行撞号）：
+
+```bash
+node -e "const d=new Date(),p=n=>String(n).padStart(2,'0');console.log(String(d.getFullYear()).slice(2)+p(d.getMonth()+1)+p(d.getDate())+'-'+Math.random().toString(36).slice(2,8))"
+```
+输出示例：`261022-a3f9k2`
+
+**老档案（001~028）保持原 id 不变**，新老档案共存。
 
 ### 2.2 建分支
 ```bash
@@ -82,6 +90,16 @@ updated: <今天>
 - 严格遵守 `docs/arch/02-dependency.md` 的依赖方向
 - 参考 `docs/arch/05-tasks.md` 的对应任务手册（加工具/加平台/改 UI/加 IPC/改提示词）
 - 把需求文档的 `status` 从 `draft` 改为 `doing`
+
+### 代码注释规范（详见 `docs/requirements/README.md` 的「代码注释关联档案」）
+
+**只在"决策点"和"反直觉处"加注释，别每行都加**：
+
+- **新增代码**：`// [022] <一句话说清做了什么 + 为什么>。详见 docs/requirements/022-dsh-plugin-compat.md C4-D 9.1`
+- **修改现有代码**：`// [022-mod] 原先 xxx，改为 yyy。理由见 ... C4-D 9.2`
+- **纯 bug 修复**：`// [022-fix] ...`
+
+同时在需求档案里维护「落地位置」反向索引，形成双向链接。
 
 ## 你的第四步：验证（硬要求）
 

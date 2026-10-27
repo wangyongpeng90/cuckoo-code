@@ -181,7 +181,7 @@
 
   /* ===== 主区域 ===== */
   .main-area { flex: 1; display: flex; min-height: 0; }
-  .viewport { flex: 1; min-width: 0; }
+  .viewport { flex: 1; min-width: 0; position: relative; }
 
   /* ===== 侧边栏 ===== */
   .ck-sidebar { width: 320px; flex-shrink: 0; display: flex; position: relative; background: var(--ck-bg); border-right: 1px solid var(--ck-border); }

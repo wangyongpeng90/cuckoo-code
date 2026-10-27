@@ -1,7 +1,7 @@
 {
   "name": "cuckoo-code",
-  "version": "0.8.17",
-  "description": "DeepSeek 桌面应用——内嵌浏览器，自动识别 AI 回复中的命令和工具调用并执行",
+  "version": "0.8.18",
+  "description": "内嵌式 AI Agent 桌面应用——自动识别 AI 回复中的命令和工具调用并在本地执行",
   "type": "module",
   "main": "out/src/app/entry.js",
   "scripts": {
@@ -54,12 +54,16 @@
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.13.6",
     "@types/picomatch": "^4.0.3",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
     "@vitest/coverage-v8": "^5.0.1",
     "electron": "^44.4.3",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "katex": "^0.18.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
   },
@@ -134,6 +138,10 @@
       {
         "from": "resources/runtime",
         "to": "runtime"
+      },
+      {
+        "from": "resources/bundled-plugins",
+        "to": "bundled-plugins"
       }
     ],
     "files": [

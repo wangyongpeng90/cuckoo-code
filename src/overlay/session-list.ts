@@ -82,26 +82,26 @@ async function handleNavigateSession(sessionId: string): Promise<void> {
 
 /**
  * 初始化项目按钮点击处理
+ * 新逻辑：只选择目录，选完后弹出自定义的输入框，由用户输入后合并发送。
  */
 async function handleInitProject(): Promise<void> {
   const initBtn = document.getElementById('cuckoo-btn-init') as any;
   if (initBtn) {
     initBtn.disabled = true;
-    initBtn.textContent = '⏳ 初始化中...';
+    initBtn.textContent = '⏳ 选择目录中...';
   }
 
   try {
-    // 调用主进程的 init-project IPC
-    if (!(window as any).electronAPI || !(window as any).electronAPI.initProject) {
-      throw new Error('window.electronAPI.initProject 不存在');
+    if (!(window as any).electronAPI || !(window as any).electronAPI.selectProjectDir) {
+      throw new Error('window.electronAPI.selectProjectDir 不存在');
     }
-    const result = await (window as any).electronAPI.initProject();
+    const result = await (window as any).electronAPI.selectProjectDir();
     if (result && !result.success) {
-      showToast(result.message || '初始化失败', 3000);
+      showToast(result.message || '目录选择失败', 3000);
     }
   } catch (err: any) {
-    console.error('[Cuckoo Code] 初始化项目失败:', err);
-    showToast('初始化失败: ' + err.message, 3000);
+    console.error('[Cuckoo Code] 选择目录失败:', err);
+    showToast('选择目录失败: ' + err.message, 3000);
   } finally {
     if (initBtn) {
       initBtn.disabled = false;

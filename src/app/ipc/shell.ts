@@ -11,7 +11,7 @@ import { setWindowCumulative, getTotal, cleanupSubagentKeys } from '../token-sta
 import { resolveAsset, resolveSrc } from '../../infra/paths.js';
 import * as updater from '../../updater/index.js';
 // 新对话要让 harness 视图一起重置 —— 两个入口共用同一段逻辑，避免行为分叉
-import { prepareNewConversation } from './harness.js';
+
 
 const require = createRequire(import.meta.url);
 const { ipcMain, app, shell, BrowserWindow } = require('electron');
@@ -81,18 +81,23 @@ function pushProjectDir(view: any, dir: string | null): void {
   ctx.win.webContents.send('shell-project-dir', dir || null);
 }
 
-/** 把 token 数据推送给壳页面的状态条 */
+/** 把 token 数据推送给壳页面的状态条（同时缓存，供页面挂载时拉取） */
 function pushTokenUsage(view: any, context: number, cumulative: number, windowCumulative = 0, todayCumulative = 0, daily: any = null): void {
   const ctx = view ? windowState.getContextByWebContents(view.webContents) : null;
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
-  ctx.win.webContents.send('shell-token-updated', { context, cumulative, windowCumulative, todayCumulative, daily });
+  const payload = { context, cumulative, windowCumulative, todayCumulative, daily };
+  // 缓存最近一次（页面切走再切回时能立即恢复显示）
+  try { ctx.win.__ckLastTokenUsage = payload; } catch (_) {}
+  ctx.win.webContents.send('shell-token-updated', payload);
 }
 
-/** 把输出速度（TPS）展示文本推送给壳页面状态条 */
+/** 把输出速度（TPS）展示文本推送给壳页面状态条（同时缓存） */
 function pushTps(view: any, text: string): void {
   const ctx = view ? windowState.getContextByWebContents(view.webContents) : null;
   if (!ctx || !ctx.win || ctx.win.isDestroyed()) return;
-  ctx.win.webContents.send('shell-tps-updated', { tps: typeof text === 'string' ? text : '' });
+  const t = typeof text === 'string' ? text : '';
+  try { ctx.win.__ckLastTps = t; } catch (_) {}
+  ctx.win.webContents.send('shell-tps-updated', { tps: t });
 }
 
 function registerShellIpc(): void {
@@ -153,6 +158,17 @@ function registerShellIpc(): void {
     return { success: true, systemTotal: getTotal() };
   });
 
+  // 拉取最近一次 token / tps（页面挂载时用，避免错过之前的推送）
+  ipcMain.handle('get-token-usage', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { success: false };
+    return {
+      success: true,
+      data: ctx.win.__ckLastTokenUsage || null,
+      tps: ctx.win.__ckLastTps || '',
+    };
+  });
+
 
   // ===== 侧栏「对话」分页：读网页端会话列表（DOM 实时读取，天然同步）+ 导航 =====
   ipcMain.handle('web-list-sessions', async (event: any) => {
@@ -189,9 +205,7 @@ function registerShellIpc(): void {
     const url = provider && provider.homeUrl ? provider.homeUrl : '';
     if (!url) return { success: false, error: 'no-home-url' };
     try {
-      // 这里曾只做 loadURL —— AI 网页换了新会话，但 harness 视图完全不知道，
-      // 于是消息流/计划/目标/附件全留在屏幕上（"新对话"后满屏残留）。
-      prepareNewConversation(ctx);
+      // 加号逻辑：永远只是打开 homeUrl，不做任何状态重置
       await view.webContents.loadURL(url);
       return { success: true };
     }
@@ -385,6 +399,20 @@ function registerShellIpc(): void {
     const win = ctx.win;
     win.__ckSidebarWidth = typeof width === 'number' ? width : 320;
     try { if (typeof win.__ckLayout === 'function') win.__ckLayout(); } catch (_) {}
+    return { success: true };
+  });
+
+  // 隐藏/显示 AI 视图（+ harness 视图）—— 壳页面弹窗需要"盖过 AI 区域"时用（AI 是原生 WebContentsView，永远在网页之上）
+  ipcMain.handle('shell-set-ai-view-visible', async (event: any, { visible }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) return { success: false };
+    const win = ctx.win;
+    const view = ctx.view;
+    try { if (view && !view.webContents.isDestroyed()) view.setVisible(!!visible); } catch (_) { /* ignore */ }
+    try {
+      const hv = win.__ckHarnessView;
+      if (hv && !hv.webContents.isDestroyed()) hv.setVisible(!!visible);
+    } catch (_) { /* ignore */ }
     return { success: true };
   });
 }

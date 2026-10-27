@@ -20,6 +20,7 @@ import { getProvider } from '../../providers/registry.js';
 import { resetTodosCache } from './tool.js';
 import { cdpAttach } from './cdp-attach.js';
 import { initProject } from '../../session/project-context.js';
+import { buildPrompt } from '../../session/prompt-builder.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -190,20 +191,96 @@ function prepareNewConversation(ctx: any): void {
 }
 
 function registerHarnessIpc(): void {
-  // 用户在 harness 输入 → 转给 AI 页面（bridge 会调 sendToChat）
-  ipcMain.handle('harness-send', (event: any, payload: any) => {
-    console.log('[Cuckoo Harness] 收到用户消息，长度=' + ((payload && payload.text) || '').length);
+  // 发送普通消息（不带系统提示词）
+  ipcMain.handle('send-normal-message', async (event: any, payload: any) => {
     const text = (payload && payload.text) || '';
     const ctx = findContext(event.sender);
     if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
       return { success: false, error: 'no-ai-view' };
     }
-    // 新用户消息 = 新任务：清空旧计划（否则旧 todoWrite 结果一直挂着）
     try {
       resetTodosCache();
       const hv = (ctx as any).harnessView;
       if (hv && !hv.webContents.isDestroyed()) hv.webContents.send('harness-event', { type: 'plan', todos: [] });
     } catch (_) { /* ignore */ }
+    
+    ctx.view.webContents.send('harness-user-message', { text });
+    return { success: true };
+  });
+
+  // 发送初始化消息（拼接系统提示词 + 绑目录）
+  ipcMain.handle('send-init-message', async (event: any, payload: any) => {
+    const rawText = (payload && payload.text) || '';
+    const projectDir = payload && payload.projectDir;
+    const ctx = findContext(event.sender);
+    if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
+      return { success: false, error: 'no-ai-view' };
+    }
+    
+    let text = rawText;
+    if (projectDir) {
+      try {
+        const providerId = ctx.providerId || '';
+        const built = buildPrompt({ providerId, selectedDir: projectDir });
+        if (built && !built.error && built.prompt) {
+          text = built.prompt + '\n\n---\n\n' + text;
+        }
+      } catch (e: any) {
+        console.error('[Cuckoo Init] 合并提示词失败:', e.message);
+      }
+      
+      // 顺手绑定目录
+      if (ctx.sessionStore && ctx.sessionStore.state.currentSessionId) {
+        ctx.sessionStore.saveSessionDirMapping(ctx.sessionStore.state.currentSessionId, projectDir);
+      }
+    }
+
+    try {
+      resetTodosCache();
+      const hv = (ctx as any).harnessView;
+      if (hv && !hv.webContents.isDestroyed()) hv.webContents.send('harness-event', { type: 'plan', todos: [] });
+    } catch (_) { /* ignore */ }
+    
+    ctx.view.webContents.send('harness-user-message', { text });
+    return { success: true };
+  });
+
+  // 壳页面点取消 → 通知网页把横幅重新显示出来
+  ipcMain.on('cancel-init-prompt', (event: any) => {
+    const ctx = findContext(event.sender);
+    if (ctx && ctx.view && !ctx.view.webContents.isDestroyed()) {
+      ctx.view.webContents.send('cuckoo-show-first-time-dialog');
+    }
+  });
+
+  // 网页请求显示初始化弹窗
+  ipcMain.on('shell-show-init-prompt-direct', (event: any) => {
+    console.log('[Cuckoo] 收到网页端的初始化弹窗请求');
+    const ctx = findContext(event.sender);
+    if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+      console.log('[Cuckoo] 成功转发给壳页面');
+      ctx.win.webContents.send('shell-show-init-prompt');
+    } else {
+      console.log('[Cuckoo] 没找到窗口上下文，转发失败');
+    }
+  });
+
+  // 用户在 harness 输入 → 转给 AI 页面（纯净模式的普通发消息）
+  ipcMain.handle('harness-send', (event: any, payload: any) => {
+    const text = (payload && payload.text) || '';
+    console.log('[Cuckoo Harness] 收到用户消息，长度=' + text.length);
+    const ctx = findContext(event.sender);
+    if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) {
+      return { success: false, error: 'no-ai-view' };
+    }
+    
+    // 纯净模式现在统一只发普通消息（初始化由壳页面弹窗接管）
+    try {
+      resetTodosCache();
+      const hv = (ctx as any).harnessView;
+      if (hv && !hv.webContents.isDestroyed()) hv.webContents.send('harness-event', { type: 'plan', todos: [] });
+    } catch (_) { /* ignore */ }
+    
     ctx.view.webContents.send('harness-user-message', { text: text });
     return { success: true };
   });
@@ -217,6 +294,12 @@ function registerHarnessIpc(): void {
     try {
       import('../../plugins/cuckoo-plugins/event-bridge.js').then((m: any) => m.dispatchHarnessPayload(payload)).catch(() => {});
     } catch (_) { /* ignore */ }
+    // AI 回复完成 → 通知 agents-service（唤醒 whenIdle 等）
+    if (payload && payload.type === 'assistant-done') {
+      try {
+        import('../../plugins/dsh-compat/agents-service.js').then((m: any) => m.onAssistantDone()).catch(() => {});
+      } catch (_) { /* ignore */ }
+    }
     const hv = (ctx as any).harnessView;
     if (hv && !hv.webContents.isDestroyed()) {
       hv.webContents.send('harness-event', payload);
@@ -308,8 +391,7 @@ function registerHarnessIpc(): void {
       const url = provider && provider.homeUrl ? provider.homeUrl : null;
       if (!url) return { success: false, error: 'no-home-url' };
       console.log('[Cuckoo Harness] 新对话 → 导航到 ' + url);
-      // 清主进程 todo 缓存 + 让 harness 视图完整重置（后者是"残留"的根治点）
-      prepareNewConversation(ctx);
+      // 加号逻辑：永远只是打开 homeUrl，不做任何状态重置
       ctx.view.webContents.loadURL(url);
       return { success: true, url: url };
     } catch (err: any) {

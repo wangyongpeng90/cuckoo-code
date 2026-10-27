@@ -12,6 +12,7 @@ import { renderWindowList, openWindowManager, closeWindowManager, handleGenerate
 import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
 import { openSettings, closeSettings, resetSettings, saveSettings } from './panels/settings.js';
 import { makeFabDraggable } from './fab.js';
+
 import { getProviderByUrl } from '../providers/registry.js';
 import { createTpsMeter, formatTps } from './tps.js';
 
@@ -419,6 +420,8 @@ function bindEvents() {
   if (eventsBound) return;
   eventsBound = true;
 
+
+
   // ===== 左侧活动栏：标签页切换 =====
   const abItems = document.querySelectorAll('.cuckoo-ab-item');
   const tabPanels = document.querySelectorAll('.cuckoo-tab-panel');
@@ -466,9 +469,16 @@ function bindEvents() {
   const compactBtn = document.getElementById('cuckoo-btn-compact');
   compactBtn?.addEventListener('click', () => runCompaction(state.currentProjectDir || undefined));
 
-  // 首次使用提示浮窗：初始化按钮（与右侧初始化项目逻辑一致）
+  // 首次使用提示浮窗：点击后隐藏网页提示框，并唤起壳页面的漂亮 Modal
   const firstInitBtn = document.getElementById('cuckoo-btn-first-init');
-  firstInitBtn?.addEventListener('click', handleInitProject);
+  firstInitBtn?.addEventListener('click', () => {
+    hideFirstTimeDialog(); // 隐藏网页里的提示框
+    try {
+      if ((window as any).electronAPI && (window as any).electronAPI.requestInitPrompt) {
+        (window as any).electronAPI.requestInitPrompt(); // 通知壳页面弹窗
+      }
+    } catch (_) {}
+  });
 
   // 首次使用提示浮窗：关闭按钮
   const firstCloseBtn = document.getElementById('cuckoo-btn-first-close');

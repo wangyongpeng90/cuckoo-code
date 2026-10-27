@@ -48,6 +48,7 @@ resources/runtime/
 # .cuckoo/ 下的本地运行时配置（各人不同，不进仓库）
 .cuckoo/mcp.json
 .cuckoo/mcp-state.json
+.cuckoo/debug-port.txt
 # 子代理运行时产物（结果文件；本地生成，不进仓库）
 .cuckoo/subagent-results/
 # 各人安装的插件（含大体积模型/资源，不进仓库）

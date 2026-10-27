@@ -14,6 +14,8 @@
 
 [English](README.en.md) | 中文
 
+**本系统仅用于学习使用,通过本系统造成的任何损失由使用者自行承担**
+
 [下载最新版本](https://github.com/wangyongpeng90/cuckoo-code/releases/latest)
 
 **Cuckoo Code** 是一个零 Token 成本的 AI Agent 桌面端。
@@ -21,6 +23,39 @@
 > 📐 **要改代码 / 做新需求？先读 [架构与开发指南](docs/architecture.md)**（目录结构、依赖规则、构建流程、任务手册）。
 
 它通过 Electron 将 AI 网页版嵌入本地窗口，并注入侧边覆盖层。AI 被系统提示词引导生成工具调用（JavaScript 代码块），经用户确认后在本地沙箱中执行，再把结果回传给 AI。整个过程不需要 API Key，你用的是网页版账号，而不是按 Token 计费的接口。
+
+> 本系统完全ai生成,人类在其中只扮演需求传话筒角色, 并且除最小实现(read / edit / write 工具)外是由其他agent工具实现,其他后续迭代功能全部由 cuckoo code 自行迭代完成.
+
+---
+
+## 捐赠与支持
+
+> 🚫 **本项目不接受任何形式的个人捐赠**——作者不会收取任何款项。
+>
+> ✅ 如果你想支持本项目，欢迎向 **壹基金（One Foundation）** 捐赠：
+> [https://onefoundation.cn/donate/](https://onefoundation.cn/donate/)
+>
+> 所有捐赠款项**直接进入壹基金公益账户**，与作者无关，纯属公益行为。
+
+**已通过壹基金捐赠的善款：1 笔 / 100 元**
+
+| 序号 | 捐赠者 | 金额 | 日期 | 捐赠证书 |
+|---|---|---|---|---|
+| 1 | 王先生 | 100 元 | 2026-10-26 | [查看证书](https://onefoundation.cn/cert/20261026131837934/) |
+
+> 名单持续更新中，完整历史详见 [DONORS.md](DONORS.md)
+
+**捐赠者权益**（凭壹基金捐赠证书联系作者获取）：
+
+- 深度定制开发
+- 单独社区群聊
+- 优先咨询服务
+
+> 💝 **获取权益方式**：完成壹基金捐赠后，保存证书链接，联系作者（注明「**Cuckoo 捐赠**」），会为你登记入 [捐赠者名单](DONORS.md) 并拉入权益通道：
+>
+> - QQ：**61519628**
+> - 微信：**w_y_p666**
+> - 邮箱：**wangyongpeng@yongpeng.wang**
 
 ---
 
@@ -251,6 +286,33 @@ paths:
 AI 读 `src/api/user.ts` 时，会**自动看到这条规则**（首次注入全文，之后只给提醒）。
 
 **完整说明（目录约定、字段、示例）→ [Rules 配置与使用](docs/rules.md)****
+
+---
+
+## DSH 插件兼容
+
+Cuckoo 支持直接安装运行 **DSH（DeepSeek Harness）插件**——类似"鸿蒙兼容 Android 应用"的思路：Cuckoo 不依赖 DSH 代码，而是自己实现同名 API，让 DSH 插件原样跑在 Cuckoo 里。
+
+### 已支持的 DSH 能力
+
+- **工具定义**：`@deepseek-ai/dsh-tools` 的 `defineTool` 自动转换成 Cuckoo 工具
+- **宿主服务**：`ctx.agents` / `ctx.fs` / `ctx.sessions` / `ctx.settings` / `ctx.shell` / `ctx.mcpResources` 等 32 个服务
+- **客户端运行时**：支持 DSH 的 `./client` 入口（UI 插件、Slot 注册、React 渲染）
+- **工作区注册表**：`ctx.workspaceRegistry` 持久化（对齐 DSH 五道校验）
+- **设置面板**：`settings.section` 动态渲染插件配置表单
+
+### 已验证插件
+
+- `@deepseek-ai/dsh-tool-todo`（官方包）：与真 DSH 输出一致
+- `dsh-tasks`：定时任务调度、窗口定位、跨窗口跳转已兼容
+
+### 限制
+
+DSH 的 119 个 Context 服务中，当前实现 32 个（27%）。新插件如果用到未实现的服务，会走 stub（可能缺高级能力）。
+
+**适配新插件时**，先对照 **[DSH API 覆盖度清单](docs/dsh-api-coverage.md)** 看用到哪些服务。
+
+> 💬 **想兼容哪些 DSH 插件？请进群咨询** —— 见下方 [交流群](#交流群) 章节，告诉我们你希望支持的具体插件，我们会按优先级逐个适配。
 
 ---
 

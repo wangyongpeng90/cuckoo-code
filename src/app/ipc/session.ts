@@ -11,6 +11,12 @@ import { initProject } from '../../session/project-context.js';
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
 
+// [022] 依赖注入（app 层注入给 IPC 层，用于按 profile_id 拉起窗口）
+let injects: { createWindow?: any; profileManager?: any } = {};
+function injectSessionDeps(deps: { createWindow?: any; profileManager?: any }): void {
+  injects = { ...injects, ...deps };
+}
+
 // 文件树：忽略的目录 + 节点上限（防超大项目）
 const TREE_IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'out', 'build', 'coverage', '.cuckooCode', '.playwright-mcp', '.idea', '.vscode', 'wyp', 'release', 'dist-verify']);
 const TREE_MAX_NODES = 5000;
@@ -138,7 +144,9 @@ function registerSessionIpc(): void {
         parentId: meta.parentId || null, kind: meta.kind || null,
         agentName: meta.agentName || null, superseded: meta.superseded === true,
       };
-    }).filter((s: any) => !!s.projectDir);
+    });
+    // [022] 不再过滤无 projectDir 的会话——DSH 语义下"无 cwd 会话"合法存在，
+    // 前端会把它们归到「未指定工作区」分组。详见 docs/dsh-compat-decisions.md 9.1。
     return { success: true, sessions, currentSessionId: store.state.currentSessionId || null, archivedProjects: store.getArchivedProjects() };
   });
 
@@ -182,7 +190,7 @@ function registerSessionIpc(): void {
     }
   });
 
-  // 用指定项目新建对话：导航到首页 + 自动初始化该项目（发系统提示词，不弹目录框）
+  // 用指定项目新建对话：拼参数 + 导航到首页。其余全部交给 handleUrlChange。
   ipcMain.handle('new-conversation-for-project', async (event: any, { projectDir }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
     if (!ctx || !ctx.view || ctx.view.webContents.isDestroyed()) return { success: false, error: 'no-view' };
@@ -190,20 +198,21 @@ function registerSessionIpc(): void {
     const homeUrl = provider && provider.homeUrl ? provider.homeUrl : null;
     if (!homeUrl) return { success: false, error: '当前平台无首页地址' };
     const wc = ctx.view.webContents;
-    console.log('[Cuckoo Code] 用项目新建对话 → ' + projectDir);
-    // 页面加载完成后再初始化（等输入框就绪）
-    const onLoad = () => {
-      try { wc.off('did-finish-load', onLoad); } catch (_) { /* ignore */ }
-      setTimeout(async () => {
-        try {
-          await initProject(false, ctx, projectDir, false, '', false);
-        } catch (err: any) {
-          console.log('[Cuckoo Code] 新建对话初始化项目失败: ' + (err && err.message));
-        }
-      }, 2000);
-    };
-    try { wc.on('did-finish-load', onLoad); } catch (_) { /* ignore */ }
-    try { await wc.loadURL(homeUrl); } catch (err: any) { return { success: false, error: err.message }; }
+    console.log('[Cuckoo Code] 工作区新建对话 → ' + homeUrl);
+    
+    // [022] 工作区新建：带项目目录参数导航。不含任何内存状态重置，由 handleUrlChange 消费参数。
+    let targetUrl = homeUrl;
+    if (projectDir) {
+      try {
+        const u = new URL(homeUrl);
+        u.searchParams.set('cuckoo-project-dir', projectDir);
+        targetUrl = u.toString();
+      } catch (_) {
+        targetUrl = homeUrl + (homeUrl.includes('?') ? '&' : '?') + 'cuckoo-project-dir=' + encodeURIComponent(projectDir);
+      }
+    }
+    
+    try { await wc.loadURL(targetUrl); } catch (err: any) { return { success: false, error: err.message }; }
     return { success: true };
   });
 
@@ -242,23 +251,81 @@ function registerSessionIpc(): void {
     return { success: true, projectDir: projectDir || null, pendingTextLen: pendingText.length };
   });
 
-  // 导航到会话
+  /**
+   * [022] 判断两个 URL 是否指向同一会话（用于 navigate-session 的同 URL 跳过）。
+   * 规范化：去 hash、去尾斜杠、忽略大小写（Windows 路径 / 域名不敏感）。
+   */
+  function sameSessionUrl(a: string, b: string): boolean {
+    const norm = (u: string) => {
+      try {
+        const p = new URL(u);
+        return (p.origin + p.pathname.replace(/\/+$/, '') + p.search).toLowerCase();
+      } catch {
+        return u.toLowerCase();
+      }
+    };
+    return norm(a) === norm(b);
+  }
+
+  // 导航到会话（支持跨窗口：按 profile_id 找/拉起目标窗口）
   ipcMain.handle('navigate-session', async (event: any, { sessionId }: any) => {
     if (!sessionId) return { success: false, error: '缺少会话ID' };
-    const ctx = windowState.getContextByWebContents(event.sender);
+
+    // 1. 查数据库拿 webId + profileId
+    let targetWebId = sessionId;
+    let profileId: string | null = null;
+    const db = (globalThis as any).__globalDb;
+    if (db) {
+      try {
+        const row = db.prepare('SELECT web_id, profile_id FROM sessions WHERE logic_id = ?').get(sessionId) as any;
+        if (row) {
+          if (row.web_id) targetWebId = row.web_id;
+          if (row.profile_id) profileId = row.profile_id;
+        }
+      } catch (_) { /* ignore */ }
+    }
+
+    // 2. 按 profileId 找窗口，找不到则主动拉起
+    let ctx: any = null;
+    if (profileId) {
+      ctx = windowState.getWindowByProfileId(profileId);
+      if (!ctx && injects.createWindow && injects.profileManager) {
+        const prof = injects.profileManager.getProfileById(profileId);
+        if (prof) {
+          const wid = injects.createWindow(prof);
+          ctx = windowState.getWindowContext(wid);
+          console.log('[Cuckoo Code] navigate-session: 目标窗口未打开，已主动拉起 ' + profileId);
+        }
+      }
+    }
+    // 兜底：当前窗口
+    if (!ctx) ctx = windowState.getContextByWebContents(event.sender);
+
     const view = ctx ? ctx.view : null;
     if (!view || !view.webContents || view.webContents.isDestroyed()) {
       return { success: false, error: '窗口已关闭' };
     }
-    // 按当前 provider 拼会话 URL（智谱 cid=、DeepSeek /chat/s/、Claude /chat/）
+
+    // 3. 按当前 provider 拼会话 URL
     let url = null;
     try {
       const provider = getProviderByUrl(view.webContents.getURL());
       if (provider && typeof provider.sessionUrlBase === 'string' && provider.sessionUrlBase) {
-        url = provider.sessionUrlBase + sessionId;
+        url = provider.sessionUrlBase + targetWebId;
       }
     } catch (_) { /* provider 未识别 */ }
     if (!url) return { success: false, error: '无法确定会话 URL（当前平台未提供 sessionUrlBase）' };
+
+    // 4. 同 URL 不刷新
+    try {
+      const cur = view.webContents.getURL();
+      if (cur && sameSessionUrl(cur, url)) {
+        console.log('[Cuckoo Code] navigate-session: 已在目标会话，跳过刷新 | url=' + url);
+        return { success: true, skipped: true };
+      }
+    } catch { /* ignore */ }
+
+    // 5. 导航
     try {
       await view.webContents.loadURL(url);
       return { success: true };
@@ -268,4 +335,4 @@ function registerSessionIpc(): void {
   });
 }
 
-export { registerSessionIpc };
+export { registerSessionIpc, injectSessionDeps };

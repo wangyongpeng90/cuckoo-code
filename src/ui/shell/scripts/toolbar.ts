@@ -58,7 +58,15 @@ export function renderProjectDir(dirPath: string | null): void {
 
 const pickerEl = document.getElementById('project-picker');
 if (pickerEl) {
-  pickerEl.addEventListener('click', () => { if (api.initProject) api.initProject(); });
+  pickerEl.addEventListener('click', () => {
+    // 如果有暴露的触发方法，直接弹我们漂亮的初始化弹窗
+    if ((window as any).__ckShowInitModal) {
+      (window as any).__ckShowInitModal();
+    } else if (api.initProject) {
+      // 兜底
+      api.initProject();
+    }
+  });
 }
 if (api.onProjectDir) api.onProjectDir((dir: string | null) => renderProjectDir(dir));
 if (api.getProjectDir) {

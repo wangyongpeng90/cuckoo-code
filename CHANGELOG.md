@@ -1,7 +1,31 @@
 # Changelog
 
 ## [Unreleased]
+## [0.8.18] - 2026-10-26
 
+### Added
+- **DSH 插件兼容大幅扩展** —— 插件安装器（pnpm）、插件管理器面板、HMR 热更新、安装进度反馈、DSH 设计令牌兼容层（237 个 `--dsw-*` 变量）、图标兼容层（252 个 DSH 真图标）、DSH CLI 命令 shim、inspect 真检查。
+- **DSH API 覆盖度清单**（`docs/dsh-api-coverage.md`）：对照 DSH 源码自动提取 119 个 Context 服务，标注实现状态（32/119 已实现）。
+- **壳页面全面 React 化**：13 个页面全部迁移（Workspaces/Windows/Files/Agents/Settings/Feishu/Token/Conversations/Snippets/About/Skills/MCP/Plugins）+ 状态栏。
+- **设置页重做**：居中模态、左导航+右内容、自动保存（500ms 防抖）、卡片式开关、插件设置插槽 `settings.section`。
+- **AI 回复拦截可配置**：设置新增「AI 回复拦截」分类，支持自定义正则列表（每行一条，任意命中即拦截）+ 提示语配置。空列表 = 不拦截。
+- **捐赠页**：关于页 + Token 页各展示一份捐赠区块（壹基金 + 捐赠者名单 + 联系方式）。
+- **新增 `DONORS.md`**：捐赠者名单独立页。
+- **README 新增「DSH 插件兼容」章节** + 捐赠章节 + 交流群引导。
+
+### Fixed
+- **会话 ID 生命周期**：彻底废除 `local-xxx` 临时 ID，修复压缩后目录丢失、跨窗口对话错乱、数据库垃圾记录、父子指向自己死循环等一整套问题。
+- **压缩上下文**：`selectProjectDir` 加 `isCompaction` 参数，压缩场景强制写 `pendingProjectDir`；`setSessionLineage` 按 `web_id` 匹配父会话。
+- **插件按 profile 拉起窗口**：`cuckoo-host` 的 `navigateWindowToHome` / `sendUserMessage` 按 `profileId` 找不到窗口时主动拉起，不再回退到"最后一个已打开的窗口"。
+- **打开对话跨窗口跳转**：`navigate-session` 按 `logicId` 查归属 `profile_id`，目标窗口未打开时主动拉起再导航。
+- **子代理窗口不弹初始化遮罩**：子代理自己通过 `initProject(noDialog=true)` 初始化。
+- **非会话非主页 URL 不弹窗**：`/settings` / `/share/xxx` 等页面不再误弹。
+- **关于页**：移除「本版本为插件改造版」文案。
+- **Modal/Menu 修 createPortal**：弹窗不再偏移。
+
+### Changed
+- **package.json description**：去掉 DeepSeek，改为「内嵌式 AI Agent 桌面应用」。
+- **CI release**：`draft: true`（打 tag 后创建草稿 release，人工编辑 release-notes 后手动发布）。
 ### Added
 - **Linux 开发环境支持**：`scripts/fetch-runtime.mjs` 支持 linux-x64/linux-arm64（不再抛「不支持的平台: linux-x64」），`resolveRuntimeBinDir()`/插件安装器的运行时目录解析同步兼容；`start.js` 在 Linux 默认加 `--no-sandbox`（`CUCKOO_ELECTRON_SANDBOX=1` 可关）以避开 chrome-sandbox SUID 报错。
 

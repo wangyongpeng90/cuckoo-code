@@ -10,6 +10,7 @@
     "allowJs": true,
     "checkJs": false,
     "strict": true,
+    "jsx": "react-jsx",
     "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

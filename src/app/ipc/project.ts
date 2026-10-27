@@ -7,7 +7,7 @@ import path from 'node:path';
 import os from 'node:os';
 import * as windowState from '../window.js';
 import * as mcpClient from '../../mcp/client.js';
-import { initProject } from '../../session/project-context.js';
+import { initProject, selectProjectDir } from '../../session/project-context.js';
 import { scanSkills } from '../../skills/index.js';
 import { buildSkillsSection } from '../../skills/prompt.js';
 import { scanAgents } from '../../agents/index.js';
@@ -19,6 +19,19 @@ const require = createRequire(import.meta.url);
 const { ipcMain, shell } = require('electron');
 
 function registerProjectIpc(): void {
+  // 只选择项目目录，不发系统提示词
+  ipcMain.handle('select-project-dir', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    const result = await selectProjectDir(ctx);
+    if (result.success) {
+      // 通知壳页面弹窗
+      if (ctx && ctx.win && !ctx.win.isDestroyed()) {
+        ctx.win.webContents.send('shell-show-init-prompt');
+      }
+    }
+    return result;
+  });
+
   // 初始化项目
   ipcMain.handle('init-project', async (event: any, { skipPrompt = false, projectDir = null, isCompaction = false, extraPrompt = '', noDialog = false, parentSessionId = null }: any = {}) => {
     const ctx = windowState.getContextByWebContents(event.sender);

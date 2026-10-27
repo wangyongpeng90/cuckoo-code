@@ -32,15 +32,19 @@ import {
   loadEnabledPlugins,
   loadPluginFromDir,
   uninstallCuckooPlugin,
+  unloadPlugin,
+  reloadPlugin,
 } from '../../plugins/cuckoo-plugins/index.js';
+import { resolveClientEntry } from '../../plugins/cuckoo-plugins/loader.js';
 import {
-  listCuckooPluginDirs,
-  getCuckooPluginsDir,
-} from '../../plugins/cuckoo-plugins/paths.js';
-import {
-  isCuckooPluginEnabled,
-  setCuckooPluginEnabled,
-} from '../../plugins/cuckoo-plugins/state.js';
+  getProfileDir,
+  ensureProfile,
+  listProfilePluginEntries,
+  setPluginEnabledInProfile,
+  listProfilePlugins,
+  installToProfile,
+  uninstallFromProfile,
+} from '../../plugins/profile/index.js';
 import { registry as toolRegistry } from '../../tools/index.js';
 import * as windowState from '../window.js';
 import * as mcpClient from '../../mcp/client.js';
@@ -50,6 +54,36 @@ const { ipcMain, shell, app } = require('electron');
 const _os = require('node:os');
 const _fs = require('node:fs');
 const _path = require('node:path');
+
+// ===== 插件槽位存储（对标 DSH slots）=====
+// 提升到模块级：DSH 插件 ctx.ui.slot.register 直接调 registerPluginSlot，
+// 壳页面通过 plugin-slot-register / shell-slot-register 事件消费。
+interface PluginSlot { pluginId: string; slot: string; id: string; order: number; spec: any }
+const pluginSlots: PluginSlot[] = [];
+
+/** 注册/更新一个插件槽位（同 pluginId+slot+id 覆盖），并广播给壳页面 */
+function registerPluginSlot({ pluginId, slot, id, order, spec }: any = {}): { success: boolean; error?: string } {
+  if (!pluginId || !slot || !id) return { success: false, error: '缺 pluginId/slot/id' };
+  const o = typeof order === 'number' ? order : 100;
+  const exist = pluginSlots.find((s) => s.pluginId === pluginId && s.slot === slot && s.id === id);
+  if (exist) { exist.order = o; exist.spec = spec; }
+  else pluginSlots.push({ pluginId, slot, id, order: o, spec });
+  const mainWin: any = (windowState as any).getMainWindow ? (windowState as any).getMainWindow() : null;
+  if (mainWin && mainWin.webContents) mainWin.webContents.send('shell-slot-register', { pluginId, slot, id, order: o, spec });
+  return { success: true };
+}
+
+/** 注销一个插件槽位（返回是否删除了） */
+function unregisterPluginSlot(pluginId: string, slot: string, id: string): boolean {
+  const idx = pluginSlots.findIndex((s) => s.pluginId === pluginId && s.slot === slot && s.id === id);
+  if (idx >= 0) { pluginSlots.splice(idx, 1); return true; }
+  return false;
+}
+
+/** 列出所有插件槽位 */
+function listPluginSlots(): PluginSlot[] { return pluginSlots.slice(); }
+
+export { registerPluginSlot, unregisterPluginSlot, listPluginSlots };
 
 /**
  * 加载插件"网页注入脚本"（CommonJS）。用 .cjs 临时副本，避免项目 type:module 干扰。
@@ -117,6 +151,280 @@ function buildInstalledMap(): Record<string, { id: string; name: string; version
 }
 
 function registerPluginIpc(): void {
+  // ===== P1：DSH plugin-manager RPC（对齐 remote.pluginManager / remote.pluginInventory）=====
+  /** 把 profile 的插件列表 + patch 状态合成 BundleInfo[]（DSH 契约） */
+  function buildBundleInfos(): any[] {
+    const declared = listProfilePlugins();
+    const entries = listProfilePluginEntries();
+    const entryByName = new Map<string, any>();
+    for (const e of entries) entryByName.set(e.name, e);
+    return declared.map((p: any) => {
+      const e = entryByName.get(p.name);
+      let version: string | undefined;
+      let description: string | undefined;
+      let rows: any[] = [];
+      let meta: any = undefined;
+      try {
+        if (p.dir) {
+          const pkg = JSON.parse(fs.readFileSync(path.join(p.dir, "package.json"), "utf-8"));
+          version = pkg.version;
+          description = pkg.description;
+          // meta：本地化显示（title + description）
+          meta = { title: pkg.name || p.name, description: pkg.description };
+          // rows：读 bundle patch（dsh.bundle.patch 指向的 cordis.patch.yml）
+          const patchRel = pkg.dsh && pkg.dsh.bundle && pkg.dsh.bundle.patch;
+          if (patchRel) {
+            const patchPath = path.join(p.dir, patchRel);
+            if (fs.existsSync(patchPath)) {
+              const { parseBundlePatch } = require('../../plugins/profile/patch.js');
+              const patchRows = parseBundlePatch(fs.readFileSync(patchPath, 'utf-8'));
+              // 找 row 对应的 entryId（listPlugins 的 entryId = 包名转 kebab）
+              const entries = listProfilePluginEntries();
+              const entryByModule = new Map<string, any>();
+              for (const en of entries) entryByModule.set(en.name, en);
+              rows = patchRows.map((r: any) => {
+                const entry = entryByModule.get(r.moduleName);
+                return {
+                  rowId: r.rowId,
+                  moduleName: r.moduleName,
+                  entryId: entry ? entry.id : undefined,  // ← 关键：前端用它判"可开关"
+                  enabled: entry ? !!entry.enabled : false,
+                };
+              });
+            }
+          }
+        }
+      } catch (_) {}
+      return {
+        name: p.name, version, description, meta,
+        enabled: e ? !!e.enabled : false,
+        installed: !!p.installed,
+        optional: false, removable: true,
+        rows, overrides: [],
+      };
+    });
+  }
+  /** 把 profile 条目合成 PluginInfo[]（DSH 契约） */
+  function buildPluginInfos(): any[] {
+    return listProfilePluginEntries().map((e: any) => ({
+      entryId: e.id, moduleName: e.name,
+      enabled: !!e.enabled, fiberPhase: e.enabled ? "active" : null,
+    }));
+  }
+  ipcMain.handle("plugin-manager-list-bundles", async () => {
+    try { return { ok: true, value: buildBundleInfos() }; }
+    catch (e: any) { return { ok: false, error: { code: "operation-error", message: e && e.message ? e.message : String(e), diagnostic: e && e.message ? e.message : String(e) } }; }
+  });
+  ipcMain.handle("plugin-manager-list-plugins", async () => {
+    try { return { ok: true, value: buildPluginInfos() }; }
+    catch (e: any) { return { ok: false, error: { code: "operation-error", message: e && e.message ? e.message : String(e), diagnostic: e && e.message ? e.message : String(e) } }; }
+  });
+  ipcMain.handle("plugin-manager-set-enabled", async (_e: any, { id, enabled }: any = {}) => {
+    try {
+      // 前端可能传"包名"（详情页）或"entryId"（rows 开关）——统一解析成包名
+      const { packageNameToId } = await import('../../plugins/profile/installer.js');
+      const raw = String(id || "");
+      // 是包名？直接查 manifest.dependencies
+      const { readProfileManifest } = await import('../../plugins/profile/manifest.js');
+      const { getProfileDir } = await import('../../plugins/profile/paths.js');
+      const { DEFAULT_PROFILE } = await import('../../plugins/profile/paths.js');
+      const pdir = getProfileDir(DEFAULT_PROFILE);
+      const deps = (readProfileManifest(pdir, DEFAULT_PROFILE).dependencies) || {};
+      let pkgName = raw;
+      if (!deps[raw]) {
+        // 不是包名 → 可能是 entryId，反查
+        for (const name of Object.keys(deps)) {
+          if (packageNameToId(name) === raw) { pkgName = name; break; }
+        }
+      }
+      const pid = packageNameToId(pkgName);
+      const on = !!enabled;
+      // 1) 写 cordis.patch.yml（用包名，对齐 listProfilePluginEntries 的检查）
+      setPluginEnabledInProfile(pkgName, on);
+      // 2) HMR：立即加载/卸载
+      let hmrOk = false;
+      let hmrError: string | undefined;
+      try {
+        console.log('[HMR] set-enabled: pkg=' + pkgName + ' id=' + pid + ' on=' + on);
+        const { buildCuckooHost } = await import('../cuckoo-host.js');
+        const host = buildCuckooHost({ db: (global as any).__globalDb, logicIdMap: (global as any).__globalLogicIdMap });
+        if (on) {
+          const r = await reloadPlugin(pid, toolRegistry, host);
+          hmrOk = r.ok;
+          if (!r.ok) hmrError = r.error;
+        } else {
+          hmrOk = unloadPlugin(pid, toolRegistry);
+        }
+        console.log('[HMR] 结果: ok=' + hmrOk + ' err=' + (hmrError || '无'));
+      } catch (e: any) {
+        hmrError = e && e.message ? e.message : String(e);
+        console.log('[HMR] 异常: ' + hmrError);
+      }
+      // 3) 广播（带 hmr 结果 + 通知壳页面重载 client + 刷新壳）
+      try {
+        const { BrowserWindow } = require('electron');
+        const allWins = BrowserWindow.getAllWindows();
+        console.log('[HMR] 广播到 ' + allWins.length + ' 个窗口');
+        for (const w of allWins) {
+          if (!w.webContents || w.webContents.isDestroyed()) continue;
+          w.webContents.send('plugin-manager-changed', { reason: 'bundle', reloaded: hmrOk, pluginId: pid, enabled: on });
+          w.webContents.send('cuckoo-reload-dsh-clients', { pluginId: pkgName, enabled: on });
+          // 壳页面自动刷新（确保槽状态/设置页与插件启停一致；800ms 让 IPC 响应先回去）
+          setTimeout(() => { try { console.log('[HMR] reload 窗口 ' + w.id); w.webContents.reload(); } catch (e) { console.log('[HMR] reload 异常: ' + e); } }, 800);
+        }
+      } catch (e: any) { console.log('[HMR] 广播异常: ' + (e && e.message ? e.message : e)); }
+      return {
+        ok: true,
+        value: {
+          changed: true,
+          application: hmrOk ? "applied" : "restart-required",
+          ...(hmrError ? { error: { code: "operation-error", message: hmrError, diagnostic: hmrError } } : {}),
+        },
+      };
+    }
+    catch (e: any) { return { ok: false, error: { code: "operation-error", message: e && e.message ? e.message : String(e), diagnostic: e && e.message ? e.message : String(e) } }; }
+  });
+  ipcMain.handle("plugin-manager-remove-bundle", async (_e: any, { name }: any = {}) => {
+    try {
+      const pkgName = String(name || "");
+      const r = await uninstallFromProfile(pkgName);
+      if (!r.ok) return { ok: false, error: { code: "operation-error", message: r.error, diagnostic: r.error } };
+      // HMR：卸载插件（若有加载）
+      try {
+        const { packageNameToId } = await import('../../plugins/profile/installer.js');
+        unloadPlugin(packageNameToId(pkgName), toolRegistry);
+      } catch (_) {}
+      try {
+        const { BrowserWindow } = require('electron');
+        const allWins = BrowserWindow.getAllWindows();
+        console.log('[HMR] remove 广播到 ' + allWins.length + ' 个窗口');
+        for (const w of allWins) {
+          if (!w.webContents || w.webContents.isDestroyed()) continue;
+          w.webContents.send('plugin-manager-changed', { reason: 'remove' });
+          w.webContents.send('cuckoo-reload-dsh-clients', { pluginId: pkgName, enabled: false });
+          setTimeout(() => { try { console.log('[HMR] remove reload 窗口 ' + w.id); w.webContents.reload(); } catch (e) { console.log('[HMR] remove reload 异常: ' + e); } }, 800);
+        }
+      } catch (e: any) { console.log('[HMR] remove 广播异常: ' + (e && e.message ? e.message : e)); }
+      return { ok: true, value: { changed: true, application: "applied", stage: "remove", target: pkgName } };
+    } catch (e: any) { return { ok: false, error: { code: "operation-error", message: e && e.message ? e.message : String(e), diagnostic: e && e.message ? e.message : String(e) } }; }
+  });
+  ipcMain.handle("plugin-manager-install-bundle", async (_e: any, { spec, opts }: any = {}) => {
+    try {
+      const pkgName = String(spec || "");
+      const requestId = (opts && opts.requestId) ? String(opts.requestId) : undefined;
+      const jobId = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+      const mw: any = (windowState as any).getMainWindow ? (windowState as any).getMainWindow() : null;
+      const send = (ch: string, d: any) => { try { if (mw && mw.webContents) mw.webContents.send(ch, d); } catch (_) {} };
+      // 1) install-state: installing
+      send('plugin-manager-install-state', { requestId, phase: 'installing' });
+      // 2) 流式输出 → install-log
+      const onData = (text: string) => {
+        send('plugin-manager-install-log', { requestId, jobId, argv: ['pnpm', 'add', pkgName], cwd: '', stream: 'stdout', text });
+      };
+      const r = await installToProfile(pkgName, undefined as any, onData);
+      // 3) 最终 log（exitCode）
+      send('plugin-manager-install-log', { requestId, jobId, argv: ['pnpm', 'add', pkgName], cwd: '', stream: 'stdout', text: '', exitCode: r.ok ? 0 : 1 });
+      if (!r.ok) {
+        send('plugin-manager-install-state', { requestId, phase: 'applying' });
+        return { ok: false, error: { code: "operation-error", message: r.error, diagnostic: r.error } };
+      }
+      // 4) bundle 检查：必须声明 dsh.bundle.patch（不是普通 npm 包）
+      try {
+        const pkgDir = r.pluginDir;
+        let isBundle = false;
+        if (pkgDir) {
+          const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, 'package.json'), 'utf-8'));
+          isBundle = !!(pkg.dsh && pkg.dsh.bundle && pkg.dsh.bundle.patch);
+        }
+        if (!isBundle) {
+          // 回滚（卸载刚装的）
+          try { const { uninstallFromProfile } = await import('../../plugins/profile/installer.js'); await uninstallFromProfile(pkgName); } catch (_) {}
+          send('plugin-manager-install-state', { requestId, phase: 'applying' });
+          return { ok: false, error: { code: "not-bundle", message: '这个包不是 DSH 插件 bundle（没有 dsh.bundle.patch）', diagnostic: '这个包不是 DSH 插件 bundle（没有 dsh.bundle.patch）' } };
+        }
+      } catch (_) {}
+      send('plugin-manager-install-state', { requestId, phase: 'applying' });
+      send('plugin-manager-changed', { reason: 'install' });
+      return { ok: true, value: { changed: true, application: "restart-required", stage: "install", target: r.name, bundle: r.name } };
+    } catch (e: any) { return { ok: false, error: { code: "operation-error", message: e && e.message ? e.message : String(e), diagnostic: e && e.message ? e.message : String(e) } }; }
+  });
+  ipcMain.handle("plugin-manager-inspect", async (_e: any, { spec }: any = {}) => {
+    const s = String(spec || "").trim();
+    if (!s) return { ok: true, value: { status: "refused", problem: "invalid-spec", reason: "包名不能为空" } };
+    // ===== 真检查（对齐 DSH PluginSpecInspection 契约）=====
+    try {
+      // 1) 本地目录（path:）
+      if (/^(file|link):|^\.\.?[/\\]/.test(s)) {
+        try {
+          const abs = path.resolve(s.replace(/^(file|link):/, ''));
+          const pkgPath = path.join(abs, 'package.json');
+          if (!fs.existsSync(pkgPath)) {
+            return { ok: true, value: { status: "refused", problem: "not-found", reason: "目录下没有 package.json: " + abs } };
+          }
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+          const isBundle = !!(pkg.dsh && pkg.dsh.bundle && pkg.dsh.bundle.patch);
+          return { ok: true, value: { status: "accepted", kind: "path", name: pkg.name, version: pkg.version, description: pkg.description, bundle: isBundle, registry: null } };
+        } catch (e: any) {
+          return { ok: true, value: { status: "refused", problem: "invalid-spec", reason: "路径无效: " + (e && e.message ? e.message : String(e)) } };
+        }
+      }
+      // 2) Git（github:owner/repo / git+https://...）
+      if (/^(github:|git\+|git:)/.test(s) || /github\.com/.test(s)) {
+        return { ok: true, value: { status: "accepted", kind: "git", name: s, bundle: null, registry: null, host: 'github.com' } };
+      }
+      // 3) tarball（http(s)://...tgz / .tar.gz）
+      if (/^https?:\/\//.test(s) && /\.(tgz|tar\.gz)$/i.test(s)) {
+        return { ok: true, value: { status: "accepted", kind: "tarball", name: s, bundle: null, registry: null } };
+      }
+      // 4) npm registry（默认）——查 registry 看包存不存在
+      const bareName = s.replace(/@[\w.^~-]+$/, '');
+      // 校验包名
+      if (!/^(@[a-z0-9][\w.-]*\/)?[a-z0-9][\w.-]*$/i.test(bareName)) {
+        return { ok: true, value: { status: "refused", problem: "invalid-spec", reason: "包名非法: " + s } };
+      }
+      const regUrl = 'https://registry.npmjs.org/' + encodeURIComponent(bareName).replace(/%40/g, '@').replace(/%2F/g, '/');
+      let version: string | undefined;
+      let description: string | undefined;
+      let isBundle = false;
+      let registryAnswer = true;
+      try {
+        const res = await httpGet({ url: regUrl, timeoutMs: 15000 });
+        if (res.status === 404) {
+          return { ok: true, value: { status: "refused", problem: "not-found", reason: "npm 上找不到这个包: " + bareName } };
+        }
+        if (res.status !== 200) {
+          return { ok: true, value: { status: "refused", problem: "network", reason: "registry 返回 " + res.status } };
+        }
+        const meta = JSON.parse(res.body.toString('utf-8'));
+        const latest = (meta && meta['dist-tags'] && meta['dist-tags'].latest) || undefined;
+        version = latest;
+        if (latest && meta.versions && meta.versions[latest]) {
+          const v = meta.versions[latest];
+          description = v.description || (meta.description) || undefined;
+          isBundle = !!(v.dsh && v.dsh.bundle && v.dsh.bundle.patch);
+        } else {
+          description = meta.description;
+        }
+      } catch (e: any) {
+        registryAnswer = false;
+        // 网络失败——不阻断（让 pnpm 试）
+        return { ok: true, value: { status: "accepted", kind: "registry", name: bareName, bundle: null, registry: null, host: 'registry.npmjs.org' } };
+      }
+      // 5) 不是 bundle → 拒绝（对齐 DSH "not-a-bundle"）
+      if (registryAnswer && !isBundle) {
+        return { ok: true, value: { status: "refused", problem: "not-a-bundle", reason: "这个包不是 DSH 插件 bundle（没有 dsh.bundle.patch）: " + bareName } };
+      }
+      return { ok: true, value: { status: "accepted", kind: "registry", name: bareName, version, description, bundle: isBundle, registry: null, host: 'registry.npmjs.org' } };
+    } catch (e: any) {
+      return { ok: false, error: { code: "operation-error", message: e && e.message ? e.message : String(e), diagnostic: e && e.message ? e.message : String(e) } };
+    }
+  });
+  ipcMain.handle("plugin-manager-cancel-install", async () => ({ ok: true, value: { status: "not-running" } }));
+  ipcMain.handle("plugin-inventory-list", async () => {
+    try { return { ok: true, value: { managementAvailable: true, entries: buildPluginInfos() } }; }
+    catch (e: any) { return { ok: false, error: { code: "operation-error", message: e && e.message ? e.message : String(e), diagnostic: e && e.message ? e.message : String(e) } }; }
+  });
+
   // ===== 网页注入脚本：已启用插件的 scripts/*.js（供 bridge 注入 AI 页面主世界） =====
   ipcMain.handle('get-plugin-web-scripts', async () => {
     try {
@@ -459,14 +767,13 @@ function registerPluginIpc(): void {
   // 列表：已安装的 Cuckoo 插件（~/.cuckoo/cuckoo-plugins/）
   ipcMain.handle('cuckoo-plugin-list', async () => {
     try {
-      const plugins = listCuckooPluginDirs().map((dir) => {
-        const id = dir.split(/[\\/]/).pop() || '';
-        let name = id, version = '', description = '';
+      const plugins = listProfilePluginEntries().map((entry) => {
+        let name = entry.name, version = '', description = '';
         try {
-          const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf-8'));
-          name = pkg.name || id; version = pkg.version || ''; description = pkg.description || '';
+          const pkg = JSON.parse(fs.readFileSync(path.join(entry.dir, 'package.json'), 'utf-8'));
+          name = pkg.name || entry.name; version = pkg.version || ''; description = pkg.description || '';
         } catch (_) { /* ignore */ }
-        return { id, name, version, description, enabled: isCuckooPluginEnabled(id) };
+        return { id: entry.id, name, version, description, enabled: entry.enabled };
       });
       return { success: true, plugins };
     } catch (err: any) {
@@ -485,24 +792,26 @@ function registerPluginIpc(): void {
     }
   });
 
-  // 卸载（清状态；重启生效）
+  // 卸载（从 profile 移除；重启生效）
   ipcMain.handle('cuckoo-plugin-uninstall', async (_event: any, { id }: any = {}) => {
     try {
-      uninstallCuckooPlugin(id);
+      const ok = await uninstallCuckooPlugin(id);
+      if (!ok) return { success: false, error: '未找到插件: ' + id };
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err && err.message ? err.message : String(err) };
     }
   });
 
-  // 启用/禁用（重启生效；启用时若工具未注册则立即注册）
+  // 启用/禁用（写 cordis.patch.yml；重启生效；启用时若工具未注册则立即注册）
   ipcMain.handle('cuckoo-plugin-toggle', async (_event: any, { id, enabled }: any = {}) => {
     try {
-      const ok = setCuckooPluginEnabled(id, !!enabled);
-      if (!ok) return { success: false, error: '插件 id 非法' };
+      if (!id || typeof id !== 'string') return { success: false, error: '缺少插件 id' };
+      setPluginEnabledInProfile(id, !!enabled);
       if (enabled) {
         // 尝试立即加载（工具已注册会覆盖告警，无碍）
-        try { await loadPluginFromDir(getCuckooPluginsDir() + '/' + id, toolRegistry); } catch (_) { /* 已加载或失败，重启兜底 */ }
+        const entry = listProfilePluginEntries().find((e) => e.id === id);
+        if (entry) { try { await loadPluginFromDir(entry.dir, toolRegistry); } catch (_) { /* 已加载或失败，重启兜底 */ } }
       }
       return { success: true };
     } catch (err: any) {
@@ -510,10 +819,10 @@ function registerPluginIpc(): void {
     }
   });
 
-  // 打开 Cuckoo 插件目录
+  // 打开 Cuckoo 插件目录（profile 目录）
   ipcMain.handle('cuckoo-plugin-open-dir', async () => {
     try {
-      const dir = getCuckooPluginsDir();
+      const dir = ensureProfile();
       fs.mkdirSync(dir, { recursive: true });
       const err = await shell.openPath(dir);
       return err ? { success: false, error: err } : { success: true };
@@ -564,28 +873,47 @@ function registerPluginIpc(): void {
   });
 
   // ===== 插件槽位（通用挂载：具名槽位 + order，对标 DSH slots）=====
-  const pluginSlots: Array<{ pluginId: string; slot: string; id: string; order: number; spec: any }> = [];
-  ipcMain.handle('plugin-slot-register', async (_event: any, { pluginId, slot, id, order, spec }: any = {}) => {
-    try {
-      if (!pluginId || !slot || !id) return { success: false, error: '缺 pluginId/slot/id' };
-      const exist = pluginSlots.find(s => s.pluginId === pluginId && s.slot === slot && s.id === id);
-      if (exist) { exist.order = typeof order === 'number' ? order : 100; exist.spec = spec; }
-      else pluginSlots.push({ pluginId, slot, id, order: typeof order === 'number' ? order : 100, spec });
-      const mainWin: any = windowState.getMainWindow ? windowState.getMainWindow() : null;
-      if (mainWin && mainWin.webContents) mainWin.webContents.send('shell-slot-register', { pluginId, slot, id, order, spec });
-      return { success: true };
-    } catch (err: any) { return { success: false, error: err && err.message ? err.message : String(err) }; }
+  // 存储与注册函数已提升到模块级（registerPluginSlot / unregisterPluginSlot / listPluginSlots），
+  // 供 cuckoo-host 注入给插件 ctx（DSH 插件调 ctx.ui.slot.register 时直接落到这里）。
+  ipcMain.handle('plugin-slot-register', async (_event: any, m: any = {}) => {
+    try { return registerPluginSlot(m); }
+    catch (err: any) { return { success: false, error: err && err.message ? err.message : String(err) }; }
   });
   ipcMain.handle('plugin-slot-unregister', async (_event: any, { pluginId, slot, id }: any = {}) => {
     try {
-      const idx = pluginSlots.findIndex(s => s.pluginId === pluginId && s.slot === slot && s.id === id);
-      if (idx >= 0) pluginSlots.splice(idx, 1);
+      const ok = unregisterPluginSlot(pluginId, slot, id);
       const mainWin: any = windowState.getMainWindow ? windowState.getMainWindow() : null;
-      if (mainWin && mainWin.webContents) mainWin.webContents.send('shell-slot-unregister', { pluginId, slot, id });
+      if (ok && mainWin && mainWin.webContents) mainWin.webContents.send('shell-slot-unregister', { pluginId, slot, id });
       return { success: true };
     } catch (err: any) { return { success: false, error: err && err.message ? err.message : String(err) }; }
   });
-  ipcMain.handle('plugin-slot-list', async () => ({ success: true, slots: pluginSlots }));
+  ipcMain.handle('plugin-slot-list', async () => ({ success: true, slots: listPluginSlots() }));
+
+  // ===== DSH 插件 client 入口源码（壳页面加载执行）=====
+  // 返回已启用的 profile 插件的 ./client 源码。
+  // 壳页面用最小 DSH 运行时（window.__ModuleLoader__ + React require）执行它。
+  ipcMain.handle('cuckoo-plugin-client-sources', async () => {
+    try {
+      const out: Array<{ pluginId: string; pkgName: string; source: string }> = [];
+      const { isIncompatibleDshPackage } = await import('../../plugins/profile/loader.js');
+      for (const entry of listProfilePluginEntries()) {
+        if (!entry.enabled) continue;
+        // 跳过已知不兼容的 DSH 包（如 @deepseek-ai/dsh-experimental-*）
+        if (isIncompatibleDshPackage(entry.name)) continue;
+        try {
+          const c = resolveClientEntry(entry.dir);
+          if (!c) continue;
+          const source = fs.readFileSync(c.file, 'utf-8');
+          out.push({ pluginId: entry.id, pkgName: c.pkgName, source });
+        } catch (err: any) {
+          console.error('[plugin-client] 读取失败:', entry.dir, err && err.message);
+        }
+      }
+      return { success: true, clients: out };
+    } catch (err: any) {
+      return { success: false, clients: [], error: err && err.message ? err.message : String(err) };
+    }
+  });
 
   // ===== 插件界面挂载（Cuckoo 壳页面：侧边栏/状态栏/工具栏）=====
   // 缓存已挂载请求（壳页面可能晚于插件加载；就绪后补发）

@@ -64,6 +64,9 @@ async function main() {
     minify: false,
     legalComments: 'none',
     logLevel: 'warning',
+    jsx: 'automatic',
+    jsxImportSource: 'react',
+    loader: { '.tsx': 'tsx' },
   });
   const js = bundle.outputFiles[0].text;
 

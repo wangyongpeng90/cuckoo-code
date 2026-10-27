@@ -5,10 +5,27 @@
 ## 规则
 
 ### 文件命名
+
+**格式**：`docs/requirements/<id>-<slug>.md`
+
+**id 规则**（2026-10-22 起）：
+
+| 阶段 | id 格式 | 例 |
+|---|---|---|
+| 历史档案（001~028） | 三位序号 | `001`、`022` |
+| **新档案（本次起）** | `YYMMDD-<6位base36随机>` | `261022-a3f9k2` |
+
+**生成新 id**（建档案时执行，每次输出不同）：
+```bash
+node -e "const d=new Date(),p=n=>String(n).padStart(2,'0');console.log(String(d.getFullYear()).slice(2)+p(d.getMonth()+1)+p(d.getDate())+'-'+Math.random().toString(36).slice(2,8))"
 ```
-docs/requirements/<三位序号>-<短横线英文slug>.md
-```
-例：`001-address-bar.md`、`002-interrupt-retry.md`
+输出示例：`261022-a3f9k2`
+
+**为什么改规则**：旧的三位序号在**多分支并行开发**时会撞号（已发生：`023-chatgpt-input-send.md` 和 `023-shell-react.md`）。新 id 带日期+随机，**天然唯一**，合并时无需重编号 → 代码注释里的 `[id]` 永不需要改动。
+
+**排序兼容性**：`build-docs-index.mjs` 按 frontmatter `id` 字符串排序。新 id 以 `26`、`27` 等数字开头，与旧 id（`0xx`）对比时 `'0' < '2'`，**旧档案自动排在新档案之前**，无需改脚本。
+
+**老档案零改动**：`001`~`028` 保持原样，新档案与老档案在同一目录下共存。
 
 ### 文档结构（固定）
 文件头部是 YAML frontmatter（结构化数据，供脚本与 AI 解析）：
@@ -65,6 +82,62 @@ npm run docs:index
 draft（刚建）→ doing（实现中）→ review（待验收）→ done（完成）
                                        ↘ dropped（放弃）
 ```
+
+## 代码注释关联档案（2026-10-22 新增）
+
+**目的**：让后来人（尤其是 AI 对话）读代码时，**能直接找到决策依据**——而不是只看到一行代码，不知道为什么这么写。
+
+### 什么时候加注释
+
+**只在"决策点"和"反直觉处"加**——一个不熟悉这块代码的人，看到这一行会不会问"为什么这么写？"——会问才加。
+
+✅ **该加**：
+- 新增的、承载业务决策的代码块（如「create 只落库不导航」）
+- 修改现有逻辑的地方（如「原先无校验，现改为……」「原先顺序 A→B，现改为 B→A，因为……」）
+- 反直觉的实现（如「这里故意不 await，因为……」）
+- 绕过某个已知限制的 workaround
+
+❌ **不该加**：
+- 描述代码字面含义（`// 判断 projectDir 是否存在`）
+- 显而易见的空值检查、类型转换
+- 每行都加（会让代码淹没在注释里）
+
+### 注释格式
+
+固定前缀 + 档案号 + 一句话说清「做了什么 + 为什么」+ 档案路径：
+
+```typescript
+// [022] DSH 语义：create 只落库不导航。详见 docs/requirements/022-dsh-plugin-compat.md C4-D 9.1
+async create(options: CreateAgentOptions): Promise<CuckooAgentHandle> { ... }
+```
+
+```typescript
+// [022] 修改：原先无校验，现对齐 DSH prepare() 的 cwd 绝对路径检查。详见 ... C4-D 9.2
+if (meta?.cwd !== undefined && !isAbsolute(meta.cwd)) throw new Error(...);
+```
+
+### 前缀约定
+
+| 前缀 | 场景 |
+|---|---|
+| `[022]` | 新增代码 |
+| `[022-mod]` | 修改现有代码（附带说明「原先是什么」） |
+| `[022-fix]` | 纯 bug 修复 |
+
+**好处**：`grep "\[022\]" src/` 能一秒钟找到某需求的所有代码落点。
+
+### 档案侧的反向索引（配套）
+
+档案里每个决策点**附带落地位置**，形成双向链接：
+
+```markdown
+| 9.1 `create` 只落库 | `src/plugins/dsh-compat/agents-service.ts:248` |
+```
+
+- **代码 → 档案**：注释里的路径
+- **档案 → 代码**：表格里的行号
+
+---
 
 ## 与其他文档的分工
 

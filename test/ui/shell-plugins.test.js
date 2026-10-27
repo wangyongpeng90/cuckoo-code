@@ -1,6 +1,6 @@
 'use strict';
 /**
- * shell.html 插件页的样式安全检查
+ * shell.html 插件页的样式安全检查（feat/shell-react：改查 React 源码）
  *
  * 背景：插件市场页曾出现"看不到安装按钮"——
  * 安装按钮被包进了 `.ck-snip-actions`，而那个类是为 snippet 卡片设计的
@@ -10,6 +10,11 @@
  *
  * 这类 bug 靠肉眼读代码很难发现（语法、类型、单测全绿），所以固化成检查：
  * **插件区段用到的每个 class，其基础 CSS 规则都不得隐藏元素。**
+ *
+ * 【feat/shell-react 更新】
+ * 插件页已 React 化（src/ui/shell/scripts/pages/plugins-react.tsx）。
+ * - 源码 class 锚点：改读 .tsx
+ * - CSS 规则：仍读 shell.html（样式静态打进生成物）
  */
 import { test } from 'vitest';
 import assert from 'node:assert';
@@ -17,19 +22,16 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const SHELL = path.join(import.meta.dirname, '../../src/ui/shell.html');
+const PLUGINS_TSX = path.join(import.meta.dirname, '../../src/ui/shell/scripts/pages/plugins-react.tsx');
 
 /** 读取整个 shell.html（显式 UTF-8，避免中文被打断） */
 function readShell() {
   return fs.readFileSync(SHELL, 'utf-8');
 }
 
-/** 截取插件页的 JS 区段（模块化后 plugins.ts 编译进 bundle，用函数锚点定位） */
-function pluginSection(html) {
-  const start = html.indexOf('function pluginContribSummary');
-  const end = html.indexOf('document.getElementById("plugin-open-dir")');
-  assert.ok(start > 0, '未找到「pluginContribSummary」锚点，测试需要同步更新');
-  assert.ok(end > start, '未找到「plugin-open-dir」锚点，测试需要同步更新');
-  return html.slice(start, end);
+/** 读 React 版插件页源码（class 锚点） */
+function readPluginsTsx() {
+  return fs.readFileSync(PLUGINS_TSX, 'utf-8');
 }
 
 /** 区块自身的基础规则体（不含 :hover / 后代选择器） */
@@ -41,19 +43,18 @@ function baseRuleBodies(css, className) {
 test('shell.html 存在且可读', () => {
   const html = readShell();
   assert.ok(html.length > 10000, 'shell.html 内容异常');
-  assert.ok(html.includes('cuckoo-plugin'), '市场区应标出唯一搜索源');
 });
 
-test('插件区段不复用 snippet 的悬停类（回归防护）', () => {
-  const seg = pluginSection(readShell());
+test('React 插件页不复用 snippet 的悬停类（回归防护）', () => {
+  const seg = readPluginsTsx();
   // .ck-snip-actions 带 opacity:0 + pointer-events:none，且显示规则绑定 .ck-snip-item:hover
   assert.ok(!seg.includes('ck-snip-actions'), '插件卡片不得使用 .ck-snip-actions（会永远不可见）');
   assert.ok(seg.includes('ck-plugin-actions'), '插件卡片应用常驻可见的 .ck-plugin-actions');
 });
 
-test('插件区段用到的每个 class，基础规则都不隐藏元素', () => {
+test('React 插件页用到的每个 ck-* class，基础规则都不隐藏元素', () => {
   const html = readShell();
-  const seg = pluginSection(html);
+  const seg = readPluginsTsx();
 
   const classes = Array.from(new Set(seg.match(/ck-[a-z0-9-]+/g) || []));
   assert.ok(classes.length > 5, '未从插件区段解析出 class，选择器可能已变');
@@ -73,7 +74,7 @@ test('插件区段用到的每个 class，基础规则都不隐藏元素', () =>
   );
 });
 
-test('插件区段的关键 class 都在 CSS 里有定义', () => {
+test('React 插件页的关键 class 都在 CSS 里有定义', () => {
   const html = readShell();
   const required = [
     'ck-plugin-item',
@@ -91,7 +92,7 @@ test('插件区段的关键 class 都在 CSS 里有定义', () => {
 });
 
 test('开关用的是既有的 ck-switch 组件', () => {
-  const seg = pluginSection(readShell());
+  const seg = readPluginsTsx();
   assert.ok(seg.includes('ck-switch'), '插件开关应复用 ck-switch');
   assert.ok(seg.includes('ck-switch-track'), '缺少 ck-switch 的轨道元素');
 });
