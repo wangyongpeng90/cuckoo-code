@@ -7,6 +7,7 @@ import os from 'node:os';
 import { parseFrontmatter } from '../../src/skills/frontmatter.js';
 import { mergeSkills, scanSkills } from '../../src/skills/scanner.js';
 import { buildSkillsSection } from '../../src/skills/prompt.js';
+import { isSkillEnabled, setSkillEnabled, filterEnabledSkills } from '../../src/skills/state.js';
 
 // ===== frontmatter =====
 
@@ -118,3 +119,86 @@ test('buildSkillsSection: description 超长截断', () => {
   assert.ok(s.length < 3000);
   assert.ok(s.includes('…'));
 });
+
+// ===== state.ts：技能开关 =====
+
+function withTmpHome(fn) {
+  const dir = path.join(os.tmpdir(), 'cuckoo-skills-state-' + Date.now() + '-' + Math.random().toString(36).slice(2));
+  const old = process.env.CUCKOO_HOME;
+  process.env.CUCKOO_HOME = dir;
+  try { return fn(dir); } finally {
+    if (old === undefined) delete process.env.CUCKOO_HOME; else process.env.CUCKOO_HOME = old;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('isSkillEnabled: 默认开启（无状态文件）', () => {
+  withTmpHome(() => {
+    assert.strictEqual(isSkillEnabled('a', null), true);
+  });
+});
+
+test('setSkillEnabled: 用户级技能写入用户级状态文件', () => {
+  withTmpHome((home) => {
+    assert.strictEqual(setSkillEnabled('a', 'user', null, false), true);
+    const f = path.join(home, 'skills-state.json');
+    assert.ok(fs.existsSync(f));
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(f, 'utf-8')).disabled, ['a']);
+    assert.strictEqual(isSkillEnabled('a', null), false);
+    assert.strictEqual(setSkillEnabled('a', 'user', null, true), true);
+    assert.strictEqual(isSkillEnabled('a', null), true);
+  });
+});
+
+test('setSkillEnabled: 项目级技能写入项目级状态文件', () => {
+  withTmpHome(() => {
+    const proj = path.join(os.tmpdir(), 'cuckoo-proj-state-' + Date.now());
+    fs.mkdirSync(proj, { recursive: true });
+    try {
+      assert.strictEqual(setSkillEnabled('p', 'project', proj, false), true);
+      const f = path.join(proj, '.cuckoo', 'skills-state.json');
+      assert.ok(fs.existsSync(f));
+      assert.strictEqual(isSkillEnabled('p', proj), false);
+      assert.strictEqual(isSkillEnabled('p', null), true);
+    } finally { fs.rmSync(proj, { recursive: true, force: true }); }
+  });
+});
+
+test('setSkillEnabled: 项目级但无 projectDir 时失败（不落盘）', () => {
+  withTmpHome((home) => {
+    assert.strictEqual(setSkillEnabled('p', 'project', null, false), false);
+    assert.ok(!fs.existsSync(path.join(home, 'skills-state.json')));
+  });
+});
+
+test('setSkillEnabled: 空名字返回 false', () => {
+  withTmpHome(() => {
+    assert.strictEqual(setSkillEnabled('', 'user', null, false), false);
+  });
+});
+
+test('filterEnabledSkills: 过滤已关闭技能，保持顺序', () => {
+  withTmpHome(() => {
+    setSkillEnabled('b', 'user', null, false);
+    const list = [mk('a', 'user'), mk('b', 'user'), mk('c', 'user')];
+    const out = filterEnabledSkills(list, null);
+    assert.deepStrictEqual(out.map((s) => s.name), ['a', 'c']);
+  });
+});
+
+test('filterEnabledSkills: 无任何关闭时原样返回', () => {
+  withTmpHome(() => {
+    const list = [mk('a', 'user'), mk('b', 'user')];
+    const out = filterEnabledSkills(list, null);
+    assert.strictEqual(out, list);
+  });
+});
+
+test('state: 状态文件损坏时不崩（视为全开启）', () => {
+  withTmpHome((home) => {
+    fs.mkdirSync(home, { recursive: true });
+    fs.writeFileSync(path.join(home, 'skills-state.json'), '{not json', 'utf-8');
+    assert.strictEqual(isSkillEnabled('a', null), true);
+  });
+});
+
