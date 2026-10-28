@@ -33591,7 +33591,6 @@ body {
     const [root, setRoot] = (0, import_react22.useState)("\u9879\u76EE\u6587\u4EF6");
     const [kw, setKw] = (0, import_react22.useState)("");
     const [expanded, setExpanded] = (0, import_react22.useState)(/* @__PURE__ */ new Set());
-    const [truncated, setTruncated] = (0, import_react22.useState)(false);
     const [err, setErr] = (0, import_react22.useState)(null);
     const [previewPath, setPreviewPath] = (0, import_react22.useState)(null);
     const load = (0, import_react22.useCallback)(async () => {
@@ -33605,7 +33604,6 @@ body {
         setErr(null);
         if (r.root) setRoot(String(r.root).replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "\u9879\u76EE\u6587\u4EF6");
         setTree(r.tree || []);
-        setTruncated(!!r.truncated);
       } catch (_) {
         setErr("\u52A0\u8F7D\u5931\u8D25");
       }
@@ -33639,27 +33637,24 @@ body {
       if (matched.length === 0) body = (0, import_react22.createElement)("div", { className: "ck-list-empty" }, "\u65E0\u5339\u914D\u7ED3\u679C");
       else {
         matched.sort((a, b) => a.type !== b.type ? a.type === "file" ? -1 : 1 : a.path.localeCompare(b.path));
-        const shown = matched.slice(0, 500);
         body = (0, import_react22.createElement)(
           "div",
           { style: { display: "contents" } },
-          shown.map((n) => (0, import_react22.createElement)(
+          matched.map((n) => (0, import_react22.createElement)(
             "div",
             { key: n.path, className: "ck-ft-row " + (n.type === "dir" ? "ck-ft-dir" : "ck-ft-file"), title: n.path, onClick: n.type === "file" ? () => onFile(n.path) : () => onToggle(n.path) },
             (0, import_react22.createElement)(FIcon, { name: n.name, type: n.type }),
             (0, import_react22.createElement)("span", { className: "ck-ft-name " + colorCls(n.name, n.type) }, (0, import_react22.createElement)(Highlight, { text: n.name, kw })),
             (0, import_react22.createElement)("span", { className: "ck-ft-path" }, (0, import_react22.createElement)(Highlight, { text: n.path, kw })),
             (0, import_react22.createElement)(AtBtn, { path: n.path })
-          )),
-          matched.length > 500 ? (0, import_react22.createElement)("div", { className: "ck-ft-truncated" }, "\uFF08\u7ED3\u679C\u8FC7\u591A\uFF0C\u4EC5\u663E\u793A\u524D 500 \u9879\uFF09") : null
+          ))
         );
       }
     } else if (tree.length === 0) body = (0, import_react22.createElement)("div", { className: "ck-list-empty" }, "\u7A7A\u76EE\u5F55");
     else body = (0, import_react22.createElement)(
       "div",
       { style: { display: "contents" } },
-      (0, import_react22.createElement)(TreeNodes, { nodes: tree, depth: 0, expanded, onToggle, onFile }),
-      truncated ? (0, import_react22.createElement)("div", { className: "ck-ft-truncated" }, "\uFF08\u8282\u70B9\u8FC7\u591A\uFF0C\u5DF2\u622A\u65AD\u663E\u793A\uFF09") : null
+      (0, import_react22.createElement)(TreeNodes, { nodes: tree, depth: 0, expanded, onToggle, onFile })
     );
     return (0, import_react22.createElement)(
       "div",

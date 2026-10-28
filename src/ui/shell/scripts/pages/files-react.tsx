@@ -179,7 +179,7 @@ export function FilesPage() {
   const [root, setRoot] = useState('项目文件');
   const [kw, setKw] = useState('');
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [truncated, setTruncated] = useState(false);
+
   const [err, setErr] = useState<string | null>(null);
   const [previewPath, setPreviewPath] = useState<string | null>(null);
 
@@ -191,7 +191,7 @@ export function FilesPage() {
       setErr(null);
       if (r.root) setRoot(String(r.root).replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '项目文件');
       setTree(r.tree || []);
-      setTruncated(!!r.truncated);
+
     } catch (_) { setErr('加载失败'); }
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -214,21 +214,18 @@ export function FilesPage() {
     if (matched.length === 0) body = createElement('div', { className: 'ck-list-empty' }, '无匹配结果');
     else {
       matched.sort((a, b) => a.type !== b.type ? (a.type === 'file' ? -1 : 1) : a.path.localeCompare(b.path));
-      const shown = matched.slice(0, 500);
       body = createElement('div', { style: { display: 'contents' } },
-        shown.map((n) => createElement('div', { key: n.path, className: 'ck-ft-row ' + (n.type === 'dir' ? 'ck-ft-dir' : 'ck-ft-file'), title: n.path, onClick: n.type === 'file' ? () => onFile(n.path) : () => onToggle(n.path) },
+        matched.map((n) => createElement('div', { key: n.path, className: 'ck-ft-row ' + (n.type === 'dir' ? 'ck-ft-dir' : 'ck-ft-file'), title: n.path, onClick: n.type === 'file' ? () => onFile(n.path) : () => onToggle(n.path) },
           createElement(FIcon, { name: n.name, type: n.type }),
           createElement('span', { className: 'ck-ft-name ' + colorCls(n.name, n.type) }, createElement(Highlight, { text: n.name, kw })),
           createElement('span', { className: 'ck-ft-path' }, createElement(Highlight, { text: n.path, kw })),
           createElement(AtBtn, { path: n.path }),
         )),
-        matched.length > 500 ? createElement('div', { className: 'ck-ft-truncated' }, '（结果过多，仅显示前 500 项）') : null,
       );
     }
   } else if (tree.length === 0) body = createElement('div', { className: 'ck-list-empty' }, '空目录');
   else body = createElement('div', { style: { display: 'contents' } },
     createElement(TreeNodes, { nodes: tree, depth: 0, expanded, onToggle, onFile }),
-    truncated ? createElement('div', { className: 'ck-ft-truncated' }, '（节点过多，已截断显示）') : null,
   );
 
   return createElement('div', { className: 'ck-tab ck-tab-active' },

@@ -19,7 +19,7 @@ function injectSessionDeps(deps: { createWindow?: any; profileManager?: any }): 
 
 // 文件树：忽略的目录 + 节点上限（防超大项目）
 const TREE_IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'out', 'build', 'coverage', '.cuckooCode', '.playwright-mcp', '.idea', '.vscode', 'wyp', 'release', 'dist-verify']);
-const TREE_MAX_NODES = 5000;
+const TREE_MAX_NODES = 50000;
 const TREE_MAX_DEPTH = 12;
 
 /** 递归构建文件树（目录在前、各自按名排序） */
