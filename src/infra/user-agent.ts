@@ -38,10 +38,17 @@ function chromeFullVersion(): string {
  */
 function buildClientHintsHeaders(): Record<string, string> {
   const m = chromeMajor();
+  const full = chromeFullVersion();
   return {
     'sec-ch-ua': '"Google Chrome";v="' + m + '", "Chromium";v="' + m + '", "Not_A Brand";v="24"',
     'sec-ch-ua-mobile': '?0',
     'sec-ch-ua-platform': '"Windows"',
+    'sec-ch-ua-platform-version': '"15.0.0"',
+    'sec-ch-ua-full-version': '"' + full + '"',
+    'sec-ch-ua-full-version-list': '"Google Chrome";v="' + full + '", "Chromium";v="' + full + '", "Not_A Brand";v="24.0.0.0"',
+    'sec-ch-ua-arch': '"x86"',
+    'sec-ch-ua-bitness': '"64"',
+    'sec-ch-ua-model': '""',
   };
 }
 

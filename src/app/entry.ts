@@ -522,8 +522,13 @@ function createWindow(profile: any) {
         const h = details.requestHeaders || {};
         for (const k of Object.keys(h)) {
           const lk = k.toLowerCase();
+          // 删除 Electron / Chromium 自动生成的客户端提示头，统一替换为与 UA 匹配的版本。
+          // 尤其 sec-ch-ua-full-version(-list)：Electron 会带上底层内核的完整版本
+          // （如 152.0.7977.130），而 UA 里是主版本（152.0.0.0），两者不一致会被判定环境异常。
           if (lk === 'sec-ch-ua' || lk === 'sec-ch-ua-mobile' || lk === 'sec-ch-ua-platform' ||
-              lk === 'sec-ch-ua-full-version' || lk === 'sec-ch-ua-full-version-list') {
+              lk === 'sec-ch-ua-platform-version' || lk === 'sec-ch-ua-full-version' ||
+              lk === 'sec-ch-ua-full-version-list' || lk === 'sec-ch-ua-arch' ||
+              lk === 'sec-ch-ua-bitness' || lk === 'sec-ch-ua-model') {
             delete h[k];
           }
         }
