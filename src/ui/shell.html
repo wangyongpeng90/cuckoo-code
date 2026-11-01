@@ -33157,6 +33157,26 @@ body {
     "(\u5171 {total} \u4E2A\u5339\u914D\uFF0C\u53EA\u5217\u4E86\u524D {shown} \u4E2A\uFF1B\u7F29\u5C0F pattern \u6216\u6307\u5B9A path \u80FD\u770B\u5230\u66F4\u591A)",
     "(\u622A\u65AD\u4E86\uFF1A{total} \u4E2A\u91CC\u53EA\u663E\u793A {shown} \u4E2A\uFF1B\u7F29\u5C0F\u8303\u56F4\u80FD\u770B\u5230\u66F4\u591A)"
   ];
+  var DEFAULT_WRITE_FOOTER_CREATE = [
+    "\u5DF2\u521B\u5EFA {path}",
+    "\u65B0\u5EFA\u597D\u4E86\uFF1A{path}",
+    "{path} \u5DF2\u521B\u5EFA",
+    "\u6587\u4EF6\u5DF2\u5199\u597D\uFF1A{path}",
+    "\u641E\u5B9A\uFF0C{path} \u65B0\u5EFA\u5B8C\u6210",
+    "\u5DF2\u751F\u6210 {path}",
+    "{path} \u521B\u5EFA\u5B8C\u6BD5",
+    "\u5199\u597D\u4E86\uFF0C\u6587\u4EF6\u5728 {path}"
+  ];
+  var DEFAULT_WRITE_FOOTER_UPDATE = [
+    "\u5DF2\u66F4\u65B0 {path}",
+    "\u6539\u597D\u4E86\uFF1A{path}",
+    "{path} \u5DF2\u66F4\u65B0",
+    "\u6587\u4EF6\u5DF2\u8986\u76D6\uFF1A{path}",
+    "\u641E\u5B9A\uFF0C{path} \u66F4\u65B0\u5B8C\u6210",
+    "\u5DF2\u91CD\u5199 {path}",
+    "{path} \u66F4\u65B0\u5B8C\u6BD5",
+    "\u5199\u5B8C\u4E86\uFF0C\u6587\u4EF6\u5728 {path}"
+  ];
 
   // node_modules/echarts/node_modules/tslib/tslib.es6.js
   var extendStatics = function(d, b) {
@@ -116122,6 +116142,12 @@ body {
       makeFooterBlock("globFooterFull", "\u672A\u622A\u65AD\u65F6\u7684\u7ED3\u5C3E", "{count} \u5339\u914D\u6587\u4EF6\u6570", DEFAULT_GLOB_FOOTER_FULL),
       makeFooterBlock("globFooterTruncated", "\u7ED3\u679C\u88AB\u622A\u65AD\u65F6\u7684\u7ED3\u5C3E", "{shown} \u5DF2\u663E\u793A\u6570\u3001{total} \u603B\u6570", DEFAULT_GLOB_FOOTER_TRUNCATED)
     );
+    const writeFooter = (0, import_react8.createElement)(
+      "div",
+      { className: "ck-card" },
+      makeFooterBlock("writeFooterCreate", "\u65B0\u5EFA\u6587\u4EF6\u65F6\u7684\u786E\u8BA4", "{path} \u6587\u4EF6\u8DEF\u5F84", DEFAULT_WRITE_FOOTER_CREATE),
+      makeFooterBlock("writeFooterUpdate", "\u8986\u76D6\u5DF2\u6709\u6587\u4EF6\u65F6\u7684\u786E\u8BA4", "{path} \u6587\u4EF6\u8DEF\u5F84", DEFAULT_WRITE_FOOTER_UPDATE)
+    );
     const formatSize = (n) => n < 1024 ? n + " B" : n < 1024 * 1024 ? (n / 1024).toFixed(1) + " KB" : (n / 1024 / 1024).toFixed(2) + " MB";
     const toggleLog = async (v) => {
       if (!api.setLogEnabled) return;
@@ -116197,6 +116223,8 @@ body {
       // [261101-ym9l98]
       ["glob-footer", "\u6587\u4EF6\u641C\u7D22\u683C\u5F0F"],
       // [261101-ym9l98]
+      ["write-footer", "\u6587\u4EF6\u5199\u5165\u683C\u5F0F"],
+      // [261101-ym9l98]
       ["logs", "\u65E5\u5FD7"],
       ["usage", "\u7528\u91CF\u7EDF\u8BA1"]
     ];
@@ -116219,6 +116247,7 @@ body {
     else if (active === "js-result-phrases") content = jsResultPhrases;
     else if (active === "read-header") content = readHeader;
     else if (active === "glob-footer") content = globFooter;
+    else if (active === "write-footer") content = writeFooter;
     else if (active === "logs") content = logs;
     else if (active === "usage") content = (0, import_react8.createElement)(UsageStats);
     else if (active.startsWith("plugin:")) {

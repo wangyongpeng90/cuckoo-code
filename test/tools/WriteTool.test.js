@@ -18,9 +18,25 @@ test('parseWriteArgs content 非字符串', () => {
   assert.throws(() => parseWriteArgs('a.txt', null), /content must be a string/);
 });
 
-test('formatWriteOutput create/update', () => {
-  assert.match(formatWriteOutput('a.txt', 'create'), /Created file/);
-  assert.match(formatWriteOutput('a.txt', 'update'), /Updated file/);
-  assert.match(formatWriteOutput('a.txt', 'create'), /<path>a.txt<\/path>/);
+test('formatWriteOutput 新建：含路径，无 XML 标签', () => {
+  const s = formatWriteOutput('a.txt', 'create');
+  assert.ok(s.indexOf('a.txt') >= 0, '应含文件路径：' + s);
+  assert.ok(s.indexOf('<path>') < 0, '不应出现 <path>：' + s);
+  assert.ok(s.indexOf('<content>') < 0, '不应出现 <content>：' + s);
+});
+
+test('formatWriteOutput 更新：含路径，无 XML 标签', () => {
+  const s = formatWriteOutput('a.txt', 'update');
+  assert.ok(s.indexOf('a.txt') >= 0, '应含文件路径：' + s);
+  assert.ok(s.indexOf('<path>') < 0, '不应出现 <path>：' + s);
+});
+
+test('formatWriteOutput 新建与更新措辞不同（来自两套池）', () => {
+  const seen = new Set();
+  for (let i = 0; i < 200; i++) seen.add(formatWriteOutput('x.txt', 'create'));
+  assert.ok(seen.size >= 3, '新建池应有多条可用，实际 ' + seen.size);
+  const seenU = new Set();
+  for (let i = 0; i < 200; i++) seenU.add(formatWriteOutput('x.txt', 'update'));
+  assert.ok(seenU.size >= 3, '更新池应有多条可用，实际 ' + seenU.size);
 });
 

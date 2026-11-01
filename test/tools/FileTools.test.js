@@ -54,10 +54,12 @@ test('WriteTool 新建与覆盖', async () => {
   const tool = new WriteTool();
   const r1 = await tool.execute({ filePath: 'b.txt', content: 'one', projectDir: tmpRoot });
   assert.strictEqual(r1.success, true);
-  assert.match(r1.data, /Created file/);
+  assert.ok(r1.data.indexOf('b.txt') >= 0, '新建结果应含路径：' + r1.data);
+  assert.ok(r1.data.indexOf('<path>') < 0, '不应再是 XML 格式：' + r1.data);
   const r2 = await tool.execute({ filePath: 'b.txt', content: 'two', projectDir: tmpRoot });
   assert.strictEqual(r2.success, true);
-  assert.match(r2.data, /Updated file/);
+  assert.ok(r2.data.indexOf('b.txt') >= 0, '更新结果应含路径：' + r2.data);
+  assert.ok(r2.data.indexOf('<path>') < 0, '不应再是 XML 格式：' + r2.data);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'b.txt'), 'utf8'), 'two');
 });
 

@@ -83,7 +83,37 @@ doc 回答「是什么」，usage 回答「怎么用」，语义不同。并进 
 ### D5 {{TOOL_SECTIONS}} 标题写进占位符值
 与 {{MCP_SECTION}} / {{SKILLS_SECTION}} 等现有惯例一致：无内容时返回空串，避免出现空标题。
 
+## 扩展一：write 输出去掉 XML 格式（2 个池）
+
+### 背景
+`write` 原本返回 `<path>..</path><type>file</type><content>Created file</content>`，是最后残留的 XML 格式输出。用户要求改为可配置模板。
+
+### 两套池
+
+| 键 | 场景 | 占位符 |
+|---|---|---|
+| `cuckoo-write-footer-create` | 新建文件 | `{path}` |
+| `cuckoo-write-footer-update` | 覆盖已有文件 | `{path}` |
+
+内置默认各 8 条，例如「已创建 {path}」「改好了：{path}」。
+
+### 决策
+- **D6 分两个池而非一个**：新建与更新语义不同（「写好了」vs「改好了」），且 `write` 内部本来就有 `operation` 区分。
+- **D7 复用 `readSettingRaw`**：与 glob 一样复用 read.ts 导出的读取函数，不重复注入。
+- **D8 设置页新开「文件写入格式」分类**：与「文件读取格式」「文件搜索格式」并列，按工具分区。
+
+### 落地位置
+| 文件 | 职责 |
+|---|---|
+| `src/infra/read-header-templates.ts` | 2 个 write 池 + 键名 |
+| `src/tools/impl/write.ts` | `formatWriteOutput` 改走池；doc/usage 去掉 XML 描述 |
+| `src/overlay/panels/settings.ts` | SettingsData + 读写 + 重置 |
+| `src/ui/shell/scripts/pages/settings-react.tsx` | 新分类「文件写入格式」 |
+| `src/prompt/*.md` | 4 个模板的系统返回示例去掉 XML 块 |
+| `test/tools/WriteTool.test.js`、`FileTools.test.js` | 断言改为检查路径存在 + 无 XML 标签 |
+
 ## 遗留
 
 1. 未真机验证：需 npm start 确认 AI 看到的新 prompt 结构
 2. src/app/ipc/session.ts 有一处无关的未提交改动（文件树节点上限 5000→50000），不属本需求
+3. edit 工具输出仍是英文（`The file ... has been updated`），本次未动

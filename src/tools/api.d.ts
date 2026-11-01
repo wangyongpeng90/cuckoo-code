@@ -82,9 +82,9 @@ declare function readLines(filePath: string, options?: ReadOptions): Promise<Rea
 
 /**
  * 创建或完全覆盖 UTF-8 文本文件。
- * 返回格式化 envelope：<path>...</path><type>file</type><content>Created/Updated file</content>
+ * 返回一句确认（含文件路径），具体措辞可在设置里自定义。
  *
- * 使用 write 工具创建文件或完全替换文件内容。已有文件会被覆盖，所以覆盖前先 read 文件，针对局部修改优先用 edit。注意：read 输出的内容带行号和 footer，写入的 content 必须是文件原始内容，不要包含行号、<path>/<content> 包装或 footer 提示。
+ * 使用 write 工具创建文件或完全替换文件内容。已有文件会被覆盖，所以覆盖前先 read 文件，针对局部修改优先用 edit。注意：read 输出的内容带行号和 footer，写入的 content 必须是文件原始内容，不要包含行号或 footer 提示。
  * @param filePath 相对（基于项目根目录）或绝对路径
  * @param content 完整 UTF-8 文本内容；空字符串合法（写入空文件）
  * @throws 路径为空、写入失败时抛出异常

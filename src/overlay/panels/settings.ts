@@ -13,9 +13,11 @@ import {
   READ_HEADER_FULL_KEY, READ_HEADER_PARTIAL_KEY,
   READ_FOOTER_FULL_KEY, READ_FOOTER_PARTIAL_KEY, READ_FOOTER_CAPPED_KEY,
   GLOB_FOOTER_FULL_KEY, GLOB_FOOTER_TRUNCATED_KEY,
+  WRITE_FOOTER_CREATE_KEY, WRITE_FOOTER_UPDATE_KEY,
   DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL,
   DEFAULT_READ_FOOTER_FULL, DEFAULT_READ_FOOTER_PARTIAL, DEFAULT_READ_FOOTER_CAPPED,
   DEFAULT_GLOB_FOOTER_FULL, DEFAULT_GLOB_FOOTER_TRUNCATED,
+  DEFAULT_WRITE_FOOTER_CREATE, DEFAULT_WRITE_FOOTER_UPDATE,
 } from '../../infra/read-header-templates.js';
 
 /** 打开设置弹窗：从 localStorage 加载配置到输入框 */
@@ -194,6 +196,11 @@ interface SettingsData {
   globFooterFull: string;
   /** glob 结尾·截断（{shown} {total}） */
   globFooterTruncated: string;
+  // [261101-ym9l98] write 结尾（新建 / 覆盖更新两套池）
+  /** write 新建文件（{path}） */
+  writeFooterCreate: string;
+  /** write 覆盖更新（{path}） */
+  writeFooterUpdate: string;
 }
 
 // [261101-ym9l98] 保存/读取时归一化，保证单句写法不漏 {r}（否则成败信息会丢）
@@ -254,6 +261,8 @@ function getSettingsData(): SettingsData {
     readFooterCapped: getSharedSetting(READ_FOOTER_CAPPED_KEY) ?? DEFAULT_READ_FOOTER_CAPPED.join('\n'),
     globFooterFull: getSharedSetting(GLOB_FOOTER_FULL_KEY) ?? DEFAULT_GLOB_FOOTER_FULL.join('\n'),
     globFooterTruncated: getSharedSetting(GLOB_FOOTER_TRUNCATED_KEY) ?? DEFAULT_GLOB_FOOTER_TRUNCATED.join('\n'),
+    writeFooterCreate: getSharedSetting(WRITE_FOOTER_CREATE_KEY) ?? DEFAULT_WRITE_FOOTER_CREATE.join('\n'),
+    writeFooterUpdate: getSharedSetting(WRITE_FOOTER_UPDATE_KEY) ?? DEFAULT_WRITE_FOOTER_UPDATE.join('\n'),
   };
 }
 
@@ -353,6 +362,8 @@ async function applySettingsData(data: any): Promise<{ success: boolean; error?:
     ['readFooterCapped', READ_FOOTER_CAPPED_KEY, ''],
     ['globFooterFull', GLOB_FOOTER_FULL_KEY, ''],
     ['globFooterTruncated', GLOB_FOOTER_TRUNCATED_KEY, ''],
+    ['writeFooterCreate', WRITE_FOOTER_CREATE_KEY, ''],
+    ['writeFooterUpdate', WRITE_FOOTER_UPDATE_KEY, ''],
   ];
   for (const [field, key] of footerMap) {
     if (data && (data as any)[field] !== undefined) {
@@ -388,6 +399,7 @@ async function resetSettingsData(): Promise<SettingsData> {
     READ_HEADER_FULL_KEY, READ_HEADER_PARTIAL_KEY,
     READ_FOOTER_FULL_KEY, READ_FOOTER_PARTIAL_KEY, READ_FOOTER_CAPPED_KEY,
     GLOB_FOOTER_FULL_KEY, GLOB_FOOTER_TRUNCATED_KEY,
+    WRITE_FOOTER_CREATE_KEY, WRITE_FOOTER_UPDATE_KEY,
   ]);
   return getSettingsData();
 }

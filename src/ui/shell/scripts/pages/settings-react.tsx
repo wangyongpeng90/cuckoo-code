@@ -19,6 +19,7 @@ import {
   DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL,
   DEFAULT_READ_FOOTER_FULL, DEFAULT_READ_FOOTER_PARTIAL, DEFAULT_READ_FOOTER_CAPPED,
   DEFAULT_GLOB_FOOTER_FULL, DEFAULT_GLOB_FOOTER_TRUNCATED,
+  DEFAULT_WRITE_FOOTER_CREATE, DEFAULT_WRITE_FOOTER_UPDATE,
 } from '../../../../infra/read-header-templates.js';
 import * as echarts from 'echarts';
 
@@ -474,6 +475,12 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     makeFooterBlock('globFooterTruncated', '结果被截断时的结尾', '{shown} 已显示数、{total} 总数', DEFAULT_GLOB_FOOTER_TRUNCATED),
   );
 
+  // [261101-ym9l98] write 结尾模板（新建 / 覆盖更新两套池）
+  const writeFooter = createElement('div', { className: 'ck-card' },
+    makeFooterBlock('writeFooterCreate', '新建文件时的确认', '{path} 文件路径', DEFAULT_WRITE_FOOTER_CREATE),
+    makeFooterBlock('writeFooterUpdate', '覆盖已有文件时的确认', '{path} 文件路径', DEFAULT_WRITE_FOOTER_UPDATE),
+  );
+
   // ===== 日志分类（仅打包版有用）=====
   const formatSize = (n: number) => n < 1024 ? n + ' B' : n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / 1024 / 1024).toFixed(2) + ' MB';
   const toggleLog = async (v: boolean) => {
@@ -527,6 +534,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ['js-result-phrases', '工具结果回复语'],   // [261101-ym9l98]
     ['read-header', '文件读取格式'],          // [261101-ym9l98]
     ['glob-footer', '文件搜索格式'],          // [261101-ym9l98]
+    ['write-footer', '文件写入格式'],         // [261101-ym9l98]
     ['logs', '日志'],
     ['usage', '用量统计'],
   ];
@@ -552,6 +560,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   else if (active === 'js-result-phrases') content = jsResultPhrases;
   else if (active === 'read-header') content = readHeader;
   else if (active === 'glob-footer') content = globFooter;
+  else if (active === 'write-footer') content = writeFooter;
   else if (active === 'logs') content = logs;
   else if (active === 'usage') content = createElement(UsageStats);
   else if (active.startsWith('plugin:')) {

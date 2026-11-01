@@ -305,3 +305,33 @@ export const DEFAULT_GLOB_FOOTER_TRUNCATED: string[] = [
   '(共 {total} 个匹配，只列了前 {shown} 个；缩小 pattern 或指定 path 能看到更多)',
   '(截断了：{total} 个里只显示 {shown} 个；缩小范围能看到更多)',
 ];
+
+/** write 结尾·新建文件的键名 */
+export const WRITE_FOOTER_CREATE_KEY = 'cuckoo-write-footer-create';
+
+/** write 结尾·覆盖更新文件的键名 */
+export const WRITE_FOOTER_UPDATE_KEY = 'cuckoo-write-footer-update';
+
+/** write 新建文件默认池（{path}） */
+export const DEFAULT_WRITE_FOOTER_CREATE: string[] = [
+  '已创建 {path}',
+  '新建好了：{path}',
+  '{path} 已创建',
+  '文件已写好：{path}',
+  '搞定，{path} 新建完成',
+  '已生成 {path}',
+  '{path} 创建完毕',
+  '写好了，文件在 {path}',
+];
+
+/** write 覆盖更新默认池（{path}） */
+export const DEFAULT_WRITE_FOOTER_UPDATE: string[] = [
+  '已更新 {path}',
+  '改好了：{path}',
+  '{path} 已更新',
+  '文件已覆盖：{path}',
+  '搞定，{path} 更新完成',
+  '已重写 {path}',
+  '{path} 更新完毕',
+  '写完了，文件在 {path}',
+];
