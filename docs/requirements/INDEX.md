@@ -35,5 +35,6 @@
 | 028 | feature | [用户记忆功能默认关闭 + 开关](./028-memories-default-off.md) | review | feat/028-memories-default-off | 2026-10-15 |
 | 261028-3s2dbz | refactor | [Provider 契约重构（方法收敛与语义澄清）](./261028-3s2dbz-provider-refactor.md) | doing | refactor/261028-3s2dbz-provider-refactor | 2026-10-30 |
 | 261031-x7k9p2 | feature | [AI 用量统计图表（发送/回复/Token 趋势）](./261031-x7k9p2-ai-usage-stats.md) | doing | feat/261031-x7k9p2-ai-usage-stats | 2026-10-31 |
+| 261101-ym9l98 | feature | [工具结果回传文案拟人化（头部文案池 + 脚本标题模板池）](./261101-ym9l98-js-result-phrases.md) | doing | feat/261101-ym9l98-js-result-phrases | 2026-11-01 |
 
-共 30 个需求。
+共 31 个需求。

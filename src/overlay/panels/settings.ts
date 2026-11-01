@@ -4,6 +4,10 @@
  */
 import { showToast } from '../panel.js';
 import { state } from '../state.js';
+import {
+  DEFAULT_JS_RESULT_PHRASES, JS_RESULT_PHRASES_KEY,
+  DEFAULT_JS_RESULT_ITEM_TEMPLATES, JS_RESULT_ITEM_TEMPLATES_KEY,
+} from '../js-result-phrases.js';
 
 /** 打开设置弹窗：从 localStorage 加载配置到输入框 */
 function openSettings() {
@@ -160,6 +164,29 @@ interface SettingsData {
   aiInterceptPatterns: string;
   /** 拦截命中后发给 AI 的提示语 */
   aiInterceptPrompt: string;
+  // [261101-ym9l98] 工具结果回传文案两个池（空 = 回退 js-result-phrases.ts 的内置默认）
+  /** 工具结果回复语池（一行一条，{n} 替换为脚本数；空 = 使用内置默认） */
+  jsResultPhrases: string;
+  /** 脚本标题模板池（一行一条，{i} 替换为序号；空 = 使用内置默认） */
+  jsResultItemTemplates: string;
+}
+
+// [261101-ym9l98] 保存/读取时归一化，保证单句写法不漏 {r}（否则成败信息会丢）
+/**
+ * 归一化一条标题模板：空行保留；成对写法（含 |）原样返回；
+ * 单句写法缺 {r} 时末尾补上，避免丢成败信息。
+ */
+function normalizeItemTemplate(line: string): string {
+  const t = line.trim();
+  if (!t) return '';
+  if (t.indexOf('|') >= 0) return t;
+  return t.indexOf('{r}') >= 0 ? t : t + ' {r}';
+}
+
+/** 旧数据迁移：逐行归一化；无值时用内置默认 */
+function migrateItemTemplates(raw: string | null): string {
+  if (raw === null) return DEFAULT_JS_RESULT_ITEM_TEMPLATES.join('\n');
+  return raw.split('\n').map(normalizeItemTemplate).join('\n');
 }
 
 /** 读取当前设置（UI 单位：秒） */
@@ -192,6 +219,10 @@ function getSettingsData(): SettingsData {
     ssrfGuard: lsGet('cuckoo-ssrf-guard') === '1',
     aiInterceptPatterns: lsGet('cuckoo-ai-intercept-patterns') || DEFAULT_AI_INTERCEPT_PATTERNS,
     aiInterceptPrompt: lsGet('cuckoo-ai-intercept-prompt') || DEFAULT_AI_INTERCEPT_PROMPT,
+    // 未自定义时展示内置默认全文（首次"副本"呈现；保存后才落 localStorage）
+    // [261101-ym9l98] 未自定义时返回内置全文（首次"副本"呈现）；保存后才落 localStorage
+    jsResultPhrases: lsGet(JS_RESULT_PHRASES_KEY) ?? DEFAULT_JS_RESULT_PHRASES.join('\n'),
+    jsResultItemTemplates: migrateItemTemplates(lsGet(JS_RESULT_ITEM_TEMPLATES_KEY)),
   };
 }
 
@@ -266,6 +297,13 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     // AI 回复拦截规则：只写非空字段（保留空列表的语义——空 = 不拦截）
     if (data && data.aiInterceptPatterns !== undefined) localStorage.setItem('cuckoo-ai-intercept-patterns', String(data.aiInterceptPatterns || ''));
     if (data && data.aiInterceptPrompt !== undefined) localStorage.setItem('cuckoo-ai-intercept-prompt', String(data.aiInterceptPrompt || ''));
+    // 工具结果回复语池：允许写空（空 = 回退内置默认，由 js-result-phrases 决定）
+    if (data && data.jsResultPhrases !== undefined) localStorage.setItem(JS_RESULT_PHRASES_KEY, String(data.jsResultPhrases || ''));
+    if (data && data.jsResultItemTemplates !== undefined) {
+      // 逐行归一化：成对写法原样保留，单句缺 {r} 时补齐
+      const fixed = String(data.jsResultItemTemplates || '').split('\n').map(normalizeItemTemplate).join('\n');
+      localStorage.setItem(JS_RESULT_ITEM_TEMPLATES_KEY, fixed);
+    }
   } catch (err: any) {
     return { success: false, error: '写入失败: ' + err.message };
   }
@@ -284,6 +322,7 @@ function resetSettingsData(): SettingsData {
     'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
     'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
     'cuckoo-ai-intercept-patterns', 'cuckoo-ai-intercept-prompt',
+    JS_RESULT_PHRASES_KEY, JS_RESULT_ITEM_TEMPLATES_KEY,
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
   state.sendDelayMin = 2000;

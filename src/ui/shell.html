@@ -28250,13 +28250,13 @@ body {
   var import_react8 = __toESM(require_react(), 1);
 
   // src/ui/shell/scripts/use-slot.ts
-  var import_react3 = __toESM(require_react(), 1);
+  var import_react3 = __toESM(require_react());
 
   // src/ui/shell/scripts/dsh-client-runtime.ts
-  var React = __toESM(require_react(), 1);
-  var ReactDOM = __toESM(require_react_dom(), 1);
-  var ReactDOMClient = __toESM(require_client(), 1);
-  var jsxRuntime = __toESM(require_jsx_runtime(), 1);
+  var React = __toESM(require_react());
+  var ReactDOM = __toESM(require_react_dom());
+  var ReactDOMClient = __toESM(require_client());
+  var jsxRuntime = __toESM(require_jsx_runtime());
 
   // src/ui/shell/scripts/dsh-primitives/index.ts
   var dsh_primitives_exports = {};
@@ -30784,7 +30784,7 @@ body {
   };
 
   // src/ui/shell/scripts/use-hide-ai-view.ts
-  var import_react5 = __toESM(require_react(), 1);
+  var import_react5 = __toESM(require_react());
   function useHideAiView() {
     (0, import_react5.useEffect)(() => {
       const anyApi = api;
@@ -30905,6 +30905,32 @@ body {
       children ? (0, import_react7.createElement)("div", { className: "ck-set-row-control" }, children) : null
     );
   }
+
+  // src/overlay/js-result-phrases.ts
+  var DEFAULT_JS_RESULT_PHRASES = [
+    "\u521A\u8DD1\u5B8C {n} \u6BB5\u811A\u672C\uFF0C\u7ED3\u679C\u90FD\u5728\u8FD9\u513F\u4E86\uFF1A",
+    "\u8FD9 {n} \u6BB5\u4EE3\u7801\u6211\u6267\u884C\u5B8C\u4E86\uFF0C\u4F60\u770B\u770B\u7ED3\u679C\uFF1A",
+    "\u8DD1\u597D\u4E86\uFF0C{n} \u6BB5\u811A\u672C\u7684\u7ED3\u679C\u5982\u4E0B\u2014\u2014",
+    "{n} \u6BB5\u811A\u672C\u90FD\u6267\u884C\u5B8C\u6BD5\uFF0C\u4E0B\u9762\u662F\u5B83\u4EEC\u7684\u8F93\u51FA\uFF1A",
+    "{n} \u6BB5\u811A\u672C\u8DD1\u5B8C\u4E86\uFF0C\u8BE6\u60C5\u5982\u4E0B\u2014\u2014",
+    "\u6267\u884C\u7ED3\u679C\u6765\u4E86\uFF08\u5171 {n} \u6BB5\u811A\u672C\uFF09\uFF1A",
+    "{n} \u6BB5\u811A\u672C\u6267\u884C\u5B8C\u6BD5\uFF0C\u5177\u4F53\u7ED3\u679C\uFF1A",
+    "\u641E\u5B9A\uFF0C{n} \u6BB5\u811A\u672C\u7684\u7ED3\u679C\u90FD\u5728\u8FD9\u513F\uFF1A",
+    "\u4EE3\u7801\u8DD1\u5B8C\u4E86\uFF0C\u8FD9\u662F {n} \u6BB5\u811A\u672C\u4EA4\u56DE\u6765\u7684\u7ED3\u679C\uFF1A",
+    "{n} \u6BB5\u811A\u672C\u5DF2\u7ECF\u8DD1\u8FC7\u4E00\u8F6E\uFF0C\u7ED3\u679C\u6C47\u603B\u5982\u4E0B\uFF1A"
+  ];
+  var DEFAULT_JS_RESULT_ITEM_TEMPLATES = [
+    "\u5F53\u524D\u7B2C {i} \u6761\u4EE3\u7801\u5757\u5904\u7406\u5B8C\u4E86\uFF0C\u6210\u529F\uFF0C\u4F60\u770B\u4E0B\u7ED3\u679C|\u5F53\u524D\u7B2C {i} \u6761\u4EE3\u7801\u5757\u6CA1\u8DD1\u901A\uFF0C\u5931\u8D25\uFF0C\u5F97\u6539\u4E00\u4E0B",
+    "\u8FD9\u662F\u7B2C {i} \u5757\u4EE3\u7801\uFF0C\u6210\u529F\uFF0C\u7ED3\u679C\u662F|\u8FD9\u662F\u7B2C {i} \u5757\u4EE3\u7801\uFF0C\u5931\u8D25\uFF0C\u518D\u6765\u770B\u770B",
+    "\u7B2C {i} \u4E2A\u547D\u4EE4\u8DD1\u5B8C\u4E86\uFF0C\u6210\u529F\uFF0C\u7ED3\u679C\u5728\u4E0B\u9762|\u7B2C {i} \u4E2A\u547D\u4EE4\u8DD1\u5B8C\u4E86\uFF0C\u5931\u8D25\uFF0C\u770B\u770B\u54EA\u91CC\u4E0D\u5BF9",
+    "\u7B2C {i} \u4E2A\u7247\u6BB5\u6267\u884C\u5B8C\u6BD5\uFF0C\u6210\u529F\uFF0C\u4F60\u770B\u4E0B|\u7B2C {i} \u4E2A\u7247\u6BB5\u6267\u884C\u5B8C\u6BD5\uFF0C\u5931\u8D25\uFF0C\u9700\u8981\u518D\u5904\u7406\u4E0B",
+    "\u7B2C {i} \u6BB5\u4EE3\u7801\u6709\u7ED3\u679C\u4E86\uFF0C\u6210\u529F\uFF0C\u641E\u5B9A|\u7B2C {i} \u6BB5\u4EE3\u7801\u6709\u7ED3\u679C\u4E86\uFF0C\u5931\u8D25\uFF0C\u8FD8\u6CA1\u6210",
+    "\u5F53\u524D\u7B2C {i} \u5757\u4EE3\u7801\u8DD1\u5B8C\u5566\uFF0C\u6210\u529F\uFF0C\u8BF7\u67E5\u6536|\u5F53\u524D\u7B2C {i} \u5757\u4EE3\u7801\u8DD1\u5B8C\u5566\uFF0C\u5931\u8D25\uFF0C\u5F97\u518D\u8C03\u8C03",
+    "\u8FD9\u662F\u7B2C {i} \u4E2A\u64CD\u4F5C\uFF0C\u6210\u529F\uFF0C\u7ED3\u679C\u5982\u4E0B|\u8FD9\u662F\u7B2C {i} \u4E2A\u64CD\u4F5C\uFF0C\u5931\u8D25\uFF0C\u6CA1\u6210\u529F",
+    "\u7B2C {i} \u4E2A\u4EFB\u52A1\u7684\u7ED3\u679C\uFF0C\u6210\u529F\uFF0C\u5F80\u4E0B\u770B|\u7B2C {i} \u4E2A\u4EFB\u52A1\u7684\u7ED3\u679C\uFF0C\u5931\u8D25\uFF0C\u9700\u8981\u4FEE\u6B63",
+    "\u7B2C {i} \u6761\u4EE3\u7801\u5757\u5904\u7406\u5B8C\u4E86\uFF0C{r}\uFF0C\u4F60\u770B\u4E0B\u7ED3\u679C",
+    "\u8FD9\u662F\u7B2C {i} \u6761\u4EE3\u7801\u5757\uFF0C{r}\uFF0C\u7ED3\u679C\u5728\u4E0B\u9762"
+  ];
 
   // node_modules/echarts/node_modules/tslib/tslib.es6.js
   var extendStatics = function(d, b) {
@@ -113743,6 +113769,54 @@ body {
         (0, import_react8.createElement)("textarea", { className: "ck-set-textarea", rows: 3, value: data.aiInterceptPrompt || "", onChange: (e2) => setField("aiInterceptPrompt", e2.target.value) })
       )
     );
+    const jsResultPhrases = (0, import_react8.createElement)(
+      "div",
+      { className: "ck-card" },
+      (0, import_react8.createElement)(
+        "div",
+        { className: "ck-set-row-col" },
+        (0, import_react8.createElement)("div", { className: "ck-set-row-label" }, "\u5DE5\u5177\u7ED3\u679C\u56DE\u590D\u8BED\u6C60\uFF08\u6BCF\u884C\u4E00\u6761\uFF09"),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-row-desc" },
+          "\u6267\u884C\u5B8C AI \u7684\u5DE5\u5177\u8C03\u7528\u540E\uFF0C\u56DE\u4F20\u7ED3\u679C\u65F6\u968F\u673A\u53D6\u4E00\u6761\u4F5C\u4E3A\u6D88\u606F\u5F00\u5934\u3002{n} \u4F1A\u66FF\u6362\u4E3A\u672C\u6B21\u811A\u672C\u6570\uFF1B\u6C60\u4E3A\u7A7A\u65F6\u4F7F\u7528\u5185\u7F6E\u6587\u6848\u3002"
+        ),
+        (0, import_react8.createElement)("textarea", {
+          className: "ck-set-textarea",
+          rows: 10,
+          value: data.jsResultPhrases || "",
+          onChange: (e2) => setField("jsResultPhrases", e2.target.value)
+        }),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-inline", style: { marginTop: "8px", justifyContent: "flex-end" } },
+          (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("jsResultPhrases", DEFAULT_JS_RESULT_PHRASES.join("\n")) }, "\u586B\u5165\u5185\u7F6E\u9ED8\u8BA4"),
+          (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("jsResultPhrases", "") }, "\u6E05\u7A7A")
+        )
+      ),
+      (0, import_react8.createElement)(
+        "div",
+        { className: "ck-set-row-col", style: { marginTop: "16px" } },
+        (0, import_react8.createElement)("div", { className: "ck-set-row-label" }, "\u811A\u672C\u6807\u9898\u6A21\u677F\u6C60\uFF08\u6BCF\u884C\u4E00\u6761\uFF09"),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-row-desc" },
+          "\u56DE\u4F20\u7ED3\u679C\u91CC\u6BCF\u6BB5\u811A\u672C\u7684\u6807\u9898\u884C\uFF0C\u6574\u884C\u5373\u6700\u7EC8\u8F93\u51FA\uFF0C\u540C\u4E00\u6279\u811A\u672C\u5171\u7528\u4E00\u4E2A\u6A21\u677F\u3002{i} \u66FF\u6362\u4E3A\u5E8F\u53F7\uFF08\u4ECE 1 \u5F00\u59CB\uFF09\u3002\u5199\u6CD5\u6709\u4E24\u79CD\uFF1A\u2460 \u7528 | \u5206\u9694\u6210\u529F\u548C\u5931\u8D25\uFF0C\u5982\u300C\u7B2C {i} \u5757\u4EE3\u7801\u8DD1\u5B8C\u4E86\uFF0C\u6210\u529F\uFF0C\u4F60\u770B\u4E0B|\u7B2C {i} \u5757\u4EE3\u7801\u6CA1\u8DD1\u901A\uFF0C\u5931\u8D25\uFF0C\u5F97\u6539\u6539\u300D\uFF1B\u2461 \u5355\u53E5\u7528 {r} \u8868\u793A\u6210\u529F/\u5931\u8D25\u3002\u6C60\u4E3A\u7A7A\u65F6\u4F7F\u7528\u5185\u7F6E\u6A21\u677F\u3002"
+        ),
+        (0, import_react8.createElement)("textarea", {
+          className: "ck-set-textarea",
+          rows: 10,
+          value: data.jsResultItemTemplates || "",
+          onChange: (e2) => setField("jsResultItemTemplates", e2.target.value)
+        }),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-inline", style: { marginTop: "8px", justifyContent: "flex-end" } },
+          (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("jsResultItemTemplates", DEFAULT_JS_RESULT_ITEM_TEMPLATES.join("\n")) }, "\u586B\u5165\u5185\u7F6E\u9ED8\u8BA4"),
+          (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("jsResultItemTemplates", "") }, "\u6E05\u7A7A")
+        )
+      )
+    );
     const formatSize = (n) => n < 1024 ? n + " B" : n < 1024 * 1024 ? (n / 1024).toFixed(1) + " KB" : (n / 1024 / 1024).toFixed(2) + " MB";
     const toggleLog = async (v) => {
       if (!api.setLogEnabled) return;
@@ -113812,6 +113886,8 @@ body {
       ["attach", "\u9644\u4EF6\u4E0A\u4F20\u95F4\u9694"],
       ["security", "\u7F51\u7EDC\u5B89\u5168"],
       ["ai-intercept", "AI \u56DE\u590D\u62E6\u622A"],
+      ["js-result-phrases", "\u5DE5\u5177\u7ED3\u679C\u56DE\u590D\u8BED"],
+      // [261101-ym9l98]
       ["logs", "\u65E5\u5FD7"],
       ["usage", "\u7528\u91CF\u7EDF\u8BA1"]
     ];
@@ -113831,6 +113907,7 @@ body {
     else if (active === "attach") content = attachDelay;
     else if (active === "security") content = security;
     else if (active === "ai-intercept") content = aiIntercept;
+    else if (active === "js-result-phrases") content = jsResultPhrases;
     else if (active === "logs") content = logs;
     else if (active === "usage") content = (0, import_react8.createElement)(UsageStats);
     else if (active.startsWith("plugin:")) {

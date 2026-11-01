@@ -14,6 +14,7 @@ import { SlotErrorBoundary } from '../components/slot-error-boundary.js';
 import { useHideAiView } from '../use-hide-ai-view.js';
 import { Select } from '../components/select.js';
 import { SettingRow } from '../components/setting-row.js';
+import { DEFAULT_JS_RESULT_PHRASES, DEFAULT_JS_RESULT_ITEM_TEMPLATES } from '../../../../overlay/js-result-phrases.js';
 import * as echarts from 'echarts';
 
 const SETTINGS_SLOT = 'settings.section';
@@ -375,6 +376,38 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ),
   );
 
+  // [261101-ym9l98] 工具结果回传文案两个池（头部文案 + 脚本标题模板），同分类上下排列
+  const jsResultPhrases = createElement('div', { className: 'ck-card' },
+    createElement('div', { className: 'ck-set-row-col' },
+      createElement('div', { className: 'ck-set-row-label' }, '工具结果回复语池（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        '执行完 AI 的工具调用后，回传结果时随机取一条作为消息开头。{n} 会替换为本次脚本数；池为空时使用内置文案。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 10,
+        value: data.jsResultPhrases || '',
+        onChange: (e: any) => setField('jsResultPhrases', e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField('jsResultPhrases', DEFAULT_JS_RESULT_PHRASES.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField('jsResultPhrases', '') }, '清空'),
+      ),
+    ),
+    createElement('div', { className: 'ck-set-row-col', style: { marginTop: '16px' } },
+      createElement('div', { className: 'ck-set-row-label' }, '脚本标题模板池（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        '回传结果里每段脚本的标题行，整行即最终输出，同一批脚本共用一个模板。{i} 替换为序号（从 1 开始）。写法有两种：① 用 | 分隔成功和失败，如「第 {i} 块代码跑完了，成功，你看下|第 {i} 块代码没跑通，失败，得改改」；② 单句用 {r} 表示成功/失败。池为空时使用内置模板。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 10,
+        value: data.jsResultItemTemplates || '',
+        onChange: (e: any) => setField('jsResultItemTemplates', e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField('jsResultItemTemplates', DEFAULT_JS_RESULT_ITEM_TEMPLATES.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField('jsResultItemTemplates', '') }, '清空'),
+      ),
+    ),
+  );
+
   // ===== 日志分类（仅打包版有用）=====
   const formatSize = (n: number) => n < 1024 ? n + ' B' : n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / 1024 / 1024).toFixed(2) + ' MB';
   const toggleLog = async (v: boolean) => {
@@ -425,6 +458,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ['attach', '附件上传间隔'],
     ['security', '网络安全'],
     ['ai-intercept', 'AI 回复拦截'],
+    ['js-result-phrases', '工具结果回复语'],   // [261101-ym9l98]
     ['logs', '日志'],
     ['usage', '用量统计'],
   ];
@@ -447,6 +481,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   else if (active === 'attach') content = attachDelay;
   else if (active === 'security') content = security;
   else if (active === 'ai-intercept') content = aiIntercept;
+  else if (active === 'js-result-phrases') content = jsResultPhrases;
   else if (active === 'logs') content = logs;
   else if (active === 'usage') content = createElement(UsageStats);
   else if (active.startsWith('plugin:')) {
