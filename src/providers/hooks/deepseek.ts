@@ -449,6 +449,7 @@ function install(): void {
       }
       if (!isCompletion(url, method)) return p;
       userStopped = false; // 新的 completion 开始：复位用户停止标志
+
       var fetchSessionId = getSessionIdFromUrl(); // 发起时记录会话
       return p.then(function (response) {
         try {

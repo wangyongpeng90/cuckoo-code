@@ -14,6 +14,7 @@ import { SlotErrorBoundary } from '../components/slot-error-boundary.js';
 import { useHideAiView } from '../use-hide-ai-view.js';
 import { Select } from '../components/select.js';
 import { SettingRow } from '../components/setting-row.js';
+import * as echarts from 'echarts';
 
 const SETTINGS_SLOT = 'settings.section';
 
@@ -35,6 +36,143 @@ function ToggleRow({ label, desc, checked, onChange }: { label: string; desc?: s
       createElement('input', { type: 'checkbox', checked, onChange: (e: any) => onChange(e.target.checked) }),
       createElement('span', { className: 'ck-switch-track' }),
     ),
+  );
+}
+
+
+/** [261031-x7k9p2] 用量统计图表组件 */
+function UsageStats() {
+  const chartRef = useRef<HTMLDivElement>(null);
+  const chartInst = useRef<any>(null);
+  const [granularity, setGranularity] = useState<'day'|'hour'|'minute'>('day');
+  const [loading, setLoading] = useState(false);
+  const [profiles, setProfiles] = useState<any[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState<string>('');
+
+  const getDefaultStart = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  };
+  const getDefaultEnd = () => {
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+  };
+
+  const [startTime, setStartTime] = useState<string>(getDefaultStart());
+  const [endTime, setEndTime] = useState<string>(getDefaultEnd());
+
+  useEffect(() => {
+    if (api.listProfiles) {
+      api.listProfiles().then((res: any) => {
+        if (res && res.success && res.profiles) {
+          setProfiles(res.profiles);
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  const loadData = useCallback(async (g: 'day'|'hour'|'minute', pId: string, sTime: string, eTime: string) => {
+    if (!api.getUsageStats) return;
+    setLoading(true);
+    try {
+      const startStr = sTime.replace('T', ' ') + ':00';
+      const endStr = eTime.replace('T', ' ') + ':59';
+
+      const res = await api.getUsageStats({ granularity: g, startTime: startStr, endTime: endStr, profileId: pId || null });
+      if (res && res.success && chartInst.current) {
+        const data = res.data || [];
+        const xData = data.map((d: any) => {
+          if (g === 'day') return d.time_label.slice(5); // MM-DD
+          if (g === 'hour') return d.time_label.slice(11) + ':00'; // HH:00
+          return d.time_label.slice(11, 16); // HH:mm
+        });
+        const sendData = data.map((d: any) => d.send_count);
+        const replyData = data.map((d: any) => d.reply_count);
+        const tokenData = data.map((d: any) => d.diff_token);
+
+        const cs = getComputedStyle(document.documentElement);
+        const textColor = cs.getPropertyValue('--ck-text').trim() || '#333';
+        const dimColor = cs.getPropertyValue('--ck-text-dim').trim() || '#666';
+        const borderColor = cs.getPropertyValue('--ck-border').trim() || '#eee';
+        const bgColor = cs.getPropertyValue('--ck-bg').trim() || '#fff';
+
+        chartInst.current.setOption({
+          tooltip: { 
+            trigger: 'axis',
+            backgroundColor: bgColor,
+            borderColor: borderColor,
+            textStyle: { color: textColor }
+          },
+          legend: { 
+            data: ['发送数', '回复数', '消耗 Token'], 
+            textStyle: { color: textColor },
+            top: 0,
+            right: 10
+          },
+          grid: { left: '3%', right: '4%', bottom: '3%', top: '40px', containLabel: true },
+          xAxis: { type: 'category', data: xData, axisLabel: { color: dimColor } },
+          yAxis: [
+            { type: 'value', axisLabel: { color: dimColor }, splitLine: { lineStyle: { color: borderColor } } },
+            { type: 'value', axisLabel: { color: dimColor }, splitLine: { show: false } }
+          ],
+          series: [
+            { name: '发送数', type: 'line', smooth: true, data: sendData, itemStyle: { color: '#3b82f6' } },
+            { name: '回复数', type: 'line', smooth: true, data: replyData, itemStyle: { color: '#10b981' } },
+            { name: '消耗 Token', type: 'line', smooth: true, yAxisIndex: 1, data: tokenData, itemStyle: { color: '#f59e0b' } }
+          ]
+        });
+      }
+    } catch (_) { /* ignore */ } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!chartRef.current) return;
+    if (!chartInst.current) {
+      chartInst.current = echarts.init(chartRef.current);
+    }
+    loadData(granularity, selectedProfile, startTime, endTime);
+    
+    const handleResize = () => chartInst.current?.resize();
+    window.addEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      chartInst.current?.dispose();
+      chartInst.current = null;
+    };
+  }, [granularity, selectedProfile, startTime, endTime, loadData]);
+
+  return createElement('div', { className: 'ck-card', style: { height: '500px', display: 'flex', flexDirection: 'column' } },
+    createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '15px' } },
+      createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' } },
+        createElement('span', { style: { fontSize: '13px', color: 'var(--ck-text)' } }, '时间范围：'),
+        createElement('input', { type: 'datetime-local', className: 'ck-set-input ck-set-input-sm', style: { width: 'auto' }, value: startTime, onChange: (e: any) => setStartTime(e.target.value) }),
+        createElement('span', { style: { color: 'var(--ck-text-dim)' } }, '至'),
+        createElement('input', { type: 'datetime-local', className: 'ck-set-input ck-set-input-sm', style: { width: 'auto' }, value: endTime, onChange: (e: any) => setEndTime(e.target.value) }),
+        createElement('div', { style: { flex: 1 } }),
+        createElement(Select, {
+          value: selectedProfile,
+          options: [
+            { value: '', label: '所有窗口' },
+            ...profiles.map((p: any) => ({ value: p.id, label: p.name || '未命名窗口' }))
+          ],
+          onChange: (v: string) => setSelectedProfile(v)
+        })
+      ),
+      createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '10px' } },
+        createElement('div', { style: { display: 'flex', gap: '8px' } },
+          createElement('button', { className: 'ck-btn ' + (granularity === 'day' ? 'ck-btn-primary' : ''), onClick: () => setGranularity('day'), disabled: loading }, '按天'),
+          createElement('button', { className: 'ck-btn ' + (granularity === 'hour' ? 'ck-btn-primary' : ''), onClick: () => setGranularity('hour'), disabled: loading }, '按时'),
+          createElement('button', { className: 'ck-btn ' + (granularity === 'minute' ? 'ck-btn-primary' : ''), onClick: () => setGranularity('minute'), disabled: loading }, '按分')
+        ),
+        createElement('span', { style: { fontSize: '12px', color: 'var(--ck-text-dim)' } }, '（左轴：消息数量，右轴：Token 消耗）')
+      )
+    ),
+    createElement('div', { ref: chartRef, style: { flex: 1, minHeight: 0 } })
   );
 }
 
@@ -288,6 +426,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ['security', '网络安全'],
     ['ai-intercept', 'AI 回复拦截'],
     ['logs', '日志'],
+    ['usage', '用量统计'],
   ];
 
   // 当前分类标题（右侧内容区顶部显示）
@@ -309,6 +448,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   else if (active === 'security') content = security;
   else if (active === 'ai-intercept') content = aiIntercept;
   else if (active === 'logs') content = logs;
+  else if (active === 'usage') content = createElement(UsageStats);
   else if (active.startsWith('plugin:')) {
     const key = active.slice('plugin:'.length);
     const item = pluginSections.find((s: any) => (s.pluginId + ':' + s.id) === key);

@@ -335,6 +335,16 @@ function startInterceptObserver(): void {
       if (!detail) return;
       // 诊断日志已移除（高频 JSON.stringify + 每回复输出，会拖慢页面/累积日志）
       // 用户主动停止：不处理，也不通知监听器（等待方按超时处理）
+      // [261031-x7k9p2] 记录 error / stopped 事件（只要回了数据就算）
+      if (detail.status === 'error' || detail.status === 'stopped') {
+        try {
+          const api = (window as any).electronAPI;
+          if (api && api.logAiUsage) {
+            api.logAiUsage({ eventType: 'reply', providerId: 'deepseek', totalToken: 0, diffToken: 0 });
+          }
+        } catch (_) {}
+      }
+
       if (detail.status === 'stopped') {
         console.log('[Cuckoo Code][拦截] 检测到用户停止生成，忽略该回复');
         try { watchdog.onResponseReceived('stopped'); } catch (_) { /* ignore */ }
@@ -345,6 +355,24 @@ function startInterceptObserver(): void {
       // 缓存最近一次完整回复文本，供手动解析复用（不依赖 DOM）
       lastInterceptedText = detail.text || '';
       lastRespDbg = detail.dbg || null;
+      // [261031-x7k9p2] 记录 reply 事件
+      try {
+        const api = (window as any).electronAPI;
+        if (api && api.logAiUsage) {
+          let total = 0, diff = 0;
+          if (detail.tokenUsage && typeof detail.tokenUsage.accumulatedTokens === 'number') {
+            total = detail.tokenUsage.accumulatedTokens;
+            diff = total; // diff 计算在主进程做
+          }
+          api.logAiUsage({
+            eventType: 'reply',
+            providerId: 'deepseek',
+            totalToken: total,
+            diffToken: diff
+          });
+        }
+      } catch (_) {}
+
       // 通知监听器（每次成功回复都触发），携带服务端权威数据
       const meta = { tokenUsage: detail.tokenUsage || null, msgIds: detail.msgIds || null };
       for (const cb of responseListeners) {

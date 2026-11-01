@@ -4,7 +4,22 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 // 当前数据库结构版本（每次改表结构 +1）
-const CURRENT_DB_VERSION = 2;
+const CURRENT_DB_VERSION = 3;
+
+// [261031-x7k9p2] AI 用量统计日志表
+const AI_USAGE_LOGS_DDL = `
+  CREATE TABLE IF NOT EXISTS ai_usage_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    logic_id TEXT,
+    profile_id TEXT,
+    provider_id TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    total_token INTEGER DEFAULT 0,
+    diff_token INTEGER DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_ai_usage_time ON ai_usage_logs(created_at);
+`;
 
 // [022] workspaces 表 DDL——启动时建表（和 sessions 一致）
 // 决策 9.5：持久化注册表。详见 docs/dsh-compat-decisions.md 9.5
@@ -62,6 +77,7 @@ function initDatabase(userDataDir: string): DatabaseSync {
         updated_at TEXT
       );
       ${WORKSPACES_DDL}
+      ${AI_USAGE_LOGS_DDL}
     `);
     dbVersion = CURRENT_DB_VERSION;
     db.exec(`PRAGMA user_version = ${dbVersion};`);
@@ -84,6 +100,9 @@ function initDatabase(userDataDir: string): DatabaseSync {
   // [022] 老库补建 workspaces 表（幂等，已在全新安装分支建过则无副作用）
   // 决策 9.5：workspaces 表随会话表一起在启动时建好，避免"谁用谁建"的补丁感
   db.exec(WORKSPACES_DDL);
+
+  // [261031-x7k9p2] 老库补建 ai_usage_logs 表
+  db.exec(AI_USAGE_LOGS_DDL);
 
   return db;
 }

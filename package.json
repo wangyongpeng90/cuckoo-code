@@ -165,6 +165,7 @@
     "@larksuiteoapi/node-sdk": "^1.74.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@vscode/ripgrep": "^1.18.0",
+    "echarts": "^6.1.0",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "esbuild": "^0.28.2",

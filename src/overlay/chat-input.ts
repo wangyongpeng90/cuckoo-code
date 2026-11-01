@@ -484,6 +484,15 @@ async function insertSnippet(content: string, autoSend?: boolean): Promise<boole
 function triggerSend(input: any): void {
   const provider = getCurrentProvider();
 
+  // [261031-x7k9p2] 记录 send 事件
+  try {
+    const api = (window as any).electronAPI;
+    if (api && api.logAiUsage) {
+      api.logAiUsage({ eventType: 'send', providerId: provider ? provider.id : 'unknown' });
+      console.log('[Cuckoo Code][Usage] 已上报发送事件');
+    }
+  } catch (e) { console.error('[Cuckoo Code][Usage] 上报发送失败', e); }
+
   // 方法 0: 站点原生发送（智谱等免疫合成事件的平台，经主进程注入真实级输入）
   if (provider && typeof provider.triggerSend === 'function') {
     let result: any = null;
