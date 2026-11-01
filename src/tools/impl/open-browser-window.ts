@@ -9,6 +9,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 13,
     category: 'WebFetch',
     name: 'openBrowserWindow',
+    usage: '使用 openBrowserWindow 打开 Electron 浏览器窗口。返回 windowId，后续用 injectJS(windowId, code) 注入 JS 并获取返回值。可传自定义 id 便于语义化管理。',
     doc: '打开一个 Electron 浏览器窗口并返回窗口 ID。 打开浏览器后可以使用 injectJS 工具对窗口内容注入js , 以具备操控网页能力',
     params: 'url: string, options?: { id?: string; width?: number; height?: number }',
     returns: 'Promise<any>',
@@ -38,14 +39,6 @@ class OpenBrowserWindowTool extends Tool {
       },
       'openBrowserWindow(url, options?)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:openBrowserWindow',
-      order: 112,
-      text: '使用 openBrowserWindow 打开 Electron 浏览器窗口。返回 windowId，后续用 injectJS(windowId, code) 注入 JS 并获取返回值。可传自定义 id 便于语义化管理。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

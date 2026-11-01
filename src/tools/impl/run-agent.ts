@@ -10,6 +10,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 14,
     category: 'Agent',
     name: 'runAgent',
+    usage: '使用 runAgent(name, task) 把任务委派给子代理。子代理在独立上下文中完成，只把结果摘要返回。',
     doc: '把任务委派给一个子代理（独立上下文的 AI 对话）执行，返回子代理的最终结果摘要。适合大范围搜索/分析、独立子任务，避免污染当前上下文。',
     params: 'name: string, task: string',
     returns: 'Promise<string>',
@@ -63,14 +64,6 @@ class RunAgentTool extends Tool {
       },
       'runAgent(name, task)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:runAgent',
-      order: 113,
-      text: '使用 runAgent(name, task) 把任务委派给子代理。子代理在独立上下文中完成，只把结果摘要返回。',
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

@@ -34,6 +34,7 @@
 | 027 | feature | [用户记忆系统](./027-memories.md) | review | feat/024-memories | 2026-10-15 |
 | 028 | feature | [用户记忆功能默认关闭 + 开关](./028-memories-default-off.md) | review | feat/028-memories-default-off | 2026-10-15 |
 | 261031-x7k9p2 | feature | [AI 用量统计图表（发送/回复/Token 趋势）](./261031-x7k9p2-ai-usage-stats.md) | doing | feat/261031-x7k9p2-ai-usage-stats | 2026-10-31 |
+| 261101-lzrtxr | refactor | [工具描述收归 apiMetas（消除三处重复）](./261101-lzrtxr-tool-api-consolidate.md) | review | feat/261101-lzrtxr-tool-api-consolidate | 2026-11-01 |
 | 261101-ym9l98 | feature | [工具结果回传文案拟人化（含跨窗口通用存储与 read 首行模板）](./261101-ym9l98-js-result-phrases.md) | review | feat/261101-ym9l98-js-result-phrases | 2026-11-01 |
 
-共 30 个需求。
+共 31 个需求。

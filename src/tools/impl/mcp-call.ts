@@ -8,6 +8,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 16,
     category: 'MCP',
     name: 'mcpCall',
+    usage: '调用 MCP 工具时使用 mcpCall(server, tool, args)。使用前先通过 mcpListServers() 和 mcpGetTools() 查询可用能力。',
     doc: [
       '调用 MCP server 提供的工具。',
       '使用前先调用 mcpListServers() 和 mcpGetTools() 查询可用能力。',
@@ -44,14 +45,6 @@ class McpCallTool extends Tool {
       },
       'mcpCall(server, tool, args)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:mcpCall',
-      order: 118,
-      text: '调用 MCP 工具时使用 mcpCall(server, tool, args)。使用前先通过 mcpListServers() 和 mcpGetTools() 查询可用能力。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

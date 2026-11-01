@@ -38,6 +38,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 1,
     category: '文件读写',
     name: 'read',
+    usage: '使用 read 工具（而不是 cat 等 shell 命令）来查看文本文件。结果包含行号。使用 offset 和 limit 继续读取大文件。',
     types: [
       '/** read 的选项 */',
       'interface ReadOptions {',
@@ -243,14 +244,6 @@ class ReadTool extends Tool {
       },
       'read(filePath, options?)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:read',
-      order: 100,
-      text: '使用 read 工具（而不是 cat 等 shell 命令）来查看文本文件。结果包含行号。使用 offset 和 limit 继续读取大文件。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

@@ -71,7 +71,6 @@
 
 ---
 
-## 工具使用指导
 {{TOOL_SECTIONS}}
 
 ---
@@ -118,13 +117,6 @@ await write("src/utils/helper.js", content.replace("formatDate", "formatTime"));
 5. 不要输出 JSON、不要使用 JSON.stringify、不要转义引号
 6. 相对路径基于当前项目根目录解析
 7. 需要把中间结果告诉用户或下一步时，使用 log() 输出
-
-## 可用工具函数
-
-{{TOOLS_LIST}}
-
-> 每个工具函数都是异步的，必须用 await 调用。log() 用于输出中间结果，脚本最后的 return 值也会作为结果返回。
-> 完整的类型声明（每个函数的参数、返回值、抛错行为）见 systemPrompt.md 末尾的「工具 API 类型定义（TypeScript）」。
 
 ## 读取文件内容
 

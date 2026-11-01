@@ -25,6 +25,7 @@ export const apiMetas: ToolApiMeta[] = [
       '每次发送完整列表，替换之前的列表（无部分更新）。',
       '串行模式：最多一条 in_progress。',
     ].join('\n'),
+    usage: '记录并更新当前工作的结构化任务列表。每次调用发送完整列表——它替换之前的列表（没有部分更新）。完成任务后立即标记为 completed。对于简单的单步任务可跳过列表。',
     params: 'todos: TodoItem[]',
     returns: 'Promise<string>',
     paramDocs: {
@@ -131,14 +132,6 @@ class TodoWriteTool extends Tool {
       },
       'todoWrite(todos)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:todoWrite',
-      order: 110,
-      text: '记录并更新当前工作的结构化任务列表。每次调用发送完整列表——它替换之前的列表（没有部分更新）。完成任务后立即标记为 completed。对于简单的单步任务可跳过列表。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

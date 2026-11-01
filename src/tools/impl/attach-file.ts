@@ -11,6 +11,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 15,
     category: '附件上传',
     name: 'attachFile',
+    usage: '当你需要基于无法用 read 读取的文件（PDF、Word、Excel、PPT、图片等二进制文件）作答时，主动使用 attachFile(filePath) 将其上传到输入框——无需等用户明确说“上传”。适用于：用户给出这类文件的路径、描述了某个文件让你查看、或你生成了想交给用户的文件。文本类文件优先用 read 直接读取；若只需判断文件是否存在，用 glob 即可。上传后文件随下一条消息发出，你即可基于其内容作答。仅支持已存在的单个文件，大小上限 30MB。',
     doc: [
       '将本地文件作为附件上传到当前对话输入框（不发送）。',
       '当你需要基于无法用 read 读取的文件内容（PDF、DOC、XLSX、PPT、图片等）作答，或需要把文件交给用户看时使用——无需用户明确要求上传。',
@@ -186,14 +187,6 @@ class AttachFileTool extends Tool {
       },
       'attachFile(filePath)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:attachFile',
-      order: 114,
-      text: '当你需要基于无法用 read 读取的文件（PDF、Word、Excel、PPT、图片等二进制文件）作答时，主动使用 attachFile(filePath) 将其上传到输入框——无需等用户明确说“上传”。适用于：用户给出这类文件的路径、描述了某个文件让你查看、或你生成了想交给用户的文件。文本类文件优先用 read 直接读取；若只需判断文件是否存在，用 glob 即可。上传后文件随下一条消息发出，你即可基于其内容作答。仅支持已存在的单个文件，大小上限 30MB。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

@@ -33,6 +33,7 @@ export const apiMetas: ToolApiMeta[] = [
       '}',
     ].join('\n'),
     doc: '读取 UTF-8 文本文件并返回结构化行数组，供 AI 在内存中精确处理。',
+    usage: '使用 readLines 工具读取文件的结构化行数据（数组，每个元素含 number 和 text 字段），适合在内存中批量处理（如 map/filter/join 后写回）。如果只是查看文件内容，用 read 即可。',
     params: 'filePath: string, options?: ReadOptions',
     returns: 'Promise<ReadLinesResult>',
     paramDocs: {
@@ -75,14 +76,6 @@ class ReadLinesTool extends Tool {
       },
       'readLines(filePath, options?)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:readLines',
-      order: 101,
-      text: '使用 readLines 工具读取文件的结构化行数据（数组，每个元素含 number 和 text 字段），适合在内存中批量处理（如 map/filter/join 后写回）。如果只是查看文件内容，用 read 即可。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

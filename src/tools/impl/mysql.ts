@@ -9,6 +9,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 11,
     category: 'MySQL',
     name: 'mysql',
+    usage: '使用 mysql 工具执行 MySQL SQL 语句。传入 host/port/user/password/database 和 sql。SELECT/SHOW/DESCRIBE/EXPLAIN 返回纯文本表格，写操作返回 affectedRows。',
     types: [
       '/** MySQL 连接与查询参数 */',
       'interface MySQLOptions {',
@@ -69,14 +70,6 @@ class MySQLTool extends Tool {
       },
       'mysql(options)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:mysql',
-      order: 107,
-      text: '使用 mysql 工具执行 MySQL SQL 语句。传入 host/port/user/password/database 和 sql。SELECT/SHOW/DESCRIBE/EXPLAIN 返回纯文本表格，写操作返回 affectedRows。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

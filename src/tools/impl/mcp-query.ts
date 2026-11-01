@@ -12,6 +12,7 @@ export const apiMetas: ToolApiMeta[] = [
       '列出所有已配置的 MCP server（含启用状态、连接状态和工具数量）。',
       '使用 MCP 前先调用此函数查看当前可用 server。',
     ].join('\n'),
+    usage: 'mcpListServers() 列出已配置的 MCP server（含启用/连接状态）。',
     params: '',
     returns: 'Promise<string>',
     returnsDoc: '纯文本 server 列表',
@@ -24,6 +25,7 @@ export const apiMetas: ToolApiMeta[] = [
       '查看指定 MCP server 提供的工具列表（含描述和参数）。',
       '确认工具能力后再调用 mcpCall。',
     ].join('\n'),
+    usage: 'mcpGetTools(serverName) 查看指定 MCP server 的工具和参数。',
     params: 'serverName: string',
     returns: 'Promise<string>',
     paramDocs: {
@@ -49,14 +51,6 @@ class McpListServersTool extends Tool {
       },
       'mcpListServers()'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:mcpListServers',
-      order: 119,
-      text: 'mcpListServers() 列出已配置的 MCP server（含启用/连接状态）。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {
@@ -104,14 +98,6 @@ class McpGetToolsTool extends Tool {
       },
       'mcpGetTools(serverName)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:mcpGetTools',
-      order: 120,
-      text: 'mcpGetTools(serverName) 查看指定 MCP server 的工具和参数。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

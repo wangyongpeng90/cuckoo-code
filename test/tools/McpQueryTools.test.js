@@ -9,12 +9,11 @@ test('McpListServersTool 构造器', () => {
   assert.strictEqual(t.jsApi, 'mcpListServers()');
 });
 
-test('McpListServersTool getPromptSection', () => {
-  const t = new McpListServersTool();
-  const s = t.getPromptSection();
-  assert.strictEqual(s.name, 'tool:mcpListServers');
-  assert.strictEqual(s.order, 119);
-  assert.match(s.text, /mcpListServers/);
+test('McpListServersTool apiMetas.usage', async () => {
+  const { apiMetas } = await import('../../src/tools/impl/mcp-query.js');
+  const meta = apiMetas.find((m) => m.name === 'mcpListServers');
+  assert.ok(meta && meta.usage, 'usage 应存在');
+  assert.match(meta.usage, /mcpListServers/);
 });
 
 test('McpGetToolsTool 构造器', () => {
@@ -24,12 +23,11 @@ test('McpGetToolsTool 构造器', () => {
   assert.ok(t.parameters.required.includes('server'));
 });
 
-test('McpGetToolsTool getPromptSection', () => {
-  const t = new McpGetToolsTool();
-  const s = t.getPromptSection();
-  assert.strictEqual(s.name, 'tool:mcpGetTools');
-  assert.strictEqual(s.order, 120);
-  assert.match(s.text, /mcpGetTools/);
+test('McpGetToolsTool apiMetas.usage', async () => {
+  const { apiMetas } = await import('../../src/tools/impl/mcp-query.js');
+  const meta = apiMetas.find((m) => m.name === 'mcpGetTools');
+  assert.ok(meta && meta.usage, 'usage 应存在');
+  assert.match(meta.usage, /mcpGetTools/);
 });
 
 test('McpGetToolsTool 缺 server 返回错误', async () => {
