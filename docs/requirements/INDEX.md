@@ -33,5 +33,6 @@
 | 026 | fix | [edit 编辑混合换行符文件时保留未编辑区域](./026-edit-preserve-eol.md) | done | fix/023-edit-preserve-eol | 2026-10-15 |
 | 027 | feature | [用户记忆系统](./027-memories.md) | review | feat/024-memories | 2026-10-15 |
 | 028 | feature | [用户记忆功能默认关闭 + 开关](./028-memories-default-off.md) | review | feat/028-memories-default-off | 2026-10-15 |
+| 261028-3s2dbz | refactor | [Provider 契约重构（方法收敛与语义澄清）](./261028-3s2dbz-provider-refactor.md) | doing | refactor/261028-3s2dbz-provider-refactor | 2026-10-30 |
 
-共 28 个需求。
+共 29 个需求。
