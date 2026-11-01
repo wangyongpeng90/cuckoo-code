@@ -12,7 +12,7 @@
 
 | 捐赠者 | 金额 | 日期 | 捐赠证书 |
 |---|---|---|---|
-| 刘*帅 | 100 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261029162641585/](https://onefoundation.cn/cert/20261029162641585/))|
+| 刘先生 | 100 元 | 2026-10-29 |要求匿名|
 | CS | 100 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261029003017507/](https://onefoundation.cn/cert/20261029003017507/)|
 | 杨先生 | 88 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261029065593254/](https://onefoundation.cn/cert/20261029065593254/))|
 | Hazel | 100 元 | 2026-10-26 | [https://onefoundation.cn/cert/20261027103737586/](https://onefoundation.cn/cert/20261027103737586/)|
