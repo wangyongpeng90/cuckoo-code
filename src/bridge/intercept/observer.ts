@@ -9,6 +9,7 @@ import { handleJsToolScript } from '../loop/executor.js';
 import { sendCombinedJsResultsToChat, sendMessageToChat, cancelPendingSend, takePendingSendText, getLastToolResultText } from '../../overlay/chat-input.js';
 import { showToolMask, hideToolMask } from '../../overlay/panel.js';
 import * as watchdog from '../loop/watchdog.js';
+import { pickContinuePrompt } from '../../infra/continue-prompt-pool.js';
 
 // 正文标记：AI 回复里输出 [记忆]xxx，软件据此自动创建
 // 中文全角/半角方括号都支持。标记本身会留在 AI 页面的对话正文里（无法隐藏）。
@@ -53,8 +54,6 @@ const DEFAULT_AI_INTERCEPT_PATTERNS = [
   '<\\s*\\/\\s*(?:[\\w-]+:)?invoke\\s*>',
   '<\\s*(?:[\\w-]+:)?parameter\\s+name=',
 ].join('\n');
-/** AI 回复拦截的默认提示语 */
-const DEFAULT_AI_INTERCEPT_PROMPT = '请使用 cuckoo 代码块进行工具调用，不要使用 XML invoke 格式。';
 
 /** 读取用户配置的拦截正则列表（已编译）。空列表 = 不拦截。 */
 function getAiInterceptRegexes(): RegExp[] {
@@ -70,14 +69,6 @@ function getAiInterceptRegexes(): RegExp[] {
   return out;
 }
 
-/** 读取用户配置的拦截提示语。 */
-function getAiInterceptPrompt(): string {
-  try {
-    const v = localStorage.getItem('cuckoo-ai-intercept-prompt');
-    if (v !== null) return v;
-  } catch (_) { /* ignore */ }
-  return DEFAULT_AI_INTERCEPT_PROMPT;
-}
 // 上次已处理的文本（去重，防同一条回复重复处理）
 let lastProcessedText = '';
 // 最近一次拦截到的完整回复文本（供手动解析复用，不依赖 DOM）
@@ -214,10 +205,8 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     }
     formatHintCount++;
     console.log('[Cuckoo Code][拦截] 检测到 JSON 格式工具调用（第 ' + formatHintCount + ' 次提示）');
-    sendMessageToChat(
-      '请使用' + BT + BT + BT + 'cuckoo' + BT + BT + BT + ' 代码块进行工具调用，不要输出 JSON 格式。',
-      'JSON工具调用提示'
-    );
+    // [261101-ym9l98] 统一走「让 AI 继续」池（用户确认：不再附格式要求）
+    sendMessageToChat(pickContinuePrompt(), 'JSON工具调用提示');
     return;
   }
 
@@ -230,7 +219,8 @@ async function processInterceptedResponse(text: string, force?: boolean): Promis
     }
     formatHintCount++;
     console.log('[Cuckoo Code][拦截] 命中 AI 回复拦截规则（第 ' + formatHintCount + ' 次提示）');
-    sendMessageToChat(getAiInterceptPrompt(), 'AI回复拦截提示');
+    // [261101-ym9l98] 统一走「让 AI 继续」池（用户确认：不再附格式要求）
+    sendMessageToChat(pickContinuePrompt(), 'AI回复拦截提示');
     return;
   }
 

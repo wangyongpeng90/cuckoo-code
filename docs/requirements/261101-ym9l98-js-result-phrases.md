@@ -252,6 +252,37 @@ tools 层通过 `injectSettingReader` 注入读取函数（遵守「tools 不可
 | `src/ui/shell/scripts/pages/settings-react.tsx` | 「文件读取首行」→「文件读取格式」；新增「文件搜索格式」分类；`makeFooterBlock` 抽公共块 |
 | `test/tools/*.test.js` | footer 断言改为检查结构（`offset=` 参数、行号、总数），不再检查具体措辞 |
 
+## 扩展五：重试类提示词统一为「让 AI 继续」池
+
+### 背景
+原先散落 5 处独立的提示词，其中 3 处可配置（但仅单条）、2 处硬编码：
+
+| 场景 | 原位置 | 原配置 |
+|---|---|---|
+| 请求失败自动重试 | `retry.ts` | `cuckoo-retry-prompt` |
+| 流静默超时催继续 | `watchdog.ts` | `cuckoo-watchdog-prompt` |
+| 手动「卡住了」按钮 | `overlay/events.ts` | 硬编码 |
+| AI 输出 XML invoke | `observer.ts` | `cuckoo-ai-intercept-prompt` |
+| AI 输出 JSON 工具调用 | `observer.ts` | 硬编码 |
+
+### 方案
+统一成一个 1000 条池 `cuckoo-continue-prompt`（`src/infra/continue-prompt-pool.ts`），5 处随机取。原 3 个独立配置项删除。
+
+### 决策
+- **D26 池只写「让 AI 继续」，不含格式要求**：用户确认。**代价**：XML/JSON 格式纠正场景下 AI 可能不知自己格式错了，反复触发后 `formatHintCount` 达 10 次上限则任务失败。这是有意取舍。
+- **D27 删除旧 4 个函数**（`openSettings`/`closeSettings`/`resetSettings`/`saveSettings`）：查证 overlay.html 里已无对应 DOM，全是死代码（`events.ts` 里的 4 处按钮绑定空转）。
+- **D28 池走通用设置（跨窗口共享）**，与前面几个池一致。
+
+### 落地位置
+| 文件 | 职责 |
+|---|---|
+| `src/infra/continue-prompt-pool.ts` | 1000 条池 + `pickContinuePrompt()` |
+| `src/bridge/entry.ts` | 注入 reader |
+| `src/bridge/loop/retry.ts`、`watchdog.ts`、`src/bridge/intercept/observer.ts`、`src/overlay/events.ts` | 5 处调用点 |
+| `src/overlay/panels/settings.ts` | 删旧字段，加 `continuePrompt` |
+| `src/ui/shell/scripts/pages/settings-react.tsx` | 「失败自动重试」分类下加池编辑块 |
+| `test/bridge/loop/retry.test.js`、`watchdog.test.js`、`test/overlay/panels/settings.test.js` | 断言更新 |
+
 ## 遗留
 
 1. **未真机验证**：设置页 4 个池、跨窗口同步、read 首行效果均需 `npm start` 实机确认

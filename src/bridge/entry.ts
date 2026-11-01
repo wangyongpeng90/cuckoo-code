@@ -27,6 +27,7 @@ import { initFeishuBridge } from './feishu-bridge.js';
 import { initPlugins, bindPluginReload } from './plugin-system.js';
 import { initSharedSettingsCache, subscribeSharedSettings, getSharedSetting } from '../overlay/shared-settings-cache.js';
 import { setSharedSettingReader } from '../overlay/js-result-phrases.js';
+import { setContinueSettingReader } from '../infra/continue-prompt-pool.js';
 import { buildUserAgentDataFix } from '../infra/user-agent.js';
 
 const require = createRequire(import.meta.url);
@@ -258,6 +259,7 @@ function init(): void {
 
     // [261101-ym9l98] 载入跨窗口通用设置（异步，不阻塞后续初始化）+ 订阅变更
     setSharedSettingReader(getSharedSetting);
+    setContinueSettingReader(getSharedSetting);
     initSharedSettingsCache().catch(() => {});
     subscribeSharedSettings();
 

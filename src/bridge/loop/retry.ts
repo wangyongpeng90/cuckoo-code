@@ -10,9 +10,11 @@
  *  - cuckoo-retry-count          普通失败次数，默认 10；负数=无限
  *  - cuckoo-retry-429-delay      毫秒，默认 120000（2 分钟）
  *  - cuckoo-retry-429-count      429 次数，默认 40；负数=无限
- *  - cuckoo-retry-prompt         提示词文案
+ *
+ * 提示词来自统一池（infra/continue-prompt-pool.ts），不再单独配置。
  */
 import { sendToChat } from '../../overlay/chat-input.js';
+import { pickContinuePrompt } from '../../infra/continue-prompt-pool.js';
 import { onAiError, onInterceptedResponse } from '../intercept/observer.js';
 import { showToast } from '../../overlay/panel.js';
 import { withLog } from '../../infra/with-log.js';
@@ -22,7 +24,6 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { ipcRenderer } = require('electron');
 
-const DEFAULT_PROMPT = '刚才的回复似乎中断了，请重新完整回答上一个问题。';
 const DEFAULTS = {
   enabled: true,
   delayMin: 4000,
@@ -30,7 +31,6 @@ const DEFAULTS = {
   count: 10,
   delay429: 120000,
   count429: 40,
-  prompt: DEFAULT_PROMPT,
 };
 
 let readConfig = function readConfig(): any {
@@ -48,8 +48,6 @@ let readConfig = function readConfig(): any {
     if (Number.isFinite(d429)) cfg.delay429 = d429;
     const c429 = parseInt(localStorage.getItem('cuckoo-retry-429-count') || '', 10);
     if (Number.isFinite(c429)) cfg.count429 = c429;
-    const p = localStorage.getItem('cuckoo-retry-prompt');
-    if (p) cfg.prompt = p;
   } catch (e) { /* ignore */ }
   return cfg;
 };
@@ -183,7 +181,7 @@ let handleError = function handleError(detail: any): void {
     if (pending && pending.countdownTimer) clearInterval(pending.countdownTimer);
     pending = null;
     try {
-      sendToChat(cfg.prompt, is429 ? '重试(操作频繁)' : '重试', 300);
+      sendToChat(pickContinuePrompt(), is429 ? '重试(操作频繁)' : '重试', 300);
     } catch (e: any) {
       console.error('[Cuckoo Code][重试] 发送提示词失败: ' + e.message);
     }
@@ -239,4 +237,4 @@ ensureCountdownBox = withLog(ensureCountdownBox, 'retry.ensureCountdownBox');
 handleError = withLog(handleError, 'retry.handleError');
 startRetryEngine = withLog(startRetryEngine, 'retry.startRetryEngine');
 
-export { startRetryEngine, setCompacting, readConfig, DEFAULT_PROMPT, cancelPending, resumeRetry, cancelPendingForSwitch };
+export { startRetryEngine, setCompacting, readConfig, cancelPending, resumeRetry, cancelPendingForSwitch };

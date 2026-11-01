@@ -9,9 +9,9 @@ const SET_FIELDS: [string, string][] = [
   ['retry-count', 'retryCount'],
   ['retry-429-delay', 'retry429Delay'],
   ['retry-429-count', 'retry429Count'],
-  ['retry-prompt', 'retryPrompt'],
+
   ['xhr-idle-timeout', 'xhrIdleTimeout'],
-  ['watchdog-prompt', 'watchdogPrompt'],
+
   ['watchdog-count', 'watchdogCount'],
   ['send-delay-min', 'sendDelayMin'],
   ['send-delay-max', 'sendDelayMax'],
@@ -56,9 +56,7 @@ function collectSettings(): any {
     retryCount: parseInt(getVal('retry-count'), 10) || 0,
     retry429Delay: num('retry-429-delay'),
     retry429Count: parseInt(getVal('retry-429-count'), 10) || 0,
-    retryPrompt: getVal('retry-prompt'),
     xhrIdleTimeout: num('xhr-idle-timeout'),
-    watchdogPrompt: getVal('watchdog-prompt'),
     watchdogCount: parseInt(getVal('watchdog-count'), 10) || 0,
     sendDelayMin: num('send-delay-min'),
     sendDelayMax: num('send-delay-max'),

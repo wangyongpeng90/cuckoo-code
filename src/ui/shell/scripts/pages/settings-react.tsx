@@ -15,6 +15,7 @@ import { useHideAiView } from '../use-hide-ai-view.js';
 import { Select } from '../components/select.js';
 import { SettingRow } from '../components/setting-row.js';
 import { DEFAULT_JS_RESULT_PHRASES, DEFAULT_JS_RESULT_ITEM_TEMPLATES } from '../../../../overlay/js-result-phrases.js';
+import { DEFAULT_CONTINUE_PROMPTS } from '../../../../infra/continue-prompt-pool.js';
 import {
   DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL,
   DEFAULT_READ_FOOTER_FULL, DEFAULT_READ_FOOTER_PARTIAL, DEFAULT_READ_FOOTER_CAPPED,
@@ -331,16 +332,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       createElement('input', { type: 'number', className: 'ck-set-input ck-set-input-sm', min: 0, step: 1, value: numVal('retry429Delay'), onChange: (e: any) => setField('retry429Delay', parseFloat(e.target.value) || 0) })),
     createElement(SettingRow, { label: '操作频繁重试次数', desc: '负数 = 无限重试' },
       createElement('input', { type: 'number', className: 'ck-set-input ck-set-input-sm', step: 1, value: numVal('retry429Count'), onChange: (e: any) => setField('retry429Count', parseInt(e.target.value, 10) || 0) })),
-    createElement('div', { className: 'ck-set-row-col' },
-      createElement('div', { className: 'ck-set-row-label' }, '重试提示词'),
-      createElement('textarea', { className: 'ck-set-textarea', rows: 3, value: data.retryPrompt || '', onChange: (e: any) => setField('retryPrompt', e.target.value) }),
-    ),
     createElement(SettingRow, { label: 'AI 回复超时后重试（秒）', desc: 'AI 回复静默超过该时长则重试' },
       createElement('input', { type: 'number', className: 'ck-set-input ck-set-input-sm', min: 0, step: 1, value: numVal('xhrIdleTimeout'), onChange: (e: any) => setField('xhrIdleTimeout', parseFloat(e.target.value) || 0) })),
-    createElement('div', { className: 'ck-set-row-col' },
-      createElement('div', { className: 'ck-set-row-label' }, '超时重试提示词'),
-      createElement('textarea', { className: 'ck-set-textarea', rows: 3, value: data.watchdogPrompt || '', onChange: (e: any) => setField('watchdogPrompt', e.target.value) }),
-    ),
     createElement(SettingRow, { label: '超时重试次数', desc: '负数 = 无限重试' },
       createElement('input', { type: 'number', className: 'ck-set-input ck-set-input-sm', step: 1, value: numVal('watchdogCount'), onChange: (e: any) => setField('watchdogCount', parseInt(e.target.value, 10) || 0) })),
   );
@@ -374,11 +367,6 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       createElement('div', { className: 'ck-set-row-label' }, '拦截正则（每行一条）'),
       createElement('div', { className: 'ck-set-row-desc' }, '任意一条命中即视为 XML 工具调用，会提示 AI 改用 cuckoo 代码块。支持正则表达式，不区分大小写。'),
       createElement('textarea', { className: 'ck-set-textarea', rows: 8, value: data.aiInterceptPatterns || '', onChange: (e: any) => setField('aiInterceptPatterns', e.target.value) }),
-    ),
-    createElement('div', { className: 'ck-set-row-col' },
-      createElement('div', { className: 'ck-set-row-label' }, '拦截提示语'),
-      createElement('div', { className: 'ck-set-row-desc' }, '拦截命中后发送给 AI 的提示文本'),
-      createElement('textarea', { className: 'ck-set-textarea', rows: 3, value: data.aiInterceptPrompt || '', onChange: (e: any) => setField('aiInterceptPrompt', e.target.value) }),
     ),
   );
 
@@ -433,6 +421,13 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         createElement('button', { className: 'ck-btn', onClick: () => setField(field, '') }, '清空'),
       ),
     );
+
+  // [261101-ym9l98] 「让 AI 继续」统一池（重试/看门狗/手动催/格式纠正 共用）
+  const continuePrompt = createElement('div', { className: 'ck-card' },
+    makeFooterBlock('continuePrompt', '「让 AI 继续」提示词池', '无占位符', DEFAULT_CONTINUE_PROMPTS),
+    createElement('div', { className: 'ck-set-row-desc', style: { marginTop: '8px', opacity: 0.75 } },
+      '用于：请求失败自动重试、回复超时催继续、手动「卡住了」按钮、AI 输出 XML/JSON 格式工具调用。每次从池里随机取一条发送。'),
+  );
 
   // [261101-ym9l98] read 工具输出格式（首行两套池 + 结尾三套池）
   const readHeader = createElement('div', { className: 'ck-card' },

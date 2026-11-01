@@ -10,9 +10,10 @@ import { sendToChat } from './chat-input.js';
 import { runCompaction, checkPendingCompact, checkPendingInit, checkPendingSwitch } from '../session/compaction.js';
 import { renderWindowList, openWindowManager, closeWindowManager, handleGenerateDoc } from './panels/window-manager.js';
 import { loadMcpConfigToJson, renderMcpList, openMcpManager, closeMcpManager, handleMcpSave } from './panels/mcp-manager.js';
-import { openSettings, closeSettings, resetSettings, saveSettings } from './panels/settings.js';
+
 import { makeFabDraggable } from './fab.js';
 
+import { pickContinuePrompt } from '../infra/continue-prompt-pool.js';
 import { getProviderByUrl } from '../providers/registry.js';
 import { createTpsMeter, formatTps } from './tps.js';
 
@@ -267,7 +268,7 @@ async function handleSendSkills() {
  * 「卡住了?点我」按钮：向 AI 发一句继续，催促其接着之前的工作
  */
 async function handleManualParseDispatch() {
-  if (!(await sendToChat('刚才卡住了请继续 爱你哦', '继续', 300))) {
+  if (!(await sendToChat(pickContinuePrompt(), '继续', 300))) {
     showToast('发送失败：未找到输入框', 3000);
     return;
   }
@@ -553,22 +554,6 @@ function bindEvents() {
   const refreshSessionsBtn = document.getElementById('cuckoo-btn-refresh-sessions');
   refreshSessionsBtn?.addEventListener('click', renderSessions);
 
-  // 设置弹窗：打开
-  const settingsBtn = document.getElementById('cuckoo-btn-settings');
-  settingsBtn?.addEventListener('click', openSettings);
-
-  // 设置弹窗：关闭
-  const settingsCloseBtn = document.getElementById('cuckoo-settings-close');
-  settingsCloseBtn?.addEventListener('click', closeSettings);
-
-  // 设置弹窗：保存
-  const settingsSaveBtn = document.getElementById('cuckoo-settings-save');
-  settingsSaveBtn?.addEventListener('click', saveSettings);
-
-  // 设置弹窗：恢复默认
-  const settingsResetBtn = document.getElementById('cuckoo-settings-reset');
-  settingsResetBtn?.addEventListener('click', resetSettings);
-
   // 设置弹窗：发送技能清单
   const skillsSendBtn = document.getElementById('cuckoo-skills-send');
   skillsSendBtn?.addEventListener('click', handleSendSkills);
@@ -622,7 +607,6 @@ function bindEvents() {
       hideOverlay();
       closeWindowManager();
       closeMcpManager();
-      closeSettings();
       hideFirstTimeDialog();
     }
   });
