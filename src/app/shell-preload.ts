@@ -232,6 +232,7 @@ const shellAPI = {
 
   // ========== 设置 ==========
   getSettings: () => ipcRenderer.invoke('get-settings'),
+  getUsageStats: (params: any) => ipcRenderer.invoke('get-usage-stats', params),
   saveSettings: (data: any) => ipcRenderer.invoke('save-settings', { data }),
   resetSettings: () => ipcRenderer.invoke('reset-settings'),
   // ========== 日志（仅打包版生效）==========

@@ -118,6 +118,7 @@ export interface ShellAPI {
   triggerCompact?: () => Promise<any>;
   // 设置
   getSettings?: () => Promise<any>;
+  getUsageStats?: (params: any) => Promise<any>;
   saveSettings?: (data: any) => Promise<any>;
   resetSettings?: () => Promise<any>;
   // 关于

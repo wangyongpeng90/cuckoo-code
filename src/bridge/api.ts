@@ -14,6 +14,11 @@ let electronAPI: any = {
     return ipcRenderer.invoke('execute-command', { command, id });
   },
 
+  // [261031-x7k9p2] 记录 AI 用量统计
+  logAiUsage: (data: any) => {
+    return ipcRenderer.send('log-ai-usage', data);
+  },
+
   selectProjectDir: () => {
     return ipcRenderer.invoke('select-project-dir');
   },

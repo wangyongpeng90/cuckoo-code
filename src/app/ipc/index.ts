@@ -18,6 +18,7 @@ import { registerWebServerIpc } from './webserver.js';
 import { registerLogIpc } from './logs.js';
 import { registerThemeIpc } from './theme.js';
 import { registerWindowGroupsIpc, onSwitchShareResult } from './window-groups.js';
+import { registerUsageIpc } from './usage.js';
 
 import { createRequire } from 'node:module';
 
@@ -43,6 +44,7 @@ function registerIpcHandlers(): void {
   registerLogIpc();
   registerThemeIpc();
   registerWindowGroupsIpc();
+  registerUsageIpc();
 
 }
 
