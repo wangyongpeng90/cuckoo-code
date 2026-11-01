@@ -547,7 +547,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   let content: any = null;
   if (loading) content = createElement('div', { className: 'ck-list-empty' }, '加载中…');
   else if (active === 'appearance') content = appearance;
-  else if (active === 'retry') content = retry;
+  else if (active === 'retry') content = createElement('div', null, retry, continuePrompt);
   else if (active === 'send') content = sendDelay;
   else if (active === 'attach') content = attachDelay;
   else if (active === 'security') content = security;

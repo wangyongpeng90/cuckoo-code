@@ -93,7 +93,7 @@ test('EditTool 成功替换', async () => {
   const tool = new EditTool();
   const r = await tool.execute({ filePath: 'd.txt', oldString: 'world', newString: 'cuckoo', projectDir: tmpRoot });
   assert.strictEqual(r.success, true);
-  assert.match(r.data, /updated successfully/);
+  assert.match(r.data, /已更新 d.txt，替换了 1 处/);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'd.txt'), 'utf8'), 'hello cuckoo');
 });
 
@@ -126,7 +126,7 @@ test('EditTool dry-run 预览不写入', async () => {
   const tool = new EditTool();
   const r = await tool.execute({ filePath: 'd.txt', oldString: 'x', newString: 'y', replaceAll: true, dryRun: true, projectDir: tmpRoot });
   assert.strictEqual(r.success, true);
-  assert.match(r.data, /DRY-RUN/);
+  assert.match(r.data, /\[预览\]/);
   assert.match(r.data, /将全部替换 3 处/);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'd.txt'), 'utf8'), 'x x x');
 });
@@ -136,7 +136,7 @@ test('EditTool dry-run 唯一替换预览', async () => {
   const tool = new EditTool();
   const r = await tool.execute({ filePath: 'd.txt', oldString: 'world', newString: 'cuckoo', dryRun: true, projectDir: tmpRoot });
   assert.strictEqual(r.success, true);
-  assert.match(r.data, /DRY-RUN/);
+  assert.match(r.data, /\[预览\]/);
   assert.match(r.data, /将替换 1 处/);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'd.txt'), 'utf8'), 'hello world');
 });
@@ -146,8 +146,8 @@ test('EditTool dry-run 删除预览', async () => {
   const tool = new EditTool();
   const r = await tool.execute({ filePath: 'd.txt', oldString: 'remove', newString: '', dryRun: true, projectDir: tmpRoot });
   assert.strictEqual(r.success, true);
-  assert.match(r.data, /DRY-RUN/);
-  assert.match(r.data, /old: "remove" → new: ""/);
+  assert.match(r.data, /\[预览\]/);
+  assert.match(r.data, /原内容 "remove" → 新内容 ""/);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'd.txt'), 'utf8'), 'remove me');
 });
 

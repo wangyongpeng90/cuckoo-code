@@ -283,6 +283,44 @@ tools 层通过 `injectSettingReader` 注入读取函数（遵守「tools 不可
 | `src/ui/shell/scripts/pages/settings-react.tsx` | 「失败自动重试」分类下加池编辑块 |
 | `test/bridge/loop/retry.test.js`、`watchdog.test.js`、`test/overlay/panels/settings.test.js` | 断言更新 |
 
+## 扩展六：edit 工具优化（P0~P3）
+
+### 背景
+`edit` 是最后一个未中文化的工具，且上一轮把 `getPromptSection()` 迁到 `apiMetas.usage` 时**丢了 7 行关键指导**——迁移脚本只取了首行，多行拼接版因 `oldString` 出现 2 次而替换失败，随后删除 `getPromptSection` 时该段内容一并消失。
+
+### 四档改动
+
+| 档 | 内容 |
+|---|---|
+| **P0** | 恢复丢失的 7 行 `usage`：空白/缩进提示、唯一匹配要求、replaceAll 建议、dryRun 预览、先 read 后 edit、行号/footer 警告 |
+| **P1** | `formatEditOutput` / `formatDryRunOutput` 中文化（原为 `The file xxx has been updated` / `[DRY-RUN]`） |
+| **P2** | doc 去掉「Claude-style 确认消息」；「未找到」错误补上「最常见原因是空白/缩进不一致」 |
+| **P3** | 多匹配报错附上前 3 处行号（新增 `findOccurrencePositions` + `lineNumberOf`） |
+
+### 输出对比
+
+```
+旧：The file a.txt has been updated. Replaced 3 occurrences successfully.
+新：已更新 a.txt，替换了 3 处。
+
+旧：[DRY-RUN] 文件未修改。a.txt：将全部替换 3 处。old: "x" → new: "y"
+新：[预览] 文件未修改。a.txt：将全部替换 3 处。原内容 "x" → 新内容 "y"
+
+旧：oldString 在文件中出现 3 次。若要全部替换，请设置 replaceAll: true...
+新：oldString 在文件中出现 3 次（第 5、12、20 行）。若要全部替换，请设置 replaceAll: true...
+```
+
+### 决策
+- **D29 `countOccurrences` 签名不变**：新增 `findOccurrencePositions` 供其内部调用，`countOccurrences` 仍是纯数字返回，既有测试断言（`countOccurrences('aaa','a') === 3`）无需改动。
+- **D30 多匹配只报前 3 处行号**：超过 3 处时附「等」字。报全部会让错误信息过长，报 3 处已够 AI 定位。
+
+### 落地位置
+| 文件 | 职责 |
+|---|---|
+| `src/tools/impl/edit.ts` | usage 恢复、输出中文化、错误信息增强、新增 2 个辅助函数 |
+| `src/tools/api.d.ts` | 生成物，随 compile 更新 |
+| `test/tools/EditTool.test.js`、`EditEol.test.js`、`FileTools.test.js` | 断言更新 + 新增 2 个测试 |
+
 ## 遗留
 
 1. **未真机验证**：设置页 4 个池、跨窗口同步、read 首行效果均需 `npm start` 实机确认

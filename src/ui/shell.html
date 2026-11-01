@@ -117226,7 +117226,7 @@ body {
     let content = null;
     if (loading) content = (0, import_react8.createElement)("div", { className: "ck-list-empty" }, "\u52A0\u8F7D\u4E2D\u2026");
     else if (active === "appearance") content = appearance;
-    else if (active === "retry") content = retry;
+    else if (active === "retry") content = (0, import_react8.createElement)("div", null, retry, continuePrompt);
     else if (active === "send") content = sendDelay;
     else if (active === "attach") content = attachDelay;
     else if (active === "security") content = security;

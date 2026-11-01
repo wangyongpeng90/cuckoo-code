@@ -31,22 +31,21 @@ test('parseEditArgs old === new 抛错', () => {
 });
 
 test('formatEditOutput 唯一/全部替换', () => {
-  assert.match(formatEditOutput('a.txt', false), /updated successfully/);
-  assert.match(formatEditOutput('a.txt', false), /Replaced 1 occurrence/);
-  assert.match(formatEditOutput('a.txt', true, 3), /Replaced 3 occurrences/);
+  assert.strictEqual(formatEditOutput('a.txt', false), '已更新 a.txt，替换了 1 处。');
+  assert.strictEqual(formatEditOutput('a.txt', true, 3), '已更新 a.txt，替换了 3 处。');
   // 省略 occurrences 时默认为 1
-  assert.match(formatEditOutput('a.txt', true), /Replaced 1 occurrence/);
-  // 单数/复数
-  assert.match(formatEditOutput('a.txt', true, 2), /Replaced 2 occurrences/);
+  assert.strictEqual(formatEditOutput('a.txt', true), '已更新 a.txt，替换了 1 处。');
+  // 非 replaceAll 时只报 1 处（即使 occurrences > 1 也不会走到这里）
+  assert.strictEqual(formatEditOutput('a.txt', false, 5), '已更新 a.txt，替换了 1 处。');
 });
 
 test('formatDryRunOutput 预览', () => {
-  assert.match(formatDryRunOutput('a.txt', 'x', 'y', 1, false), /DRY-RUN/);
+  assert.match(formatDryRunOutput('a.txt', 'x', 'y', 1, false), /\[预览\]/);
   assert.match(formatDryRunOutput('a.txt', 'x', 'y', 1, false), /将替换 1 处/);
   assert.match(formatDryRunOutput('a.txt', 'x', 'y', 3, true), /将全部替换 3 处/);
   // 非 replaceAll 时始终显示将替换 1 处，即使 occurrences 大于 1
   assert.match(formatDryRunOutput('a.txt', 'x', 'y', 3, false), /将替换 1 处/);
   // 删除场景（空 newString）
-  assert.match(formatDryRunOutput('a.txt', 'x', '', 1, false), /old: "x" → new: ""/);
+  assert.match(formatDryRunOutput('a.txt', 'x', '', 1, false), /原内容 "x" → 新内容 ""/);
 });
 
