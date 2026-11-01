@@ -48,12 +48,15 @@ test('buildGlobArgs 排除 VCS 目录', () => {
 
 test('formatGlobOutput 不截断', () => {
   const out = formatGlobOutput(['a.js', 'b.js'], 2, false);
-  assert.strictEqual(out, 'a.js\nb.js\n\n(Found 2 files)');
+  assert.ok(out.startsWith('a.js\nb.js\n\n('), '应为路径列表 + 空行 + 括号结尾');
+  assert.ok(out.indexOf('2') >= 0, '结尾应含文件数 2');
 });
 
 test('formatGlobOutput 截断', () => {
   const out = formatGlobOutput(['a.js'], 101, true);
-  assert.match(out, /\(Showing 1 of 101 paths/);
+  const footer = out.split('\n\n').pop();
+  assert.ok(footer.indexOf('101') >= 0, '结尾应含总数 101：' + footer);
+  assert.ok(footer.indexOf('1') >= 0, '结尾应含已显示数：' + footer);
 });
 
 test('MAX_RESULTS 为 100', () => {

@@ -33117,6 +33117,46 @@ body {
     "{path}\uFF08\u7B2C {start} \u5230 {end} \u884C\uFF0C\u603B\u5171 {total} \u884C\uFF0C\u8FD8\u5269 {rest} \u884C\uFF09",
     "{path}\uFF1A{start}-{end} \u884C\uFF08\u5168\u6587\u4EF6 {total} \u884C\uFF0C\u8FD8\u6709 {rest} \u884C\u6CA1\u8BFB\uFF09"
   ];
+  var DEFAULT_READ_FOOTER_FULL = [
+    "(\u5DF2\u5230\u6587\u4EF6\u672B\u5C3E\uFF0C\u5171 {total} \u884C)",
+    "(\u8BFB\u5B8C\u5566\uFF0C\u4E00\u5171 {total} \u884C)",
+    "(\u5168\u6587\u7ED3\u675F\uFF0C\u603B\u5171 {total} \u884C)",
+    "(\u5DF2\u7ECF\u5230\u5E95\u4E86\uFF0C\u5171 {total} \u884C)",
+    "(\u6CA1\u6709\u66F4\u591A\u4E86\uFF0C\u5168 {total} \u884C)",
+    "(\u6587\u4EF6\u8BFB\u5B8C\uFF0C\u5171 {total} \u884C)",
+    "(\u5230\u5E95\u5566\uFF0C\u4E00\u5171 {total} \u884C)",
+    "(\u5168\u6587 {total} \u884C\u90FD\u5728\u8FD9\u513F\u4E86)"
+  ];
+  var DEFAULT_READ_FOOTER_PARTIAL = [
+    "(\u663E\u793A\u4E86\u7B2C {start}-{end} \u884C\uFF0C\u5171 {total} \u884C\uFF1B\u8981\u7EE7\u7EED\u8BFB\u5C31\u4F20 offset={next})",
+    "(\u8FD9\u6B21\u662F\u7B2C {start}-{end} \u884C\uFF0C\u5168 {total} \u884C\uFF1B\u63A5\u7740\u8BFB\u4F20 offset={next})",
+    "(\u7B2C {start}-{end} \u884C\uFF0C\u8FD8\u5269 {total} \u884C\u91CC\u7684\u540E\u534A\u6BB5\uFF1B\u7EE7\u7EED\u8BFB\u4F20 offset={next})",
+    "(\u5DF2\u7ED9\u51FA\u7B2C {start}-{end} \u884C\uFF08\u5171 {total} \u884C\uFF09\uFF1B\u60F3\u5F80\u4E0B\u770B\u5C31\u4F20 offset={next})",
+    "(\u7B2C {start}-{end} \u884C / \u5171 {total} \u884C\uFF1B\u4E0B\u4E00\u6BB5\u7528 offset={next})",
+    "(\u5148\u7ED9\u4F60\u7B2C {start}-{end} \u884C\uFF0C\u5168 {total} \u884C\uFF1B\u7EE7\u7EED\u8BFB\u4F20 offset={next})"
+  ];
+  var DEFAULT_READ_FOOTER_CAPPED = [
+    "(\u8F93\u51FA\u5DF2\u8FBE\u4E0A\u9650\uFF0C\u53EA\u663E\u793A\u4E86\u7B2C {start}-{end} \u884C\uFF1B\u8981\u7EE7\u7EED\u8BFB\u5C31\u4F20 offset={next})",
+    "(\u8FD9\u6B21\u8F93\u51FA\u88AB\u622A\u65AD\u4E86\uFF0C\u53EA\u6709\u7B2C {start}-{end} \u884C\uFF1B\u63A5\u7740\u8BFB\u4F20 offset={next})",
+    "(\u5185\u5BB9\u592A\u591A\u88AB\u622A\u65AD\uFF0C\u663E\u793A\u5230\u7B2C {end} \u884C\uFF1B\u7EE7\u7EED\u8BFB\u4F20 offset={next})",
+    "(\u8F93\u51FA\u5230\u4E0A\u9650\u4E86\uFF0C\u53EA\u7ED9\u4E86\u7B2C {start}-{end} \u884C\uFF1B\u5F80\u4E0B\u8BFB\u4F20 offset={next})"
+  ];
+  var DEFAULT_GLOB_FOOTER_FULL = [
+    "(\u5171\u627E\u5230 {count} \u4E2A\u6587\u4EF6)",
+    "(\u4E00\u5171 {count} \u4E2A\u5339\u914D)",
+    "(\u627E\u5230 {count} \u4E2A\u6587\u4EF6)",
+    "(\u5171 {count} \u4E2A\u6587\u4EF6)",
+    "({count} \u4E2A\u7ED3\u679C)",
+    "(\u641C\u5230 {count} \u4E2A\u6587\u4EF6)",
+    "(\u5171 {count} \u4E2A\u5339\u914D\u6587\u4EF6)"
+  ];
+  var DEFAULT_GLOB_FOOTER_TRUNCATED = [
+    "(\u53EA\u5217\u4E86 {total} \u4E2A\u8DEF\u5F84\u91CC\u7684\u524D {shown} \u4E2A\uFF0C\u7F29\u5C0F pattern \u6216\u6307\u5B9A path \u80FD\u770B\u5230\u66F4\u591A)",
+    "({total} \u4E2A\u91CC\u53EA\u663E\u793A\u524D {shown} \u4E2A\uFF1B\u7F29\u5C0F pattern \u6216\u6307\u5B9A path \u53EF\u770B\u66F4\u591A)",
+    "(\u7ED3\u679C\u592A\u591A\uFF0C\u53EA\u7ED9\u4E86\u524D {shown} \u4E2A\uFF08\u5171 {total} \u4E2A\uFF09\uFF1B\u7F29\u5C0F\u8303\u56F4\u53EF\u770B\u66F4\u591A)",
+    "(\u5171 {total} \u4E2A\u5339\u914D\uFF0C\u53EA\u5217\u4E86\u524D {shown} \u4E2A\uFF1B\u7F29\u5C0F pattern \u6216\u6307\u5B9A path \u80FD\u770B\u5230\u66F4\u591A)",
+    "(\u622A\u65AD\u4E86\uFF1A{total} \u4E2A\u91CC\u53EA\u663E\u793A {shown} \u4E2A\uFF1B\u7F29\u5C0F\u8303\u56F4\u80FD\u770B\u5230\u66F4\u591A)"
+  ];
 
   // node_modules/echarts/node_modules/tslib/tslib.es6.js
   var extendStatics = function(d, b) {
@@ -116003,6 +116043,28 @@ body {
         )
       )
     );
+    const makeFooterBlock = (field, label, placeholders, defaults2) => (0, import_react8.createElement)(
+      "div",
+      { className: "ck-set-row-col", style: { marginTop: "16px" } },
+      (0, import_react8.createElement)("div", { className: "ck-set-row-label" }, label + "\uFF08\u6BCF\u884C\u4E00\u6761\uFF09"),
+      (0, import_react8.createElement)(
+        "div",
+        { className: "ck-set-row-desc" },
+        "\u5360\u4F4D\u7B26\uFF1A" + placeholders + "\uFF1B\u6C60\u4E3A\u7A7A\u65F6\u4F7F\u7528\u5185\u7F6E\u6A21\u677F\u3002"
+      ),
+      (0, import_react8.createElement)("textarea", {
+        className: "ck-set-textarea",
+        rows: 6,
+        value: data[field] || "",
+        onChange: (e2) => setField(field, e2.target.value)
+      }),
+      (0, import_react8.createElement)(
+        "div",
+        { className: "ck-set-inline", style: { marginTop: "8px", justifyContent: "flex-end" } },
+        (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField(field, defaults2.join("\n")) }, "\u586B\u5165\u5185\u7F6E\u9ED8\u8BA4"),
+        (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField(field, "") }, "\u6E05\u7A7A")
+      )
+    );
     const readHeader = (0, import_react8.createElement)(
       "div",
       { className: "ck-card" },
@@ -116049,7 +116111,16 @@ body {
           (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("readHeaderPartial", DEFAULT_READ_HEADER_PARTIAL.join("\n")) }, "\u586B\u5165\u5185\u7F6E\u9ED8\u8BA4"),
           (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("readHeaderPartial", "") }, "\u6E05\u7A7A")
         )
-      )
+      ),
+      makeFooterBlock("readFooterFull", "\u8BFB\u5B8C\u6574\u4E2A\u6587\u4EF6\u65F6\u7684\u7ED3\u5C3E", "{total} \u603B\u884C\u6570", DEFAULT_READ_FOOTER_FULL),
+      makeFooterBlock("readFooterPartial", "\u6587\u4EF6\u6CA1\u8BFB\u5B8C\u65F6\u7684\u7ED3\u5C3E", "{start} \u8D77\u59CB\u884C\u3001{end} \u7ED3\u675F\u884C\u3001{total} \u603B\u884C\u6570\u3001{next} \u4E0B\u4E00\u6BB5\u8D77\u59CB\u884C\u53F7\uFF08\u8BF7\u5305\u5728 offset= \u91CC\uFF09", DEFAULT_READ_FOOTER_PARTIAL),
+      makeFooterBlock("readFooterCapped", "\u8F93\u51FA\u5B57\u8282\u8D85\u9650\u88AB\u622A\u65AD\u65F6\u7684\u7ED3\u5C3E", "{start} \u8D77\u59CB\u884C\u3001{end} \u7ED3\u675F\u884C\u3001{next} \u4E0B\u4E00\u6BB5\u8D77\u59CB\u884C\u53F7\uFF08\u8BF7\u5305\u5728 offset= \u91CC\uFF09", DEFAULT_READ_FOOTER_CAPPED)
+    );
+    const globFooter = (0, import_react8.createElement)(
+      "div",
+      { className: "ck-card" },
+      makeFooterBlock("globFooterFull", "\u672A\u622A\u65AD\u65F6\u7684\u7ED3\u5C3E", "{count} \u5339\u914D\u6587\u4EF6\u6570", DEFAULT_GLOB_FOOTER_FULL),
+      makeFooterBlock("globFooterTruncated", "\u7ED3\u679C\u88AB\u622A\u65AD\u65F6\u7684\u7ED3\u5C3E", "{shown} \u5DF2\u663E\u793A\u6570\u3001{total} \u603B\u6570", DEFAULT_GLOB_FOOTER_TRUNCATED)
     );
     const formatSize = (n) => n < 1024 ? n + " B" : n < 1024 * 1024 ? (n / 1024).toFixed(1) + " KB" : (n / 1024 / 1024).toFixed(2) + " MB";
     const toggleLog = async (v) => {
@@ -116122,7 +116193,9 @@ body {
       ["ai-intercept", "AI \u56DE\u590D\u62E6\u622A"],
       ["js-result-phrases", "\u5DE5\u5177\u7ED3\u679C\u56DE\u590D\u8BED"],
       // [261101-ym9l98]
-      ["read-header", "\u6587\u4EF6\u8BFB\u53D6\u9996\u884C"],
+      ["read-header", "\u6587\u4EF6\u8BFB\u53D6\u683C\u5F0F"],
+      // [261101-ym9l98]
+      ["glob-footer", "\u6587\u4EF6\u641C\u7D22\u683C\u5F0F"],
       // [261101-ym9l98]
       ["logs", "\u65E5\u5FD7"],
       ["usage", "\u7528\u91CF\u7EDF\u8BA1"]
@@ -116145,6 +116218,7 @@ body {
     else if (active === "ai-intercept") content = aiIntercept;
     else if (active === "js-result-phrases") content = jsResultPhrases;
     else if (active === "read-header") content = readHeader;
+    else if (active === "glob-footer") content = globFooter;
     else if (active === "logs") content = logs;
     else if (active === "usage") content = (0, import_react8.createElement)(UsageStats);
     else if (active.startsWith("plugin:")) {

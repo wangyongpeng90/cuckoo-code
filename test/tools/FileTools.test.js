@@ -76,7 +76,7 @@ test('ReadTool 读取带行号', async () => {
   assert.strictEqual(r.success, true);
   assert.match(r.data, /1: line1/);
   assert.match(r.data, /3: line3/);
-  assert.match(r.data, /\(End of file - total 3 lines\)/);
+  assert.ok(r.data.split('\n\n').pop().indexOf('3') >= 0, '结尾应含总行数 3');
 });
 
 test('ReadTool 文件不存在', async () => {

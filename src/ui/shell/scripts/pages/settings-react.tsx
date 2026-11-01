@@ -15,7 +15,11 @@ import { useHideAiView } from '../use-hide-ai-view.js';
 import { Select } from '../components/select.js';
 import { SettingRow } from '../components/setting-row.js';
 import { DEFAULT_JS_RESULT_PHRASES, DEFAULT_JS_RESULT_ITEM_TEMPLATES } from '../../../../overlay/js-result-phrases.js';
-import { DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL } from '../../../../infra/read-header-templates.js';
+import {
+  DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL,
+  DEFAULT_READ_FOOTER_FULL, DEFAULT_READ_FOOTER_PARTIAL, DEFAULT_READ_FOOTER_CAPPED,
+  DEFAULT_GLOB_FOOTER_FULL, DEFAULT_GLOB_FOOTER_TRUNCATED,
+} from '../../../../infra/read-header-templates.js';
 import * as echarts from 'echarts';
 
 const SETTINGS_SLOT = 'settings.section';
@@ -409,7 +413,27 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ),
   );
 
-  // [261101-ym9l98] read 工具首行模板（两套池：完整文件 / 部分读取）
+  /**
+   * 生成一个「每行一条」的模板池编辑块（label + 说明 + textarea + 填入/清空）。
+   * [261101-ym9l98] 多个 footer 池共用，避免重复 8 行 JSX。
+   */
+  const makeFooterBlock = (field: string, label: string, placeholders: string, defaults: string[]) =>
+    createElement('div', { className: 'ck-set-row-col', style: { marginTop: '16px' } },
+      createElement('div', { className: 'ck-set-row-label' }, label + '（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        '占位符：' + placeholders + '；池为空时使用内置模板。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 6,
+        value: data[field] || '',
+        onChange: (e: any) => setField(field, e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField(field, defaults.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField(field, '') }, '清空'),
+      ),
+    );
+
+  // [261101-ym9l98] read 工具输出格式（首行两套池 + 结尾三套池）
   const readHeader = createElement('div', { className: 'ck-card' },
     createElement('div', { className: 'ck-set-row-col' },
       createElement('div', { className: 'ck-set-row-label' }, '完整文件时的首行（每行一条）'),
@@ -439,6 +463,15 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         createElement('button', { className: 'ck-btn', onClick: () => setField('readHeaderPartial', '') }, '清空'),
       ),
     ),
+    makeFooterBlock('readFooterFull', '读完整个文件时的结尾', '{total} 总行数', DEFAULT_READ_FOOTER_FULL),
+    makeFooterBlock('readFooterPartial', '文件没读完时的结尾', '{start} 起始行、{end} 结束行、{total} 总行数、{next} 下一段起始行号（请包在 offset= 里）', DEFAULT_READ_FOOTER_PARTIAL),
+    makeFooterBlock('readFooterCapped', '输出字节超限被截断时的结尾', '{start} 起始行、{end} 结束行、{next} 下一段起始行号（请包在 offset= 里）', DEFAULT_READ_FOOTER_CAPPED),
+  );
+
+  // [261101-ym9l98] glob 结尾模板
+  const globFooter = createElement('div', { className: 'ck-card' },
+    makeFooterBlock('globFooterFull', '未截断时的结尾', '{count} 匹配文件数', DEFAULT_GLOB_FOOTER_FULL),
+    makeFooterBlock('globFooterTruncated', '结果被截断时的结尾', '{shown} 已显示数、{total} 总数', DEFAULT_GLOB_FOOTER_TRUNCATED),
   );
 
   // ===== 日志分类（仅打包版有用）=====
@@ -492,7 +525,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ['security', '网络安全'],
     ['ai-intercept', 'AI 回复拦截'],
     ['js-result-phrases', '工具结果回复语'],   // [261101-ym9l98]
-    ['read-header', '文件读取首行'],          // [261101-ym9l98]
+    ['read-header', '文件读取格式'],          // [261101-ym9l98]
+    ['glob-footer', '文件搜索格式'],          // [261101-ym9l98]
     ['logs', '日志'],
     ['usage', '用量统计'],
   ];
@@ -517,6 +551,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   else if (active === 'ai-intercept') content = aiIntercept;
   else if (active === 'js-result-phrases') content = jsResultPhrases;
   else if (active === 'read-header') content = readHeader;
+  else if (active === 'glob-footer') content = globFooter;
   else if (active === 'logs') content = logs;
   else if (active === 'usage') content = createElement(UsageStats);
   else if (active.startsWith('plugin:')) {

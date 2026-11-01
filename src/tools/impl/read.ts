@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   READ_HEADER_FULL_KEY, READ_HEADER_PARTIAL_KEY,
+  READ_FOOTER_FULL_KEY, READ_FOOTER_PARTIAL_KEY, READ_FOOTER_CAPPED_KEY,
   DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL,
+  DEFAULT_READ_FOOTER_FULL, DEFAULT_READ_FOOTER_PARTIAL, DEFAULT_READ_FOOTER_CAPPED,
   pickAndRender,
 } from '../../infra/read-header-templates.js';
 
@@ -14,6 +16,12 @@ export type SettingReader = (key: string) => string | undefined;
 let _readSetting: SettingReader | null = null;
 export function injectSettingReader(fn: SettingReader): void {
   _readSetting = fn;
+}
+
+/** 供其他工具（如 glob）复用同一个设置读取注入，避免重复注入 */
+export function readSettingRaw(key: string): string | undefined {
+  if (!_readSetting) return undefined;
+  try { return _readSetting(key); } catch (_) { return undefined; }
 }
 
 function readTemplatePool(key: string, fallback: string[]): string[] {
@@ -175,13 +183,27 @@ function formatReadOutput(displayPath: string, outcome: any): string {
     });
   }
 
-  let footer;
+  // [261101-ym9l98] footer 也走模板池；offset= 参数名由模板作者保证（内置模板均已包好）
+  const nextOffset = endLine + 1;
+  let footer: string;
   if (outcome.truncatedByBytes) {
-    footer = '(Output capped. Showing lines ' + outcome.offset + '-' + endLine + '. Use offset=' + (endLine + 1) + ' to continue.)';
+    footer = pickAndRender(
+      readTemplatePool(READ_FOOTER_CAPPED_KEY, DEFAULT_READ_FOOTER_CAPPED),
+      DEFAULT_READ_FOOTER_CAPPED,
+      { start: outcome.offset, end: endLine, next: nextOffset }
+    );
   } else if (endLine < outcome.totalLines) {
-    footer = '(Showing lines ' + outcome.offset + '-' + endLine + ' of ' + outcome.totalLines + '. Use offset=' + (endLine + 1) + ' to continue.)';
+    footer = pickAndRender(
+      readTemplatePool(READ_FOOTER_PARTIAL_KEY, DEFAULT_READ_FOOTER_PARTIAL),
+      DEFAULT_READ_FOOTER_PARTIAL,
+      { start: outcome.offset, end: endLine, total: outcome.totalLines, next: nextOffset }
+    );
   } else {
-    footer = '(End of file - total ' + outcome.totalLines + ' lines)';
+    footer = pickAndRender(
+      readTemplatePool(READ_FOOTER_FULL_KEY, DEFAULT_READ_FOOTER_FULL),
+      DEFAULT_READ_FOOTER_FULL,
+      { total: outcome.totalLines }
+    );
   }
 
   const body = outcome.lines.length > 0

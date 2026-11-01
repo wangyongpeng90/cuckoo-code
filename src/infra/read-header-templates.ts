@@ -1,13 +1,18 @@
 /**
- * [261101-ym9l98] read 工具首行模板池
+ * [261101-ym9l98] 工具输出格式模板池（read 首行 / read 结尾 / glob 结尾）
  *
- * 只改 read 输出的首行元信息（文件名 + 行号范围）。
- * 正文的「行号: 内容」与结尾续读提示保持固定 —— 前者是 AI 解析行号的基础，
- * 后者带 offset 续读指令，随机化会引入误判。
+ * 只改"给人看的话"，不改 AI 依赖的结构：
+ *   - read 正文的「行号: 内容」保持固定（AI 靠它解析行号）
+ *   - 续读指令里的 offset= 参数名保持英文原样（AI 要照着传）
  *
- * 两套池：
- *   - 完整文件：占位符 {path} {total}
- *   - 部分读取：占位符 {path} {start} {end} {total} {rest}
+ * 五套池：
+ *   - read 首行·完整：{path} {total}
+ *   - read 首行·部分：{path} {start} {end} {total} {rest}
+ *   - read 结尾·完整：{total}
+ *   - read 结尾·部分：{start} {end} {total} {next}
+ *   - read 结尾·字节截断：{start} {end} {next}
+ *
+ * {next} = 下一段起始行号（= end + 1），用户需自行包在 offset= 里。
  */
 
 /** 完整文件首行池的键名 */
@@ -15,6 +20,21 @@ export const READ_HEADER_FULL_KEY = 'cuckoo-read-header-full';
 
 /** 部分读取首行池的键名 */
 export const READ_HEADER_PARTIAL_KEY = 'cuckoo-read-header-partial';
+
+/** read 结尾·完整文件的键名 */
+export const READ_FOOTER_FULL_KEY = 'cuckoo-read-footer-full';
+
+/** read 结尾·部分读取的键名 */
+export const READ_FOOTER_PARTIAL_KEY = 'cuckoo-read-footer-partial';
+
+/** read 结尾·字节截断的键名 */
+export const READ_FOOTER_CAPPED_KEY = 'cuckoo-read-footer-capped';
+
+/** glob 结尾·未截断的键名 */
+export const GLOB_FOOTER_FULL_KEY = 'cuckoo-glob-footer-full';
+
+/** glob 结尾·截断的键名 */
+export const GLOB_FOOTER_TRUNCATED_KEY = 'cuckoo-glob-footer-truncated';
 
 /** 完整文件首行默认池 */
 export const DEFAULT_READ_HEADER_FULL: string[] = [
@@ -235,3 +255,53 @@ export function pickAndRender(pool: string[], fallback: string[], vars: Record<s
   const tpl = list[Math.floor(Math.random() * list.length)] || fallback[0] || '';
   return renderReadHeader(tpl, vars);
 }
+
+/** read 结尾·完整文件默认池（{total}） */
+export const DEFAULT_READ_FOOTER_FULL: string[] = [
+  '(已到文件末尾，共 {total} 行)',
+  '(读完啦，一共 {total} 行)',
+  '(全文结束，总共 {total} 行)',
+  '(已经到底了，共 {total} 行)',
+  '(没有更多了，全 {total} 行)',
+  '(文件读完，共 {total} 行)',
+  '(到底啦，一共 {total} 行)',
+  '(全文 {total} 行都在这儿了)',
+];
+
+/** read 结尾·部分读取默认池（{start} {end} {total} {next}） */
+export const DEFAULT_READ_FOOTER_PARTIAL: string[] = [
+  '(显示了第 {start}-{end} 行，共 {total} 行；要继续读就传 offset={next})',
+  '(这次是第 {start}-{end} 行，全 {total} 行；接着读传 offset={next})',
+  '(第 {start}-{end} 行，还剩 {total} 行里的后半段；继续读传 offset={next})',
+  '(已给出第 {start}-{end} 行（共 {total} 行）；想往下看就传 offset={next})',
+  '(第 {start}-{end} 行 / 共 {total} 行；下一段用 offset={next})',
+  '(先给你第 {start}-{end} 行，全 {total} 行；继续读传 offset={next})',
+];
+
+/** read 结尾·字节截断默认池（{start} {end} {next}） */
+export const DEFAULT_READ_FOOTER_CAPPED: string[] = [
+  '(输出已达上限，只显示了第 {start}-{end} 行；要继续读就传 offset={next})',
+  '(这次输出被截断了，只有第 {start}-{end} 行；接着读传 offset={next})',
+  '(内容太多被截断，显示到第 {end} 行；继续读传 offset={next})',
+  '(输出到上限了，只给了第 {start}-{end} 行；往下读传 offset={next})',
+];
+
+/** glob 结尾·未截断默认池（{count}） */
+export const DEFAULT_GLOB_FOOTER_FULL: string[] = [
+  '(共找到 {count} 个文件)',
+  '(一共 {count} 个匹配)',
+  '(找到 {count} 个文件)',
+  '(共 {count} 个文件)',
+  '({count} 个结果)',
+  '(搜到 {count} 个文件)',
+  '(共 {count} 个匹配文件)',
+];
+
+/** glob 结尾·截断默认池（{shown} {total}） */
+export const DEFAULT_GLOB_FOOTER_TRUNCATED: string[] = [
+  '(只列了 {total} 个路径里的前 {shown} 个，缩小 pattern 或指定 path 能看到更多)',
+  '({total} 个里只显示前 {shown} 个；缩小 pattern 或指定 path 可看更多)',
+  '(结果太多，只给了前 {shown} 个（共 {total} 个）；缩小范围可看更多)',
+  '(共 {total} 个匹配，只列了前 {shown} 个；缩小 pattern 或指定 path 能看到更多)',
+  '(截断了：{total} 个里只显示 {shown} 个；缩小范围能看到更多)',
+];

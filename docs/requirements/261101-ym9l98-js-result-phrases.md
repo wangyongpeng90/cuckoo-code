@@ -217,10 +217,45 @@ tools 层通过 `injectSettingReader` 注入读取函数（遵守「tools 不可
 
 **未改** `<path>/<type>/<content>`：那是 `write` 的真实返回，`write` 本次未改，示例保留才准确。
 
+
+## 扩展四：工具输出 footer 也可配（5 个池）
+
+### 背景
+`read` 和 `glob` 的结尾 footer 原本是中英混杂的固定文案。既然首行已经可配，footer 同样每条结果都出现（一次任务可能调几十次 read），随机化的收益明显。
+
+### 五套池
+
+| 键 | 场景 | 占位符 |
+|---|---|---|
+| `cuckoo-read-footer-full` | read 读完整个文件 | `{total}` |
+| `cuckoo-read-footer-partial` | read 未读完 | `{start}` `{end}` `{total}` `{next}` |
+| `cuckoo-read-footer-capped` | read 字节超限 | `{start}` `{end}` `{next}` |
+| `cuckoo-glob-footer-full` | glob 未截断 | `{count}` |
+| `cuckoo-glob-footer-truncated` | glob 截断 | `{shown}` `{total}` |
+
+`{next}` = 下一段起始行号（end + 1）。**内置模板均已把 `{next}` 包在 `offset=` 里**，因为 AI 要照着传参。
+
+### 决策
+
+- **D22 glob ignore note 不做池**：语义单一（"这些目录被忽略了，要搜就传 path"），随机化收益最低，反而增加池数量。
+- **D23 5 个池，不是 1 个池 + 条件占位符**：`{all}`（完整时填充、部分时空）这类条件占位符规则难懂，用户容易写错。分开成独立池，语义清晰。
+- **D24 设置页按工具分区**：「文件读取格式」= read 首行 2 个 + read 结尾 3 个；「文件搜索格式」= glob 结尾 2 个。改某个工具的观感时在同一分类里就能看全。
+- **D25 glob 复用 read 的设置注入**：`read.ts` 导出 `readSettingRaw(key)` 供 `glob.ts` 使用，避免重复注入（两者都在 tools 层，互引合法）。
+
+### 落地位置
+
+| 文件 | 职责 |
+|---|---|
+| `src/infra/read-header-templates.ts` | 5 个新池 + 键名（原文件改名不改，仍是「工具输出格式模板」职责） |
+| `src/tools/impl/read.ts` | footer 改走池；导出 `readSettingRaw` |
+| `src/tools/impl/glob.ts` | footer 改走池（复用 read 的注入） |
+| `src/ui/shell/scripts/pages/settings-react.tsx` | 「文件读取首行」→「文件读取格式」；新增「文件搜索格式」分类；`makeFooterBlock` 抽公共块 |
+| `test/tools/*.test.js` | footer 断言改为检查结构（`offset=` 参数、行号、总数），不再检查具体措辞 |
+
 ## 遗留
 
 1. **未真机验证**：设置页 4 个池、跨窗口同步、read 首行效果均需 `npm start` 实机确认
 2. **write / edit 输出仍是英文/XML**：`write` 返回 `<path>…</path><type>file</type>`，`edit` 返回 `The file … has been updated`。本次只改了 `read`，两者待后续统一
-3. **其他硬编码提示语未配置化**：`prompt-builder.ts` 的「请继续你之前的工作」、`compaction.ts` 的摘要指令、`JsRunner.ts` 的无输出提示、`observer.ts` 的 JSON 格式提示
+3. **其他硬编码提示语未配置化**：`prompt-builder.ts` 的「请继续你之前的工作」、`compaction.ts` 的摘要指令、`JsRunner.ts` 的无输出提示、`observer.ts` 的 JSON 格式提示、`glob.ts` 的 ignore note
 4. **旧 overlay 设置弹窗**（`openSettings/saveSettings`）无对应 DOM，未在其中加入池的读写
 5. **`src/ui/shell.html` / `src/tools/api.d.ts` 为生成物**，随 `npm run compile` 更新，不手改

@@ -11,7 +11,11 @@ import {
 import { getSharedSetting, saveSharedSettingValues, removeSharedSettingKeys } from '../shared-settings-cache.js';
 import {
   READ_HEADER_FULL_KEY, READ_HEADER_PARTIAL_KEY,
+  READ_FOOTER_FULL_KEY, READ_FOOTER_PARTIAL_KEY, READ_FOOTER_CAPPED_KEY,
+  GLOB_FOOTER_FULL_KEY, GLOB_FOOTER_TRUNCATED_KEY,
   DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL,
+  DEFAULT_READ_FOOTER_FULL, DEFAULT_READ_FOOTER_PARTIAL, DEFAULT_READ_FOOTER_CAPPED,
+  DEFAULT_GLOB_FOOTER_FULL, DEFAULT_GLOB_FOOTER_TRUNCATED,
 } from '../../infra/read-header-templates.js';
 
 /** 打开设置弹窗：从 localStorage 加载配置到输入框 */
@@ -179,6 +183,17 @@ interface SettingsData {
   readHeaderFull: string;
   /** 部分读取时的首行模板（{path} {start} {end} {total} {rest}） */
   readHeaderPartial: string;
+  // [261101-ym9l98] read 结尾 + glob 结尾的模板池
+  /** read 结尾·完整文件（{total}） */
+  readFooterFull: string;
+  /** read 结尾·部分读取（{start} {end} {total} {next}） */
+  readFooterPartial: string;
+  /** read 结尾·字节截断（{start} {end} {next}） */
+  readFooterCapped: string;
+  /** glob 结尾·未截断（{count}） */
+  globFooterFull: string;
+  /** glob 结尾·截断（{shown} {total}） */
+  globFooterTruncated: string;
 }
 
 // [261101-ym9l98] 保存/读取时归一化，保证单句写法不漏 {r}（否则成败信息会丢）
@@ -234,6 +249,11 @@ function getSettingsData(): SettingsData {
     jsResultItemTemplates: migrateItemTemplates(getSharedSetting(JS_RESULT_ITEM_TEMPLATES_KEY) ?? null),
     readHeaderFull: getSharedSetting(READ_HEADER_FULL_KEY) ?? DEFAULT_READ_HEADER_FULL.join('\n'),
     readHeaderPartial: getSharedSetting(READ_HEADER_PARTIAL_KEY) ?? DEFAULT_READ_HEADER_PARTIAL.join('\n'),
+    readFooterFull: getSharedSetting(READ_FOOTER_FULL_KEY) ?? DEFAULT_READ_FOOTER_FULL.join('\n'),
+    readFooterPartial: getSharedSetting(READ_FOOTER_PARTIAL_KEY) ?? DEFAULT_READ_FOOTER_PARTIAL.join('\n'),
+    readFooterCapped: getSharedSetting(READ_FOOTER_CAPPED_KEY) ?? DEFAULT_READ_FOOTER_CAPPED.join('\n'),
+    globFooterFull: getSharedSetting(GLOB_FOOTER_FULL_KEY) ?? DEFAULT_GLOB_FOOTER_FULL.join('\n'),
+    globFooterTruncated: getSharedSetting(GLOB_FOOTER_TRUNCATED_KEY) ?? DEFAULT_GLOB_FOOTER_TRUNCATED.join('\n'),
   };
 }
 
@@ -327,6 +347,18 @@ async function applySettingsData(data: any): Promise<{ success: boolean; error?:
   if (data && data.readHeaderPartial !== undefined) {
     shared[READ_HEADER_PARTIAL_KEY] = String(data.readHeaderPartial || '');
   }
+  const footerMap: Array<[string, string, string]> = [
+    ['readFooterFull', READ_FOOTER_FULL_KEY, ''],
+    ['readFooterPartial', READ_FOOTER_PARTIAL_KEY, ''],
+    ['readFooterCapped', READ_FOOTER_CAPPED_KEY, ''],
+    ['globFooterFull', GLOB_FOOTER_FULL_KEY, ''],
+    ['globFooterTruncated', GLOB_FOOTER_TRUNCATED_KEY, ''],
+  ];
+  for (const [field, key] of footerMap) {
+    if (data && (data as any)[field] !== undefined) {
+      shared[key] = String((data as any)[field] || '');
+    }
+  }
   if (Object.keys(shared).length > 0) {
     const ok = await saveSharedSettingValues(shared);
     if (!ok) return { success: false, error: '通用设置写入失败' };
@@ -354,6 +386,8 @@ async function resetSettingsData(): Promise<SettingsData> {
   await removeSharedSettingKeys([
     JS_RESULT_PHRASES_KEY, JS_RESULT_ITEM_TEMPLATES_KEY,
     READ_HEADER_FULL_KEY, READ_HEADER_PARTIAL_KEY,
+    READ_FOOTER_FULL_KEY, READ_FOOTER_PARTIAL_KEY, READ_FOOTER_CAPPED_KEY,
+    GLOB_FOOTER_FULL_KEY, GLOB_FOOTER_TRUNCATED_KEY,
   ]);
   return getSettingsData();
 }
