@@ -3,6 +3,26 @@ import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  READ_HEADER_FULL_KEY, READ_HEADER_PARTIAL_KEY,
+  DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL,
+  pickAndRender,
+} from '../../infra/read-header-templates.js';
+
+// [261101-ym9l98] 通用设置读取（由 app 层注入，避免 tools → app 反向依赖）
+export type SettingReader = (key: string) => string | undefined;
+let _readSetting: SettingReader | null = null;
+export function injectSettingReader(fn: SettingReader): void {
+  _readSetting = fn;
+}
+
+function readTemplatePool(key: string, fallback: string[]): string[] {
+  if (!_readSetting) return fallback;
+  let raw = '';
+  try { raw = _readSetting(key) || ''; } catch (_) { return fallback; }
+  const list = raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  return list.length > 0 ? list : fallback;
+}
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
 export const apiMetas: ToolApiMeta[] = [
@@ -21,14 +41,9 @@ export const apiMetas: ToolApiMeta[] = [
     ].join('\n'),
     doc: [
       '读取 UTF-8 文本文件并返回带行号的内容窗口。',
-      '通过 offset 和 limit 分段读取大文件。输出为格式化文本：',
-      '<path>...</path>',
-      '<type>file</type>',
-      '<content>',
-      '行号: 内容',
-      '...',
-      '(footer 提示是否继续读取)',
-      '</content>',
+      '通过 offset 和 limit 分段读取大文件。输出为：',
+      '首行是文件信息（路径 + 行号范围，模板可在设置里自定义），空行，',
+      '然后正文是「行号: 内容」，最后一行是续读提示。',
     ].join('\n'),
     params: 'filePath: string, options?: ReadOptions',
     returns: 'Promise<string>',
@@ -134,12 +149,31 @@ function buildWindow(text: string, request: WindowRequest, displayPath: string):
 }
 
 /**
- * 与 dsh formatReadOutput 保持一致：返回 envelope，包含行号和 footer。
+ * [261101-ym9l98] 首行元信息可配置（完整 / 部分两套池）；
+ * 正文「行号: 内容」与 footer 保持固定格式（AI 依赖其解析行号与续读）。
  */
 function formatReadOutput(displayPath: string, outcome: any): string {
   const endLine = outcome.lines.length > 0
     ? outcome.lines[outcome.lines.length - 1].number
     : Math.max(0, outcome.offset - 1);
+
+  let header: string;
+  if (outcome.truncatedByBytes || endLine < outcome.totalLines) {
+    const pool = readTemplatePool(READ_HEADER_PARTIAL_KEY, DEFAULT_READ_HEADER_PARTIAL);
+    header = pickAndRender(pool, DEFAULT_READ_HEADER_PARTIAL, {
+      path: displayPath,
+      start: outcome.offset,
+      end: endLine,
+      total: outcome.totalLines,
+      rest: Math.max(0, outcome.totalLines - endLine),
+    });
+  } else {
+    const pool = readTemplatePool(READ_HEADER_FULL_KEY, DEFAULT_READ_HEADER_FULL);
+    header = pickAndRender(pool, DEFAULT_READ_HEADER_FULL, {
+      path: displayPath,
+      total: outcome.totalLines,
+    });
+  }
 
   let footer;
   if (outcome.truncatedByBytes) {
@@ -154,7 +188,7 @@ function formatReadOutput(displayPath: string, outcome: any): string {
     ? outcome.lines.map((line: WindowLine) => line.number + ': ' + line.text).join('\n') + '\n\n' + footer
     : footer;
 
-  return '<path>' + displayPath + '</path>\n<type>file</type>\n<content>\n' + body + '\n</content>';
+  return header + '\n\n' + body;
 }
 
 /**

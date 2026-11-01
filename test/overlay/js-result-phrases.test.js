@@ -15,9 +15,16 @@ function installLocalStorage(initial) {
 
 const KEY = 'cuckoo-js-result-phrases';
 
-/** 每次重新 import，避免模块级状态污染（当前实现无状态，保持稳妥） */
+/**
+ * 每次重新 import，并注入"通用设置读取函数"。
+ * 生产环境由 bridge/entry 注入（数据来自主进程），测试里用 localStorage mock 充当数据源。
+ */
 async function load() {
-  return import('../../src/overlay/js-result-phrases.js');
+  const mod = await import('../../src/overlay/js-result-phrases.js');
+  mod.setSharedSettingReader((k) => {
+    try { return localStorage.getItem(k) || undefined; } catch (_) { return undefined; }
+  });
+  return mod;
 }
 
 beforeEach(() => {

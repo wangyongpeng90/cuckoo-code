@@ -10,6 +10,7 @@ import * as profileManager from './profile.js';
 import { createSessionStore } from '../session/store.js';
 import { createLogicIdMap } from '../session/logic-id-map.js';
 import { initDatabase, migrateLegacyData } from '../session/db.js';
+import { initSettingsStore, getSetting } from './settings-store.js';
 import { getProvider } from '../providers/registry.js';
 import * as updater from '../updater/index.js';
 import * as mcpConfig from '../mcp/config.js';
@@ -45,6 +46,10 @@ console.log('[Cuckoo Code] Session 数据目录:', app.getPath('userData'));
 
 // 初始化 SQLite 数据库
 const globalDb = initDatabase(app.getPath('userData'));
+// [261101-ym9l98] 跨窗口通用设置（主进程内存 + meta 表持久化）
+initSettingsStore(globalDb);
+// 注入给 tools 层（read 首行模板等需要读通用设置）
+injectSettingReader((key: string) => getSetting(key));
 // 迁移老 JSON 数据
 migrateLegacyData(globalDb, app.getPath('userData'));
 
@@ -75,6 +80,7 @@ import { buildChromeUserAgent, buildClientHintsHeaders } from '../infra/user-age
 import { initFeishu } from './ipc/feishu.js';
 import { injectSubagentDeps, runAgent as runAgentImpl } from './subagent.js';
 import { injectAgentRunner, injectSubagentChecker } from '../tools/impl/run-agent.js';
+import { injectSettingReader } from '../tools/impl/read.js';
 import { injectGoalDonePusher } from '../tools/impl/goal-done.js';
 import { isSubagentWindow, pushGoalDone } from './goal.js';
 import { injectSessionTitleSetter } from '../tools/impl/name-conversation.js';

@@ -1,8 +1,8 @@
 ---
 id: 261101-ym9l98
 type: feature
-title: 工具结果回传文案拟人化（头部文案池 + 脚本标题模板池）
-status: doing
+title: 工具结果回传文案拟人化（含跨窗口通用存储与 read 首行模板）
+status: review
 branch: feat/261101-ym9l98-js-result-phrases
 created: 2026-11-01
 updated: 2026-11-01
@@ -154,10 +154,73 @@ updated: 2026-11-01
 | 测试 | `test/overlay/js-result-phrases.test.js` |
 | 注释规则补充 | `docs/requirements/README.md`（「加在哪些位置」小节） |
 
+
+## 扩展一：跨窗口通用存储（主进程 SQLite）
+
+### 背景
+原实现用 localStorage 存池，但 localStorage 按 profile partition 隔离——每个窗口一份，改一个窗口其他窗口不生效。用户要求「所有窗口通用一份」。
+
+### 方案
+三层结构：
+
+| 层 | 位置 | 职责 |
+|---|---|---|
+| 主进程内存 Map | `src/app/settings-store.ts` | 运行时唯一真相源 |
+| SQLite `meta` 表 | 键前缀 `setting:` | 持久化，重启不丢 |
+| 渲染进程快照 | `src/overlay/shared-settings-cache.ts` | 同步消费（启动拉一次 + 广播刷新） |
+
+tools 层通过 `injectSettingReader` 注入读取函数（遵守「tools 不可 import app」铁律）。
+
+### 决策
+- **D14 历史 localStorage 设置一律不动**：只迁本次新增的池，`cuckoo-retry-*` 等保持每窗口独立。改动面可控，风险最小。
+- **D15 不用 `window.__cuckooSettings` 全局注入**：本次消费方只有 overlay（隔离世界，能直接用 electronAPI）和主进程（直接读内存），hook 一个都不读。为用不上的路径预建机制是纯负债。
+- **D16 旧数据自动迁移**：DB 里没有、本机 localStorage 有上一版本存的池时，启动时一次性推到 DB。
+- **D17 写后广播**：`cuckoo-shared-settings-changed` 推给所有窗口的 view / win / harnessView，各窗口整份替换快照。
+
+### 落地位置
+| 文件 | 职责 |
+|---|---|
+| `src/app/settings-store.ts` | 内存 Map + meta 表读写 |
+| `src/app/ipc/shared-settings.ts` | 3 个 IPC + 广播 |
+| `src/overlay/shared-settings-cache.ts` | 渲染侧快照 + 迁移 + 订阅 |
+| `src/app/entry.ts` | 初始化 + `injectSettingReader` |
+
+## 扩展二：read 工具首行口语化
+
+### 背景
+`read` 原输出 `<path>README.md</path><type>file</type><content>...</content>`，XML 味重。用户要求改口语化，且可配置。
+
+### 方案
+只改**首行元信息**，正文「行号: 内容」与结尾续读提示保持固定（AI 依赖它们解析行号与 offset）。
+
+两套池：
+- **完整文件**：占位符 `{path}` `{total}`
+- **部分读取**：占位符 `{path}` `{start}` `{end}` `{total}` `{rest}`
+
+### 决策
+- **D18 正文行号格式不动**：`120: 代码` 一旦变化，AI 在后续 edit/引用行号时容易出错，收益远小于风险。
+- **D19 首行 + 结尾都要可配**（原始讨论选 B）：两种情况句式差别大，硬塞进一个模板会啰嗦或丢信息。
+- **D20 两个池不放「工具结果回复语」分类**：那是「回传给 AI 的消息文案」，read 首行是「工具自身输出」，层不同。新开「文件读取首行」分类。
+- **D21 read.ts 用注入读设置**：tools 不可 import app，沿用项目已有的 `injectGoalDonePusher` 模式新增 `injectSettingReader`。
+
+### 落地位置
+| 文件 | 职责 |
+|---|---|
+| `src/infra/read-header-templates.ts` | 两套模板池 + 渲染函数 |
+| `src/tools/impl/read.ts` | 首行改用模板 + `injectSettingReader` |
+| `src/ui/shell/scripts/pages/settings-react.tsx` | 新分类「文件读取首行」 |
+| `test/infra/read-header-templates.test.js` | 7 个用例 |
+
+## 扩展三：prompt 模板示例修正（P0）
+
+`src/prompt/{deepseek,claude,chatgpt,default}.md` 的「系统返回」示例仍是旧格式（`【JS 执行结果汇总】` / `—— 脚本 1 ——` / `✅ 成功`），已改为当前真实格式。
+
+**未改** `<path>/<type>/<content>`：那是 `write` 的真实返回，`write` 本次未改，示例保留才准确。
+
 ## 遗留
 
-1. **素材 1000+1000 条已生成但未接入内置**：`wyp/vip/提示词文案/js-result-phrases.txt` 与 `js-result-item-templates.txt`，待清洗后替换默认数组
-2. **未真机验证**：设置页 UI 与随机效果需 `npm start` 实机确认
-3. **旧 overlay 设置弹窗**（`openSettings/saveSettings`）无对应 DOM，本次未在其中加入池的读写
-4. **素材质量问题**：标题模板中「到第 {i} 了，个工具脚本…」这类引导词+名词搭配存在语病（实测已暴露），接入前需清洗
-5. **`src/ui/shell.html` 为生成物**，随 `npm run compile` 更新，不手改
+1. **未真机验证**：设置页 4 个池、跨窗口同步、read 首行效果均需 `npm start` 实机确认
+2. **write / edit 输出仍是英文/XML**：`write` 返回 `<path>…</path><type>file</type>`，`edit` 返回 `The file … has been updated`。本次只改了 `read`，两者待后续统一
+3. **其他硬编码提示语未配置化**：`prompt-builder.ts` 的「请继续你之前的工作」、`compaction.ts` 的摘要指令、`JsRunner.ts` 的无输出提示、`observer.ts` 的 JSON 格式提示
+4. **旧 overlay 设置弹窗**（`openSettings/saveSettings`）无对应 DOM，未在其中加入池的读写
+5. **`src/ui/shell.html` / `src/tools/api.d.ts` 为生成物**，随 `npm run compile` 更新，不手改

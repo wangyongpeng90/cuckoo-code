@@ -32912,6 +32912,27 @@ body {
     "\u7B2C {i} \u6BB5\uFF0C\u52A8\u4F5C\u8DD1\u8FC7\u4E86\uFF0C\u6210\u529F\uFF0C\u4F60\u770B\u4E0B\u7ED3\u679C|\u7B2C {i} \u6BB5\uFF0C\u52A8\u4F5C\u8DD1\u8FC7\u4E86\uFF0C\u5931\u8D25\uFF0C\u5F97\u6539\u4E00\u4E0B"
   ];
 
+  // src/infra/read-header-templates.ts
+  var DEFAULT_READ_HEADER_FULL = [
+    "{path}\uFF08\u5168\u90E8 {total} \u884C\uFF09",
+    "{path}\uFF0C\u4E00\u5171 {total} \u884C",
+    "{path} \u8BFB\u5B8C\u4E86\uFF0C{total} \u884C\u90FD\u5728\u4E0B\u9762",
+    "{path} \u5168\u6587 {total} \u884C",
+    "{path} \u603B\u5171 {total} \u884C\uFF0C\u7ED9\u4F60\u770B\u770B",
+    "{path} \u4E00\u5171 {total} \u884C\uFF0C\u5185\u5BB9\u5982\u4E0B",
+    "{path} \u7684 {total} \u884C\u90FD\u5728\u8FD9\u513F",
+    "{path}\uFF08\u5171 {total} \u884C\uFF09"
+  ];
+  var DEFAULT_READ_HEADER_PARTIAL = [
+    "{path}\uFF08\u7B2C {start}-{end} \u884C\uFF0C\u5171 {total} \u884C\uFF0C\u8FD8\u5269 {rest} \u884C\uFF09",
+    "{path} \u5148\u770B\u7B2C {start}-{end} \u884C\uFF0C\u5168\u6587\u4EF6 {total} \u884C\uFF0C\u8FD8\u6709 {rest} \u884C",
+    "{path}\uFF1A\u7B2C {start} \u5230 {end} \u884C\uFF08\u5171 {total} \u884C\uFF0C\u5269 {rest} \u884C\uFF09",
+    "{path}\uFF08{start}-{end} / \u5171 {total} \u884C\uFF0C\u4F59 {rest} \u884C\uFF09",
+    "{path} \u8FD9\u6B21\u662F\u7B2C {start}-{end} \u884C\uFF0C\u5168 {total} \u884C\uFF0C\u8FD8\u5269 {rest} \u884C",
+    "{path} \u7684\u7B2C {start}-{end} \u884C\uFF0C\u4E00\u5171 {total} \u884C\uFF0C\u540E\u9762\u8FD8\u6709 {rest} \u884C",
+    "{path} \u5148\u7ED9\u4F60\u7B2C {start}-{end} \u884C\uFF0C\u5171 {total} \u884C\uFF0C\u8FD8\u6709 {rest} \u884C\u6CA1\u8BFB"
+  ];
+
   // node_modules/echarts/node_modules/tslib/tslib.es6.js
   var extendStatics = function(d, b) {
     extendStatics = Object.setPrototypeOf || { __proto__: [] } instanceof Array && function(d2, b2) {
@@ -115797,6 +115818,54 @@ body {
         )
       )
     );
+    const readHeader = (0, import_react8.createElement)(
+      "div",
+      { className: "ck-card" },
+      (0, import_react8.createElement)(
+        "div",
+        { className: "ck-set-row-col" },
+        (0, import_react8.createElement)("div", { className: "ck-set-row-label" }, "\u5B8C\u6574\u6587\u4EF6\u65F6\u7684\u9996\u884C\uFF08\u6BCF\u884C\u4E00\u6761\uFF09"),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-row-desc" },
+          "read \u8BFB\u5230\u6587\u4EF6\u672B\u5C3E\u65F6\u7528\u7684\u9996\u884C\u3002{path} \u66FF\u6362\u4E3A\u6587\u4EF6\u8DEF\u5F84\uFF0C{total} \u66FF\u6362\u4E3A\u603B\u884C\u6570\uFF1B\u6C60\u4E3A\u7A7A\u65F6\u4F7F\u7528\u5185\u7F6E\u6A21\u677F\u3002"
+        ),
+        (0, import_react8.createElement)("textarea", {
+          className: "ck-set-textarea",
+          rows: 8,
+          value: data.readHeaderFull || "",
+          onChange: (e2) => setField("readHeaderFull", e2.target.value)
+        }),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-inline", style: { marginTop: "8px", justifyContent: "flex-end" } },
+          (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("readHeaderFull", DEFAULT_READ_HEADER_FULL.join("\n")) }, "\u586B\u5165\u5185\u7F6E\u9ED8\u8BA4"),
+          (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("readHeaderFull", "") }, "\u6E05\u7A7A")
+        )
+      ),
+      (0, import_react8.createElement)(
+        "div",
+        { className: "ck-set-row-col", style: { marginTop: "16px" } },
+        (0, import_react8.createElement)("div", { className: "ck-set-row-label" }, "\u90E8\u5206\u8BFB\u53D6\u65F6\u7684\u9996\u884C\uFF08\u6BCF\u884C\u4E00\u6761\uFF09"),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-row-desc" },
+          "\u6587\u4EF6\u6CA1\u8BFB\u5B8C\u65F6\u7528\u7684\u9996\u884C\u3002{path} \u8DEF\u5F84\u3001{start} \u8D77\u59CB\u884C\u3001{end} \u7ED3\u675F\u884C\u3001{total} \u603B\u884C\u6570\u3001{rest} \u5269\u4F59\u884C\u6570\uFF1B\u6C60\u4E3A\u7A7A\u65F6\u4F7F\u7528\u5185\u7F6E\u6A21\u677F\u3002"
+        ),
+        (0, import_react8.createElement)("textarea", {
+          className: "ck-set-textarea",
+          rows: 8,
+          value: data.readHeaderPartial || "",
+          onChange: (e2) => setField("readHeaderPartial", e2.target.value)
+        }),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-inline", style: { marginTop: "8px", justifyContent: "flex-end" } },
+          (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("readHeaderPartial", DEFAULT_READ_HEADER_PARTIAL.join("\n")) }, "\u586B\u5165\u5185\u7F6E\u9ED8\u8BA4"),
+          (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => setField("readHeaderPartial", "") }, "\u6E05\u7A7A")
+        )
+      )
+    );
     const formatSize = (n) => n < 1024 ? n + " B" : n < 1024 * 1024 ? (n / 1024).toFixed(1) + " KB" : (n / 1024 / 1024).toFixed(2) + " MB";
     const toggleLog = async (v) => {
       if (!api.setLogEnabled) return;
@@ -115868,6 +115937,8 @@ body {
       ["ai-intercept", "AI \u56DE\u590D\u62E6\u622A"],
       ["js-result-phrases", "\u5DE5\u5177\u7ED3\u679C\u56DE\u590D\u8BED"],
       // [261101-ym9l98]
+      ["read-header", "\u6587\u4EF6\u8BFB\u53D6\u9996\u884C"],
+      // [261101-ym9l98]
       ["logs", "\u65E5\u5FD7"],
       ["usage", "\u7528\u91CF\u7EDF\u8BA1"]
     ];
@@ -115888,6 +115959,7 @@ body {
     else if (active === "security") content = security;
     else if (active === "ai-intercept") content = aiIntercept;
     else if (active === "js-result-phrases") content = jsResultPhrases;
+    else if (active === "read-header") content = readHeader;
     else if (active === "logs") content = logs;
     else if (active === "usage") content = (0, import_react8.createElement)(UsageStats);
     else if (active.startsWith("plugin:")) {

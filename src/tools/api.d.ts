@@ -39,14 +39,9 @@ interface ReadOptions {
 
 /**
  * 读取 UTF-8 文本文件并返回带行号的内容窗口。
- * 通过 offset 和 limit 分段读取大文件。输出为格式化文本：
- * <path>...</path>
- * <type>file</type>
- * <content>
- * 行号: 内容
- * ...
- * (footer 提示是否继续读取)
- * </content>
+ * 通过 offset 和 limit 分段读取大文件。输出为：
+ * 首行是文件信息（路径 + 行号范围，模板可在设置里自定义），空行，
+ * 然后正文是「行号: 内容」，最后一行是续读提示。
  * @param filePath 相对（基于项目根目录）或绝对路径
  * @param options 可选，offset/limit
  * @throws 文件不存在、不是文件、offset 越界或读取失败时抛出异常

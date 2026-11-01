@@ -15,6 +15,7 @@ import { useHideAiView } from '../use-hide-ai-view.js';
 import { Select } from '../components/select.js';
 import { SettingRow } from '../components/setting-row.js';
 import { DEFAULT_JS_RESULT_PHRASES, DEFAULT_JS_RESULT_ITEM_TEMPLATES } from '../../../../overlay/js-result-phrases.js';
+import { DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL } from '../../../../infra/read-header-templates.js';
 import * as echarts from 'echarts';
 
 const SETTINGS_SLOT = 'settings.section';
@@ -408,6 +409,38 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ),
   );
 
+  // [261101-ym9l98] read 工具首行模板（两套池：完整文件 / 部分读取）
+  const readHeader = createElement('div', { className: 'ck-card' },
+    createElement('div', { className: 'ck-set-row-col' },
+      createElement('div', { className: 'ck-set-row-label' }, '完整文件时的首行（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        'read 读到文件末尾时用的首行。{path} 替换为文件路径，{total} 替换为总行数；池为空时使用内置模板。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 8,
+        value: data.readHeaderFull || '',
+        onChange: (e: any) => setField('readHeaderFull', e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField('readHeaderFull', DEFAULT_READ_HEADER_FULL.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField('readHeaderFull', '') }, '清空'),
+      ),
+    ),
+    createElement('div', { className: 'ck-set-row-col', style: { marginTop: '16px' } },
+      createElement('div', { className: 'ck-set-row-label' }, '部分读取时的首行（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        '文件没读完时用的首行。{path} 路径、{start} 起始行、{end} 结束行、{total} 总行数、{rest} 剩余行数；池为空时使用内置模板。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 8,
+        value: data.readHeaderPartial || '',
+        onChange: (e: any) => setField('readHeaderPartial', e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField('readHeaderPartial', DEFAULT_READ_HEADER_PARTIAL.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField('readHeaderPartial', '') }, '清空'),
+      ),
+    ),
+  );
+
   // ===== 日志分类（仅打包版有用）=====
   const formatSize = (n: number) => n < 1024 ? n + ' B' : n < 1024 * 1024 ? (n / 1024).toFixed(1) + ' KB' : (n / 1024 / 1024).toFixed(2) + ' MB';
   const toggleLog = async (v: boolean) => {
@@ -459,6 +492,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ['security', '网络安全'],
     ['ai-intercept', 'AI 回复拦截'],
     ['js-result-phrases', '工具结果回复语'],   // [261101-ym9l98]
+    ['read-header', '文件读取首行'],          // [261101-ym9l98]
     ['logs', '日志'],
     ['usage', '用量统计'],
   ];
@@ -482,6 +516,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   else if (active === 'security') content = security;
   else if (active === 'ai-intercept') content = aiIntercept;
   else if (active === 'js-result-phrases') content = jsResultPhrases;
+  else if (active === 'read-header') content = readHeader;
   else if (active === 'logs') content = logs;
   else if (active === 'usage') content = createElement(UsageStats);
   else if (active.startsWith('plugin:')) {

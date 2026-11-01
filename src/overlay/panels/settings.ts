@@ -8,6 +8,11 @@ import {
   DEFAULT_JS_RESULT_PHRASES, JS_RESULT_PHRASES_KEY,
   DEFAULT_JS_RESULT_ITEM_TEMPLATES, JS_RESULT_ITEM_TEMPLATES_KEY,
 } from '../js-result-phrases.js';
+import { getSharedSetting, saveSharedSettingValues, removeSharedSettingKeys } from '../shared-settings-cache.js';
+import {
+  READ_HEADER_FULL_KEY, READ_HEADER_PARTIAL_KEY,
+  DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL,
+} from '../../infra/read-header-templates.js';
 
 /** 打开设置弹窗：从 localStorage 加载配置到输入框 */
 function openSettings() {
@@ -169,6 +174,11 @@ interface SettingsData {
   jsResultPhrases: string;
   /** 脚本标题模板池（一行一条，{i} 替换为序号；空 = 使用内置默认） */
   jsResultItemTemplates: string;
+  // [261101-ym9l98] read 工具首行模板（完整文件 / 部分读取两套池）
+  /** 完整文件时的首行模板（{path} {total}） */
+  readHeaderFull: string;
+  /** 部分读取时的首行模板（{path} {start} {end} {total} {rest}） */
+  readHeaderPartial: string;
 }
 
 // [261101-ym9l98] 保存/读取时归一化，保证单句写法不漏 {r}（否则成败信息会丢）
@@ -219,10 +229,11 @@ function getSettingsData(): SettingsData {
     ssrfGuard: lsGet('cuckoo-ssrf-guard') === '1',
     aiInterceptPatterns: lsGet('cuckoo-ai-intercept-patterns') || DEFAULT_AI_INTERCEPT_PATTERNS,
     aiInterceptPrompt: lsGet('cuckoo-ai-intercept-prompt') || DEFAULT_AI_INTERCEPT_PROMPT,
-    // 未自定义时展示内置默认全文（首次"副本"呈现；保存后才落 localStorage）
-    // [261101-ym9l98] 未自定义时返回内置全文（首次"副本"呈现）；保存后才落 localStorage
-    jsResultPhrases: lsGet(JS_RESULT_PHRASES_KEY) ?? DEFAULT_JS_RESULT_PHRASES.join('\n'),
-    jsResultItemTemplates: migrateItemTemplates(lsGet(JS_RESULT_ITEM_TEMPLATES_KEY)),
+    // [261101-ym9l98] 两个池存在主进程（所有窗口共享），未自定义时展示内置全文
+    jsResultPhrases: getSharedSetting(JS_RESULT_PHRASES_KEY) ?? DEFAULT_JS_RESULT_PHRASES.join('\n'),
+    jsResultItemTemplates: migrateItemTemplates(getSharedSetting(JS_RESULT_ITEM_TEMPLATES_KEY) ?? null),
+    readHeaderFull: getSharedSetting(READ_HEADER_FULL_KEY) ?? DEFAULT_READ_HEADER_FULL.join('\n'),
+    readHeaderPartial: getSharedSetting(READ_HEADER_PARTIAL_KEY) ?? DEFAULT_READ_HEADER_PARTIAL.join('\n'),
   };
 }
 
@@ -230,7 +241,7 @@ function getSettingsData(): SettingsData {
  * 校验并写回设置（UI 单位 → 存储毫秒）。
  * @returns { success, error? }
  */
-function applySettingsData(data: any): { success: boolean; error?: string } {
+async function applySettingsData(data: any): Promise<{ success: boolean; error?: string }> {
   const secToMs = (s: any) => Math.round(parseFloat(s) * 1000);
   const dmin = secToMs(data && data.retryDelayMin);
   const dmax = secToMs(data && data.retryDelayMax);
@@ -297,15 +308,28 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
     // AI 回复拦截规则：只写非空字段（保留空列表的语义——空 = 不拦截）
     if (data && data.aiInterceptPatterns !== undefined) localStorage.setItem('cuckoo-ai-intercept-patterns', String(data.aiInterceptPatterns || ''));
     if (data && data.aiInterceptPrompt !== undefined) localStorage.setItem('cuckoo-ai-intercept-prompt', String(data.aiInterceptPrompt || ''));
-    // 工具结果回复语池：允许写空（空 = 回退内置默认，由 js-result-phrases 决定）
-    if (data && data.jsResultPhrases !== undefined) localStorage.setItem(JS_RESULT_PHRASES_KEY, String(data.jsResultPhrases || ''));
-    if (data && data.jsResultItemTemplates !== undefined) {
-      // 逐行归一化：成对写法原样保留，单句缺 {r} 时补齐
-      const fixed = String(data.jsResultItemTemplates || '').split('\n').map(normalizeItemTemplate).join('\n');
-      localStorage.setItem(JS_RESULT_ITEM_TEMPLATES_KEY, fixed);
-    }
   } catch (err: any) {
     return { success: false, error: '写入失败: ' + err.message };
+  }
+
+  // [261101-ym9l98] 两个池写主进程（所有窗口共享）；归一化后逐行保存
+  const shared: Record<string, string> = {};
+  if (data && data.jsResultPhrases !== undefined) {
+    shared[JS_RESULT_PHRASES_KEY] = String(data.jsResultPhrases || '');
+  }
+  if (data && data.jsResultItemTemplates !== undefined) {
+    shared[JS_RESULT_ITEM_TEMPLATES_KEY] = String(data.jsResultItemTemplates || '')
+      .split('\n').map(normalizeItemTemplate).join('\n');
+  }
+  if (data && data.readHeaderFull !== undefined) {
+    shared[READ_HEADER_FULL_KEY] = String(data.readHeaderFull || '');
+  }
+  if (data && data.readHeaderPartial !== undefined) {
+    shared[READ_HEADER_PARTIAL_KEY] = String(data.readHeaderPartial || '');
+  }
+  if (Object.keys(shared).length > 0) {
+    const ok = await saveSharedSettingValues(shared);
+    if (!ok) return { success: false, error: '通用设置写入失败' };
   }
   state.sendDelayMin = smin;
   state.sendDelayMax = smax;
@@ -313,7 +337,7 @@ function applySettingsData(data: any): { success: boolean; error?: string } {
 }
 
 /** 恢复默认：清 key + 重置 state，返回默认值 */
-function resetSettingsData(): SettingsData {
+async function resetSettingsData(): Promise<SettingsData> {
   const KEYS = [
     'cuckoo-retry-enabled', 'cuckoo-retry-delay-min', 'cuckoo-retry-delay-max',
     'cuckoo-retry-count', 'cuckoo-retry-429-delay', 'cuckoo-retry-429-count',
@@ -322,11 +346,15 @@ function resetSettingsData(): SettingsData {
     'cuckoo-attach-delay-min', 'cuckoo-attach-delay-max',
     'cuckoo-goal-max-iterations', 'cuckoo-ssrf-guard',
     'cuckoo-ai-intercept-patterns', 'cuckoo-ai-intercept-prompt',
-    JS_RESULT_PHRASES_KEY, JS_RESULT_ITEM_TEMPLATES_KEY,
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
   state.sendDelayMin = 2000;
   state.sendDelayMax = 4000;
+  // [261101-ym9l98] 两个池存在主进程，单独删除
+  await removeSharedSettingKeys([
+    JS_RESULT_PHRASES_KEY, JS_RESULT_ITEM_TEMPLATES_KEY,
+    READ_HEADER_FULL_KEY, READ_HEADER_PARTIAL_KEY,
+  ]);
   return getSettingsData();
 }
 

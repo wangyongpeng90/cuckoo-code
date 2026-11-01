@@ -53,6 +53,26 @@ let electronAPI: any = {
   createMemoryFromMarker: (text: any) => {
     return ipcRenderer.invoke('create-memory-marker', { text });
   },
+  // ========== [261101-ym9l98] 跨窗口通用设置（主进程内存 + DB）==========
+  /** 拉取全部通用设置（AI 页面启动时填充本地缓存） */
+  getSharedSettings: () => {
+    return ipcRenderer.invoke('get-shared-settings');
+  },
+  /** 批量保存通用设置（所有窗口共享） */
+  saveSharedSettings: (data: any) => {
+    return ipcRenderer.invoke('save-shared-settings', { data });
+  },
+  /** 恢复默认：删除指定键 */
+  resetSharedSettings: (keys: any) => {
+    return ipcRenderer.invoke('reset-shared-settings', { keys });
+  },
+  /** 订阅"通用设置已变更"（其他窗口修改后刷新本地缓存） */
+  onSharedSettingsChanged: (cb: (payload: any) => void) => {
+    const handler = (_e: any, payload: any) => { try { cb(payload); } catch (_) {} };
+    ipcRenderer.on('cuckoo-shared-settings-changed', handler);
+    return () => ipcRenderer.removeListener('cuckoo-shared-settings-changed', handler);
+  },
+
   executeJs: (code: any, callId: any) => {
     // 附件上传间隔（毫秒），随 JS 执行一并传给主进程的 attachFile 工具
     let attachDelayMin, attachDelayMax;

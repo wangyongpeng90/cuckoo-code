@@ -2029,6 +2029,14 @@ export const DEFAULT_JS_RESULT_ITEM_TEMPLATES: string[] = [
   '第 {i} 段，动作跑过了，成功，你看下结果|第 {i} 段，动作跑过了，失败，得改一下',
 ];
 
+// [261101-ym9l98] 池的读取源由外层注入（主进程内存），本文件保持纯 TS（壳页面也 import 它）
+let sharedReader: ((key: string) => string | undefined) | null = null;
+
+/** 注入"通用设置"读取函数（bridge/entry 启动时调用） */
+export function setSharedSettingReader(fn: (key: string) => string | undefined): void {
+  sharedReader = fn;
+}
+
 /** localStorage 键名（头部文案池） */
 export const JS_RESULT_PHRASES_KEY = 'cuckoo-js-result-phrases';
 
@@ -2038,7 +2046,7 @@ export const JS_RESULT_ITEM_TEMPLATES_KEY = 'cuckoo-js-result-item-templates';
 /** 读取一个「一行一条」的池；空则回退给定默认 */
 function readPool(key: string, fallback: string[]): string[] {
   let raw = '';
-  try { raw = localStorage.getItem(key) || ''; } catch (_) { /* ignore */ }
+  try { raw = (sharedReader ? sharedReader(key) : '') || ''; } catch (_) { /* ignore */ }
   const list = raw.split('\n').map((s) => s.trim()).filter(Boolean);
   return list.length > 0 ? list : fallback;
 }
