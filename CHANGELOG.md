@@ -2,8 +2,14 @@
 
 ## [Unreleased]
 
+## [0.8.20] - 2026-11-01
+
+### Added
+- **AI 用量统计图表**：设置页新增「用量统计」，展示发送量、回复量与 Token 消耗趋势。支持按天/时/分聚合、自定义时间区间查询、按窗口（Profile）过滤。底层基于 SQLite 记录每次对话事件与 Token 差值。
+
 ### Fixed
 - **统一 UA 版本**：设置全局 `app.userAgentFallback` 为干净 Chrome UA，消除壳页面 / Service Worker / 子资源与 AI 页面 UA 不一致的问题（此前 fallback 暴露 `Electron/x.y.z` 标识与内核完整版本号，DeepSeek / Google OAuth 可能判定环境异常）。（@jiangchengnay，PR #71）
+- **全平台感知 UA 生成**：修复 UA 硬编码 Windows 的问题。macOS/Linux 用户现会得到与真实系统匹配的 UA 与 Client Hints，提升第三方登录兼容性。
 
 ## [0.8.18] - 2026-10-26
 
