@@ -321,6 +321,51 @@ tools 层通过 `injectSettingReader` 注入读取函数（遵守「tools 不可
 | `src/tools/api.d.ts` | 生成物，随 compile 更新 |
 | `test/tools/EditTool.test.js`、`EditEol.test.js`、`FileTools.test.js` | 断言更新 + 新增 2 个测试 |
 
+## 扩展七：pwsh 工具的 UTF-8 编码处理
+
+### 背景（实测发现）
+`pwsh` 工具完全没处理编码问题，三个实测结论：
+
+| 场景 | 结果 |
+|---|---|
+| `Get-Content` 读 UTF-8 文件 | ❌ 乱码（`涓枃娴嬭瘯`）—— PowerShell 5.1 默认按 ANSI/GBK 读 |
+| `Set-Content` 写中文 | ⚠️ 写成 GBK，我们自己的 `read` 读回来是 `��������ABC` |
+| `Out-File` 写中文 | ⚠️ 同上，乱码更严重（UTF-16LE） |
+
+**根因**：`bash.ts` 调用了 `normalizeCommand()`（会给 `Get-Content` 补 `-Encoding UTF8`），但 `pwsh.ts` 完全没调用；而且 `normalizeCommand` 的正则要求命令以 `powershell|pwsh` 开头，对 pwsh 工具（传入纯命令体）匹配不上。
+
+**写入比读取更危险**：AI 用 pwsh 写文件后，自己的 `read` 读不回来，会误判写失败并重写，形成死循环。
+
+### 方案（三条齐下）
+
+1. **读取注入**：infra 抽出 `injectEncodingToBody(body)`，给 `Get-Content` / `Set-Content` / `Add-Content` / `Out-File` 补 `-Encoding UTF8`。pwsh.ts 在危险检查后调用。
+2. **BOM 剥离**：PowerShell 5.1 的 `-Encoding UTF8` **必定写 BOM**（`EF BB BF`）。`read` / `readLines` 读取时用 `stripBom()` 去掉开头的 `\uFEFF`（只影响返回值，不改磁盘文件）。
+3. **usage 提示**：告知 AI「读写文件请显式写 -Encoding UTF8」，并提示「PS 5.1 的 -Encoding UTF8 会写 BOM，对 BOM 敏感的格式（JSON/脚本）优先用 `[IO.File]::WriteAllText(路径, 内容, [System.Text.UTF8Encoding]::new($false))`」。
+
+### 决策
+- **D31 读+写都注入**：只修读会让问题从「读乱码」变成「写乱码」，更隐蔽。
+- **D32 接受 BOM + read 剥离**：中文乱码是必然发生的显性故障，BOM 是可能发生的隐性故障。先保证不乱码，再用 `stripBom` 兜住我们自己的链路。
+- **D33 已带 `-Encoding` 的命令整体不动**：宁可漏注，不覆盖用户的明确选择。
+- **D34 `stripBom` 放 `infra/decode-output.ts`**：与 `decodeOutput` 同属「字节→文本」职责，不新建文件。
+
+### 实测对比
+
+```
+读：Get-Content（无注入）        → 涓枃娴嬭瘯ABC    ❌
+    Get-Content -Encoding UTF8  → 中文测试ABC      ✅
+写：Set-Content（无注入）         → 9 字节，GBK     ❌ read 读回乱码
+    Set-Content -Encoding UTF8  → 14 字节，UTF-8 带 BOM ⚠️ read 剥离后正常
+```
+
+### 落地位置
+| 文件 | 职责 |
+|---|---|
+| `src/infra/decode-output.ts` | `injectEncodingToBody` / `stripBom` / `ENCODING_SENSITIVE_CMDLETS` |
+| `src/tools/impl/pwsh.ts` | 调用注入 + usage 补 BOM 提示 |
+| `src/tools/impl/read.ts` / `read-lines.ts` | `stripBom` |
+| `test/tools/decodeOutput.test.js` | 10 个新用例（注入 + stripBom） |
+| `test/tools/FileTools.test.js` | BOM 剥离集成测试 |
+
 ## 遗留
 
 1. **未真机验证**：设置页 4 个池、跨窗口同步、read 首行效果均需 `npm start` 实机确认

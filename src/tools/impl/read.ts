@@ -3,6 +3,7 @@ import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { stripBom } from '../../infra/decode-output.js';
 import {
   READ_HEADER_FULL_KEY, READ_HEADER_PARTIAL_KEY,
   READ_FOOTER_FULL_KEY, READ_FOOTER_PARTIAL_KEY, READ_FOOTER_CAPPED_KEY,
@@ -271,7 +272,8 @@ class ReadTool extends Tool {
       }
 
       // 读取整个文件内容（当前实现与 dsh 流式不同，但保证 totalLines 精确）
-      const content = fs.readFileSync(resolvedPath, 'utf-8');
+      // stripBom：PowerShell 写的 UTF-8 文件带 BOM，读回时首字符是看不见的 \uFEFF
+      const content = stripBom(fs.readFileSync(resolvedPath, 'utf-8'));
       const request: WindowRequest = {
         offset: input.offset,
         limit: input.limit,

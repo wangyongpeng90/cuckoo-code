@@ -81,6 +81,17 @@ test('ReadTool 读取带行号', async () => {
   assert.ok(r.data.split('\n\n').pop().indexOf('3') >= 0, '结尾应含总行数 3');
 });
 
+test('ReadTool 剥离 UTF-8 BOM（PowerShell 写的文件）', async () => {
+  const f = path.join(tmpRoot, 'bom.txt');
+  // PowerShell 5.1 的 -Encoding UTF8 会写 EF BB BF + 内容
+  fs.writeFileSync(f, Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from('中文内容\n', 'utf8')]));
+  const tool = new ReadTool();
+  const r = await tool.execute({ filePath: 'bom.txt', projectDir: tmpRoot });
+  assert.strictEqual(r.success, true);
+  assert.ok(r.data.indexOf('\uFEFF') < 0, '不应含 BOM：' + JSON.stringify(r.data.slice(0, 40)));
+  assert.match(r.data, /1: 中文内容/);
+});
+
 test('ReadTool 文件不存在', async () => {
   const tool = new ReadTool();
   const r = await tool.execute({ filePath: 'missing.txt', projectDir: tmpRoot });

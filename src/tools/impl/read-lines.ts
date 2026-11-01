@@ -3,6 +3,7 @@ import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { stripBom } from '../../infra/decode-output.js';
 import { READ_LIMIT, parseReadArgs, buildWindow } from './read.js';
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
@@ -103,7 +104,8 @@ class ReadLinesTool extends Tool {
       }
 
       // 读取整个文件内容
-      const content = fs.readFileSync(resolvedPath, 'utf-8');
+      // stripBom：PowerShell 写的 UTF-8 文件带 BOM，读回时首字符是看不见的 \uFEFF
+      const content = stripBom(fs.readFileSync(resolvedPath, 'utf-8'));
       const window = buildWindow(content, {
         offset: input.offset,
         limit: input.limit,

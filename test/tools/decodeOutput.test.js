@@ -1,7 +1,7 @@
 'use strict';
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { decodeOutput, normalizeCommand } from '../../src/infra/decode-output.js';
+import { decodeOutput, normalizeCommand, injectEncodingToBody, stripBom } from '../../src/infra/decode-output.js';
 
 test('decodeOutput 空/无输入返回空串', () => {
   assert.strictEqual(decodeOutput(null), '');
@@ -56,8 +56,80 @@ test('normalizeCommand 已有 -Encoding 不动', () => {
   assert.strictEqual(normalizeCommand(cmd), cmd);
 });
 
-test('normalizeCommand 无 Get-Content 不动', () => {
+test('normalizeCommand 无编码敏感 cmdlet 不动', () => {
   const cmd = 'powershell Get-ChildItem';
   assert.strictEqual(normalizeCommand(cmd), cmd);
+});
+
+test('normalizeCommand 给写操作注入 UTF8', () => {
+  assert.strictEqual(
+    normalizeCommand('powershell Set-Content -Path a.txt -Value x'),
+    'powershell Set-Content -Encoding UTF8 -Path a.txt -Value x'
+  );
+  assert.strictEqual(
+    normalizeCommand('powershell Out-File -FilePath a.txt'),
+    'powershell Out-File -Encoding UTF8 -FilePath a.txt'
+  );
+  assert.strictEqual(
+    normalizeCommand('powershell Add-Content -Path a.txt -Value x'),
+    'powershell Add-Content -Encoding UTF8 -Path a.txt -Value x'
+  );
+});
+
+test('injectEncodingToBody 命令体：Get-Content 注入', () => {
+  assert.strictEqual(injectEncodingToBody('Get-Content a.txt'), 'Get-Content -Encoding UTF8 a.txt');
+});
+
+test('injectEncodingToBody 命令体：写操作注入', () => {
+  assert.strictEqual(
+    injectEncodingToBody('Set-Content -Path a.txt -Value x'),
+    'Set-Content -Encoding UTF8 -Path a.txt -Value x'
+  );
+  assert.strictEqual(
+    injectEncodingToBody('"x" | Out-File -FilePath a.txt'),
+    '"x" | Out-File -Encoding UTF8 -FilePath a.txt'
+  );
+});
+
+test('injectEncodingToBody 命令体：已带 -Encoding 整体不动', () => {
+  const body = 'Get-Content -Encoding UTF8 a.txt; Set-Content -Path b.txt -Value y';
+  assert.strictEqual(injectEncodingToBody(body), body);
+});
+
+test('injectEncodingToBody 命令体：多个 cmdlet 都注入', () => {
+  assert.strictEqual(
+    injectEncodingToBody('Get-Content a.txt; Set-Content -Path b.txt -Value y'),
+    'Get-Content -Encoding UTF8 a.txt; Set-Content -Encoding UTF8 -Path b.txt -Value y'
+  );
+});
+
+test('injectEncodingToBody 命令体：无敏感 cmdlet 不动', () => {
+  const body = 'Get-ChildItem';
+  assert.strictEqual(injectEncodingToBody(body), body);
+});
+
+test('injectEncodingToBody 命令体：不误伤含 cmdlet 名的变量/路径', () => {
+  // Get-ContentRaw 不是 cmdlet，不应被注入
+  const body = '$x = "Get-ContentRaw"; Write-Output $x';
+  assert.strictEqual(injectEncodingToBody(body), body);
+});
+
+test('stripBom 去掉开头 BOM', () => {
+  assert.strictEqual(stripBom('\uFEFFabc'), 'abc');
+  assert.strictEqual(stripBom('\uFEFF'), '');
+});
+
+test('stripBom 无 BOM 原样返回', () => {
+  assert.strictEqual(stripBom('abc'), 'abc');
+  assert.strictEqual(stripBom(''), '');
+});
+
+test('stripBom 只去开头，不动中间', () => {
+  assert.strictEqual(stripBom('a\uFEFFb'), 'a\uFEFFb');
+});
+
+test('stripBom 非字符串原样返回', () => {
+  assert.strictEqual(stripBom(null), null);
+  assert.strictEqual(stripBom(undefined), undefined);
 });
 

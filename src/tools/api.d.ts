@@ -193,7 +193,7 @@ interface PwshOptions {
  * 非零退出不抛异常，通过 [exit code] 标记报告。
  * 危险命令会被安全策略拒绝并抛异常。
  *
- * 执行 PowerShell 命令（powershell -NoProfile -Command）并返回 stdout/stderr。每次调用在全新 pwsh 进程中运行：状态不会跨调用保留——请用 workdir 参数而非 cd。路径使用 Windows 原生形式（C:\\...）；用 $env:NAME 读取环境变量。非零退出以 [exit code: N] 标记报告。
+ * 执行 PowerShell 命令（powershell -NoProfile -Command）并返回 stdout/stderr。每次调用在全新 pwsh 进程中运行：状态不会跨调用保留——请用 workdir 参数而非 cd。路径使用 Windows 原生形式（C:\\...）；用 $env:NAME 读取环境变量。非零退出以 [exit code: N] 标记报告。读写文件请显式写 -Encoding UTF8（Get-Content / Set-Content / Out-File / Add-Content），系统会自动补但别名和变量拼接时可能失效。注意 PowerShell 5.1 的 -Encoding UTF8 会写 BOM（文件开头多 3 个隐形字节），写 JSON/脚本等对 BOM 敏感的格式时优先用 [IO.File]::WriteAllText(路径, 内容, [System.Text.UTF8Encoding]::new($false))。
  * @param command 要执行的 PowerShell 命令
  * @param options 可选，{ description?: string, workdir?: string, timeoutMs?: number }
  * @returns 纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）
