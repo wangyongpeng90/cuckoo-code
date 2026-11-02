@@ -40,8 +40,8 @@ test('getSettingsData 返回默认值', () => {
   assert.strictEqual(d.retry429Count, 40);
   assert.strictEqual(d.xhrIdleTimeout, 300);
   assert.strictEqual(d.watchdogCount, 3);
-  assert.strictEqual(d.sendDelayMin, 2);
-  assert.strictEqual(d.sendDelayMax, 4);
+  assert.strictEqual(d.sendDelayMin, 10);
+  assert.strictEqual(d.sendDelayMax, 20);
 });
 
 test('getSettingsData 从 localStorage 读取', () => {

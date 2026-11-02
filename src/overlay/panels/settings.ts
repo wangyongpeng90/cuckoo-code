@@ -128,8 +128,8 @@ function getSettingsData(): SettingsData {
     xhrIdleTimeout: sec(lsGet('cuckoo-xhr-idle-timeout'), 300),
 
     watchdogCount: int(lsGet('cuckoo-watchdog-count'), 3),
-    sendDelayMin: sec(lsGet('cuckoo-send-delay-min'), 2),
-    sendDelayMax: sec(lsGet('cuckoo-send-delay-max'), 4),
+    sendDelayMin: sec(lsGet('cuckoo-send-delay-min'), 10),
+    sendDelayMax: sec(lsGet('cuckoo-send-delay-max'), 20),
     attachDelayMin: sec(lsGet('cuckoo-attach-delay-min'), 0.5),
     attachDelayMax: sec(lsGet('cuckoo-attach-delay-max'), 1),
     goalMaxIterations: int(lsGet('cuckoo-goal-max-iterations'), 50),
@@ -273,8 +273,8 @@ async function resetSettingsData(): Promise<SettingsData> {
     'cuckoo-ai-intercept-patterns', 'cuckoo-ai-intercept-prompt',
   ];
   try { for (const k of KEYS) localStorage.removeItem(k); } catch (_) {}
-  state.sendDelayMin = 2000;
-  state.sendDelayMax = 4000;
+  state.sendDelayMin = 10000;
+  state.sendDelayMax = 20000;
   // [261101-ym9l98] 两个池存在主进程，单独删除
   await removeSharedSettingKeys([
     JS_RESULT_PHRASES_KEY, JS_RESULT_ITEM_TEMPLATES_KEY,
