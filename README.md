@@ -30,17 +30,19 @@
 
 ## 捐赠与支持
 
-> 🚫 **本项目不接受任何形式的个人捐赠**——作者不会收取任何款项。
+> 🚫 **本项目不接受任何形式的个人捐赠**——作者不会收取任何款项,一分钱也是爱心。
 >
 > ✅ 如果你想支持本项目，欢迎向 **壹基金（One Foundation）** 捐赠：
 > [https://onefoundation.cn/donate/](https://onefoundation.cn/donate/)
 >
 > 所有捐赠款项**直接进入壹基金公益账户**，与作者无关，纯属公益行为。
 
-**已通过壹基金捐赠的善款：6 笔 / 588 元**
+**已通过壹基金捐赠的善款：8 笔 / 690 元**
 
 | 捐赠者 | 金额 | 日期 | 捐赠证书 |
 |---|---|---|---|
+| 烈云 | 100 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261101152146565/](https://onefoundation.cn/cert/20261101152146565/)|
+| 石垚 | 2 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261101205925282/](https://onefoundation.cn/cert/20261101205925282/)|
 | 刘先生| 100 元 | 2026-10-29 |要求匿名|
 | CS | 100 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261029003017507/](https://onefoundation.cn/cert/20261029003017507/)|
 | 杨先生 | 88 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261029065593254/](https://onefoundation.cn/cert/20261029065593254/))|
