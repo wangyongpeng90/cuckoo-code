@@ -20,12 +20,6 @@ import { resolveAsset, resolveSrc } from '../infra/paths.js';
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');
 
-// ========== 关闭确认 ==========
-/** 已确认关闭的窗口 id（确认后再次触发 close 时直接放行，避免重复弹框） */
-const closeConfirmed = new Set<number>();
-/** 应用退出中（菜单退出 / 自动更新重启）——退出是明确意图，跳过逐窗口关闭确认 */
-let isQuitting = false;
-
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
 const USER_DATA_DIR = path.join(app.getPath('appData'), SESSION_DIR);
@@ -613,33 +607,8 @@ function createWindow(profile: any) {
   });
 
   // 关闭前记录窗口大小/位置（用 getNormalBounds 取"还原后"尺寸；closed 时窗口已销毁取不到）
-  mainWindow.on('close', (e: any) => {
-    if (profileData.isSubagent) return; // 子代理窗口：不记录、不弹框
-    // 应用退出中（菜单退出 / 更新重启）：退出是明确意图，不弹框（否则逐窗口弹框会阻塞退出/更新安装）
-    if (isQuitting) return;
-    // 未确认关闭 且 非程序主动关闭 → 弹框确认
-    if (!closeConfirmed.has(mainWindow.id) && !(mainWindow as any).__programmaticClose) {
-      e.preventDefault();
-      // 防重复：弹框已打开时再点 ✕ 不再弹
-      if ((mainWindow as any).__closeDialogOpen) return;
-      (mainWindow as any).__closeDialogOpen = true;
-      dialog.showMessageBox(mainWindow, {
-        type: 'question',
-        buttons: ['取消', '关闭'],
-        defaultId: 1,
-        cancelId: 0,
-        noLink: true,
-        title: '确认关闭',
-        message: '确定要关闭窗口「' + (profileData.name || profileData.id) + '」吗？',
-      }).then((res: any) => {
-        (mainWindow as any).__closeDialogOpen = false;
-        if (res && res.response === 1) {
-          closeConfirmed.add(mainWindow.id);
-          if (!mainWindow.isDestroyed()) mainWindow.close();
-        }
-      }).catch(() => { (mainWindow as any).__closeDialogOpen = false; });
-      return;
-    }
+  mainWindow.on('close', () => {
+    if (profileData.isSubagent) return; // 子代理窗口：不记录
     try {
       if (mainWindow.isDestroyed()) return;
       const b = mainWindow.getNormalBounds();
@@ -1086,7 +1055,6 @@ ipcMainForProfile.handle('delete-profile', async (_event: any, { profileId }: an
   const all = windowState.getAllWindowsByProfileId(profileId);
   for (const c of all) {
     if (c && c.win && !c.win.isDestroyed()) {
-      (c.win as any).__programmaticClose = true; // 删除窗口是明确意图，跳过关闭确认
       c.win.close();
     }
   }
@@ -1400,8 +1368,6 @@ app.on('window-all-closed', () => {
 // 退出前刷新所有 session 数据 + 断开所有 MCP 连接
 let quitFlushed = false;
 app.on('before-quit', (event: any) => {
-  // 应用退出中：置位，让各窗口的 close 处理跳过"确认关闭"弹框（菜单退出 / 自动更新重启）
-  isQuitting = true;
   if (quitFlushed) return;
   event.preventDefault();
   quitFlushed = true;
