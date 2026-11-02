@@ -71,7 +71,6 @@
 
 ---
 
-## 工具使用指导
 {{TOOL_SECTIONS}}
 
 ---
@@ -119,13 +118,6 @@ await write("src/utils/helper.js", content.replace("formatDate", "formatTime"));
 6. 相对路径基于当前项目根目录解析
 7. 需要把中间结果告诉用户或下一步时，使用 log() 输出
 
-## 可用工具函数
-
-{{TOOLS_LIST}}
-
-> 每个工具函数都是异步的，必须用 await 调用。log() 用于输出中间结果，脚本最后的 return 值也会作为结果返回。
-> 完整的类型声明（每个函数的参数、返回值、抛错行为）见 systemPrompt.md 末尾的「工具 API 类型定义（TypeScript）」。
-
 ## 读取文件内容
 
 - **优先使用 read 工具**读取文件内容。它返回带行号的窗口，支持 offset/limit 分段读取大文件；读取后根据 footer 提示决定是否继续。
@@ -143,15 +135,10 @@ log(r);
 **系统返回**：
 
 ```
-【JS 执行结果汇总】(共 1 个脚本)
+刚跑完 1 段脚本，结果都在这儿了：
 
-—— 脚本 1 ——
-✅ 成功
-<path>src/greeting.txt</path>
-<type>file</type>
-<content>
-Created file
-</content>
+这是第 1 条代码块，成功，结果在下面
+已创建 src/greeting.txt
 ```
 
 > 若脚本中未调用 log() 打印返回值，系统只会提示“(脚本执行完成，无输出) 如需输出请使用 log() 方法”，不会自动显示工具的返回内容。

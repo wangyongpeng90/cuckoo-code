@@ -87,9 +87,11 @@ describe('GoalDoneTool', () => {
     assert.strictEqual(events.length, 0);
   });
 
-  test('系统提示词 section 说明结束语义', () => {
-    const section = new GoalDoneTool().getPromptSection();
-    assert.ok(section && section.text.includes('goalDone()'));
-    assert.ok(section.text.includes('完成'));
+  test('apiMetas.usage 说明结束语义', async () => {
+    const { apiMetas } = await import('../../src/tools/impl/goal-done.js');
+    const usage = apiMetas[0].usage;
+    assert.ok(typeof usage === 'string' && usage.length > 0, 'usage 应存在');
+    assert.ok(usage.includes('goalDone()'));
+    assert.ok(usage.includes('完成'));
   });
 });

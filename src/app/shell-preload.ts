@@ -231,6 +231,13 @@ const shellAPI = {
   // ========== 记忆 ==========
 
   // ========== 设置 ==========
+  // [261101-ym9l98] 跨窗口通用设置（主进程内存 + DB；与历史 localStorage 设置并存）
+  getSharedSettings: () => ipcRenderer.invoke('get-shared-settings'),
+  saveSharedSettings: (data: any) => ipcRenderer.invoke('save-shared-settings', { data }),
+  resetSharedSettings: (keys: any) => ipcRenderer.invoke('reset-shared-settings', { keys }),
+  onSharedSettingsChanged: (cb: (payload: any) => void) => {
+    ipcRenderer.on('cuckoo-shared-settings-changed', (_e: any, payload: any) => cb(payload));
+  },
   getSettings: () => ipcRenderer.invoke('get-settings'),
   getUsageStats: (params: any) => ipcRenderer.invoke('get-usage-stats', params),
   saveSettings: (data: any) => ipcRenderer.invoke('save-settings', { data }),

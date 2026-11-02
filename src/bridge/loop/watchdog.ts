@@ -9,14 +9,15 @@
  *
  * 配置（localStorage，每窗口独立）：
  *  - cuckoo-xhr-idle-timeout   静默阈值（毫秒，默认 300000，<=0 禁用；hook 侧读取）
- *  - cuckoo-watchdog-prompt    超时提示词（默认"请继续"）
  *  - cuckoo-watchdog-count     最大催次数（默认 3，负数=无限）
+ *
+ * 提示词来自统一池（infra/continue-prompt-pool.ts），不再单独配置。
  */
 import { showToast } from '../../overlay/panel.js';
 import { getProviderByUrl } from '../../providers/registry.js';
 import { sendToChat } from '../../overlay/chat-input.js';
+import { pickContinuePrompt } from '../../infra/continue-prompt-pool.js';
 
-const DEFAULT_PROMPT = '请继续';
 const DEFAULT_COUNT = 3;
 
 let idleCount = 0;
@@ -34,16 +35,13 @@ function getCurrentSessionId(): string | null {
   return null;
 }
 
-function readConfig(): { prompt: string; count: number } {
-  let prompt = DEFAULT_PROMPT;
+function readConfig(): { count: number } {
   let count = DEFAULT_COUNT;
   try {
-    const p = localStorage.getItem('cuckoo-watchdog-prompt');
-    if (p) prompt = p;
     const c = parseInt(localStorage.getItem('cuckoo-watchdog-count') as string, 10);
     if (Number.isFinite(c)) count = c;
   } catch (_) {}
-  return { prompt, count };
+  return { count };
 }
 
 /** 测试用：当前静默催继续计数 */
@@ -66,9 +64,10 @@ function onStreamIdle(detail: any): void {
     return;
   }
   idleCount++;
-  showToast('等待 AI 回复超时，发送「' + cfg.prompt + '」催继续（第 ' + idleCount + ' 次）', 3000);
+  const prompt = pickContinuePrompt();
+  showToast('等待 AI 回复超时，发送「' + prompt + '」催继续（第 ' + idleCount + ' 次）', 3000);
   try {
-    sendToChat(cfg.prompt, '看门狗', 300);
+    sendToChat(prompt, '看门狗', 300);
   } catch (e: any) {
     console.error('[Cuckoo Code][看门狗] 发送提示词失败: ' + e.message);
   }

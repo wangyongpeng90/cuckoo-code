@@ -3,7 +3,7 @@ import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
-import { decodeOutput } from '../../infra/decode-output.js';
+import { decodeOutput, injectEncodingToBody } from '../../infra/decode-output.js';
 import { isDangerous, DANGEROUS_CMDS } from '../../infra/dangerous-commands.js';
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
@@ -12,6 +12,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 8,
     category: '命令执行',
     name: 'pwsh',
+    usage: '执行 PowerShell 命令（powershell -NoProfile -Command）并返回 stdout/stderr。每次调用在全新 pwsh 进程中运行：状态不会跨调用保留——请用 workdir 参数而非 cd。路径使用 Windows 原生形式（C:\\\\...）；用 $env:NAME 读取环境变量。非零退出以 [exit code: N] 标记报告。读写文件请显式写 -Encoding UTF8（Get-Content / Set-Content / Out-File / Add-Content），系统会自动补但别名和变量拼接时可能失效。注意 PowerShell 5.1 的 -Encoding UTF8 会写 BOM（文件开头多 3 个隐形字节），写 JSON/脚本等对 BOM 敏感的格式时优先用 [IO.File]::WriteAllText(路径, 内容, [System.Text.UTF8Encoding]::new($false))。',
     types: [
       '/** pwsh 的选项 */',
       'interface PwshOptions {',
@@ -83,14 +84,6 @@ class PwshTool extends Tool {
     );
   }
 
-  getPromptSection() {
-    return {
-      name: 'tool:pwsh',
-      order: 106,
-      text: '执行 PowerShell 命令（powershell -NoProfile -Command）并返回 stdout/stderr。每次调用在全新 pwsh 进程中运行：状态不会跨调用保留——请用 workdir 参数而非 cd。路径使用 Windows 原生形式（C:\\...）；用 $env:NAME 读取环境变量。非零退出以 [exit code: N] 标记报告。'
-    };
-  }
-
   async execute(params: any): Promise<ToolResult> {
     const { command, description, workdir, timeoutMs, projectDir } = params;
 
@@ -109,6 +102,13 @@ class PwshTool extends Tool {
         return ToolResult.error('命令被安全策略拒绝（危险命令）: ' + trimmed);
       }
 
+      // 编码修正：给 Get-Content / Set-Content / Out-File / Add-Content 补 -Encoding UTF8
+      // Windows PowerShell 5.1 默认按 ANSI(GBK) 读写文件，会导致中文乱码
+      const finalCommand = injectEncodingToBody(trimmed);
+      if (finalCommand !== trimmed) {
+        console.log('[PwshTool] 已注入 -Encoding UTF8:', finalCommand);
+      }
+
       // 确定工作目录
       let workDir: string;
       if (workdir) {
@@ -124,12 +124,12 @@ class PwshTool extends Tool {
 
       const timeout = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : 30000;
 
-      console.log('[PwshTool] 执行命令: ' + trimmed + ', cwd=' + workDir);
+      console.log('[PwshTool] 执行命令: ' + finalCommand + ', cwd=' + workDir);
 
       return await new Promise<ToolResult>((resolve) => {
         execFile(
           'powershell',
-          ['-NoProfile', '-Command', trimmed],
+          ['-NoProfile', '-Command', finalCommand],
           { cwd: workDir, timeout, maxBuffer: 1024 * 1024, windowsHide: true, encoding: 'buffer' },
           (error, stdout, stderr) => {
             const out = decodeOutput(stdout);

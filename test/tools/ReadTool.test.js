@@ -76,15 +76,38 @@ test('buildWindow 字节上限截断', () => {
 test('formatReadOutput 完整文件', () => {
   const out = { offset: 1, lines: [{ number: 1, text: 'a' }, { number: 2, text: 'b' }], totalLines: 2, truncatedByBytes: false };
   const s = formatReadOutput('f.txt', out);
-  assert.match(s, /<path>f.txt<\/path>/);
+  assert.ok(s.indexOf('f.txt') >= 0, '首行应含文件路径');
+  assert.ok(s.indexOf('<path>') < 0, '不应再出现 <path> 标签');
   assert.match(s, /1: a/);
   assert.match(s, /2: b/);
-  assert.match(s, /\(End of file - total 2 lines\)/);
+  const footer = s.split('\n\n').pop();
+  assert.ok(footer && footer.indexOf('2') >= 0, '结尾应含总行数 2：' + footer);
+  assert.ok(/^\(/.test(footer), '结尾应以括号开头：' + footer);
+});
+
+test('formatReadOutput 部分读取：首行含行号范围', () => {
+  const out = { offset: 2, lines: [{ number: 2, text: 'b' }], totalLines: 5, truncatedByBytes: false };
+  const s = formatReadOutput('f.txt', out);
+  const header = s.split('\n')[0];
+  assert.ok(header.indexOf('f.txt') >= 0, '首行应含路径：' + header);
+  assert.ok(header.indexOf('2') >= 0, '首行应含起始行号：' + header);
+  assert.ok(header.indexOf('5') >= 0 || header.indexOf('3') >= 0, '首行应含总行数或剩余行数：' + header);
+  assert.ok(header.indexOf('<path>') < 0, '不应出现 XML 标签');
+  const footer = s.split('\n\n').pop();
+  assert.ok(footer && footer.indexOf('offset=3') >= 0, '结尾应含 offset=3（下一段起点）：' + footer);
+  assert.ok(footer.indexOf('5') >= 0, '结尾应含总行数 5：' + footer);
+});
+
+test('formatReadOutput 首行与正文之间有空行分隔', () => {
+  const out = { offset: 1, lines: [{ number: 1, text: 'a' }], totalLines: 1, truncatedByBytes: false };
+  const s = formatReadOutput('f.txt', out);
+  assert.match(s, /\n\n1: a/);
 });
 
 test('formatReadOutput 无行仅有 footer', () => {
   const out = { offset: 2, lines: [], totalLines: 1, truncatedByBytes: false };
   const s = formatReadOutput('f.txt', out);
-  assert.match(s, /\(End of file/);
+  const footer = s.split('\n\n').pop();
+  assert.ok(/^\(/.test(footer), '结尾应以括号开头：' + footer);
 });
 

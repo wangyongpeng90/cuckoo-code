@@ -2,6 +2,12 @@ import { Tool } from '../core/Tool.js';
 import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import { normalizeLineEndings, detectLineEndings, restoreLineEndings } from '../../infra/eol.js';
+import {
+  WRITE_FOOTER_CREATE_KEY, WRITE_FOOTER_UPDATE_KEY,
+  DEFAULT_WRITE_FOOTER_CREATE, DEFAULT_WRITE_FOOTER_UPDATE,
+  pickAndRender,
+} from '../../infra/read-header-templates.js';
+import { readSettingRaw } from './read.js';
 import { isProtectedPath } from '../../infra/protected-paths.js';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,9 +18,10 @@ export const apiMetas: ToolApiMeta[] = [
     order: 3,
     category: '文件读写',
     name: 'write',
+    usage: '使用 write 工具创建文件或完全替换文件内容。已有文件会被覆盖，所以覆盖前先 read 文件，针对局部修改优先用 edit。注意：read 输出的内容带行号和 footer，写入的 content 必须是文件原始内容，不要包含行号或 footer 提示。',
     doc: [
       '创建或完全覆盖 UTF-8 文本文件。',
-      '返回格式化 envelope：<path>...</path><type>file</type><content>Created/Updated file</content>',
+      '返回一句确认（含文件路径），具体措辞可在设置里自定义。',
     ].join('\n'),
     params: 'filePath: string, content: string',
     returns: 'Promise<string>',
@@ -42,11 +49,20 @@ function parseWriteArgs(filePath: any, content: any): { filePath: string; conten
 }
 
 /**
- * 与 dsh formatWriteOutput 对齐：返回 envelope，不回显内容。
+ * 输出走模板池（新建 / 更新两套），只回报路径，不回显内容。
+ * 池来自通用设置（主进程内存），未配置时回退内置默认。
  */
 function formatWriteOutput(displayPath: string, operation: string): string {
-  const verb = operation === 'create' ? 'Created' : 'Updated';
-  return '<path>' + displayPath + '</path>\n<type>file</type>\n<content>\n' + verb + ' file\n</content>';
+  const isCreate = operation === 'create';
+  const key = isCreate ? WRITE_FOOTER_CREATE_KEY : WRITE_FOOTER_UPDATE_KEY;
+  const fallback = isCreate ? DEFAULT_WRITE_FOOTER_CREATE : DEFAULT_WRITE_FOOTER_UPDATE;
+  const raw = readSettingRaw(key);
+  const pool = raw === undefined
+    ? fallback
+    : (raw.split('\n').map((s) => s.trim()).filter(Boolean).length > 0
+        ? raw.split('\n').map((s) => s.trim()).filter(Boolean)
+        : fallback);
+  return pickAndRender(pool, fallback, { path: displayPath });
 }
 
 /**
@@ -57,7 +73,7 @@ class WriteTool extends Tool {
   constructor() {
     super(
       'write',
-      '创建或完全覆盖 UTF-8 文本文件。返回 Created/Updated 确认信息。',
+      '创建或完全覆盖 UTF-8 文本文件。返回一句确认信息（含文件路径）。',
       {
         type: 'object',
         properties: {
@@ -75,14 +91,6 @@ class WriteTool extends Tool {
       },
       'write(filePath, content)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:write',
-      order: 101,
-      text: '使用 write 工具创建文件或完全替换文件内容。已有文件会被覆盖，所以覆盖前先 read 文件，针对局部修改优先用 edit。注意：read 输出的内容带行号和 footer，写入的 content 必须是文件原始内容，不要包含行号、<path>/<content> 包装或 footer 提示。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

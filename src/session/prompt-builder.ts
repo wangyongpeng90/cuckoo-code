@@ -156,7 +156,8 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     console.error('[Cuckoo Code] 读取 cuckoo-tools.d.ts 失败:', resolveToolSpec());
   }
 
-  const toolsDescription = toolRegistry.getFormattedJsApiForPrompt();
+  // [261101-lzrtxr] {{TOOLS_LIST}} 已废弃（与 {{TOOL_API_TYPES}} 重复），保留占位符以兼容自定义模板
+  const toolsDescription = '';
   // C4：DSH 插件注册的提示词段（与工具 section 合并）
   let dshSections = '';
   try {
@@ -164,7 +165,9 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     if (secs.length > 0) dshSections = secs.map((s) => s.text).join('\n\n');
   } catch (_) { /* ignore */ }
   const toolSections = toolRegistry.getFormattedPromptSections();
-  const promptSections = dshSections ? (toolSections + '\n\n' + dshSections) : toolSections;
+  const merged = dshSections ? (toolSections + '\n\n' + dshSections) : toolSections;
+  // [261101-lzrtxr] 标题写进值里：无插件 section 时不留空标题
+  const promptSections = merged.trim() ? ('## 工具使用指导\n' + merged) : '';
 
   // 后台异步连接已启用的 MCP server，不阻塞初始化（按当前项目）
   mcpClient.connectEnabledServers(selectedDir).catch((err: any) => {

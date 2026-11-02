@@ -1,7 +1,7 @@
 'use strict';
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { applyEditPreservingEol, buildNormIndexMap, countOccurrences } from '../../src/tools/impl/edit.js';
+import { applyEditPreservingEol, buildNormIndexMap, countOccurrences, findOccurrencePositions, lineNumberOf } from '../../src/tools/impl/edit.js';
 
 const CR = '\r', LF = '\n';
 
@@ -52,4 +52,18 @@ test('countOccurrences: 非重叠计数', () => {
   assert.strictEqual(countOccurrences('aaa', 'a'), 3);
   assert.strictEqual(countOccurrences('aaa', 'aa'), 1);
   assert.strictEqual(countOccurrences('abc', 'x'), 0);
+});
+
+test('findOccurrencePositions: 返回所有起始下标', () => {
+  assert.deepStrictEqual(findOccurrencePositions('xaxbx', 'x'), [0, 2, 4]);
+  assert.deepStrictEqual(findOccurrencePositions('aaa', 'aa'), [0]);
+  assert.deepStrictEqual(findOccurrencePositions('abc', 'x'), []);
+  assert.deepStrictEqual(findOccurrencePositions('abc', ''), []);
+});
+
+test('lineNumberOf: 下标换算 1-based 行号', () => {
+  const norm = 'line1' + LF + 'line2' + LF + 'line3';
+  assert.strictEqual(lineNumberOf(norm, 0), 1);
+  assert.strictEqual(lineNumberOf(norm, 6), 2);
+  assert.strictEqual(lineNumberOf(norm, 12), 3);
 });

@@ -57,16 +57,20 @@ afterEach(() => {
 
 test('_readConfig 返回默认值', () => {
   const cfg = wd._readConfig();
-  assert.strictEqual(cfg.prompt, '请继续');
   assert.strictEqual(cfg.count, 3);
 });
 
 test('_readConfig 从 localStorage 覆盖', () => {
-  localStorage.setItem('cuckoo-watchdog-prompt', '继续吧');
   localStorage.setItem('cuckoo-watchdog-count', '5');
   const cfg = wd._readConfig();
-  assert.strictEqual(cfg.prompt, '继续吧');
   assert.strictEqual(cfg.count, 5);
+});
+
+test('提示词来自统一池（不再走 localStorage）', async () => {
+  const pool = await import('../../../src/infra/continue-prompt-pool.js');
+  const seen = new Set();
+  for (let i = 0; i < 50; i++) seen.add(pool.pickContinuePrompt());
+  assert.ok(seen.size >= 3, '池应有多条可用，实际 ' + seen.size);
 });
 
 test('_readConfig 非法值回退默认', () => {

@@ -25,6 +25,9 @@ import { initHarnessBridge } from './harness-bridge.js';
 import { initProbeIfNeeded } from './probe.js';
 import { initFeishuBridge } from './feishu-bridge.js';
 import { initPlugins, bindPluginReload } from './plugin-system.js';
+import { initSharedSettingsCache, subscribeSharedSettings, getSharedSetting } from '../overlay/shared-settings-cache.js';
+import { setSharedSettingReader } from '../overlay/js-result-phrases.js';
+import { setContinueSettingReader } from '../infra/continue-prompt-pool.js';
 import { buildUserAgentDataFix } from '../infra/user-agent.js';
 
 const require = createRequire(import.meta.url);
@@ -172,17 +175,18 @@ function init(): void {
         ipcRenderer.send('cuckoo-settings-result', { reqId, ok: false, error: err.message });
       }
     });
-    ipcRenderer.on('cuckoo-save-settings', (_e: any, { reqId, data }: any) => {
+    // [261101-ym9l98] 两个文案池改存主进程（async），故这两个处理器改为异步
+    ipcRenderer.on('cuckoo-save-settings', async (_e: any, { reqId, data }: any) => {
       try {
-        const res = settingsPanel.applySettingsData(data);
+        const res = await settingsPanel.applySettingsData(data);
         ipcRenderer.send('cuckoo-settings-result', { reqId, ok: res.success, data: res.success ? settingsPanel.getSettingsData() : null, error: res.error });
       } catch (err: any) {
         ipcRenderer.send('cuckoo-settings-result', { reqId, ok: false, error: err.message });
       }
     });
-    ipcRenderer.on('cuckoo-reset-settings', (_e: any, { reqId }: any) => {
+    ipcRenderer.on('cuckoo-reset-settings', async (_e: any, { reqId }: any) => {
       try {
-        const data = settingsPanel.resetSettingsData();
+        const data = await settingsPanel.resetSettingsData();
         ipcRenderer.send('cuckoo-settings-result', { reqId, ok: true, data });
       } catch (err: any) {
         ipcRenderer.send('cuckoo-settings-result', { reqId, ok: false, error: err.message });
@@ -252,6 +256,12 @@ function init(): void {
 
     // 默认显示覆盖层 - 兜底强制显示
     ui.forceShowOverlay();
+
+    // [261101-ym9l98] 载入跨窗口通用设置（异步，不阻塞后续初始化）+ 订阅变更
+    setSharedSettingReader(getSharedSetting);
+    setContinueSettingReader(getSharedSetting);
+    initSharedSettingsCache().catch(() => {});
+    subscribeSharedSettings();
 
     // 拦截模式：监听主世界注入器派发的 'cuckoo-ai-response' 事件
     startInterceptObserver();

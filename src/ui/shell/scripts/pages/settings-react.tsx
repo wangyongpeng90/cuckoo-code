@@ -14,6 +14,14 @@ import { SlotErrorBoundary } from '../components/slot-error-boundary.js';
 import { useHideAiView } from '../use-hide-ai-view.js';
 import { Select } from '../components/select.js';
 import { SettingRow } from '../components/setting-row.js';
+import { DEFAULT_JS_RESULT_PHRASES, DEFAULT_JS_RESULT_ITEM_TEMPLATES } from '../../../../overlay/js-result-phrases.js';
+import { DEFAULT_CONTINUE_PROMPTS } from '../../../../infra/continue-prompt-pool.js';
+import {
+  DEFAULT_READ_HEADER_FULL, DEFAULT_READ_HEADER_PARTIAL,
+  DEFAULT_READ_FOOTER_FULL, DEFAULT_READ_FOOTER_PARTIAL, DEFAULT_READ_FOOTER_CAPPED,
+  DEFAULT_GLOB_FOOTER_FULL, DEFAULT_GLOB_FOOTER_TRUNCATED,
+  DEFAULT_WRITE_FOOTER_CREATE, DEFAULT_WRITE_FOOTER_UPDATE,
+} from '../../../../infra/read-header-templates.js';
 import * as echarts from 'echarts';
 
 const SETTINGS_SLOT = 'settings.section';
@@ -324,16 +332,8 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       createElement('input', { type: 'number', className: 'ck-set-input ck-set-input-sm', min: 0, step: 1, value: numVal('retry429Delay'), onChange: (e: any) => setField('retry429Delay', parseFloat(e.target.value) || 0) })),
     createElement(SettingRow, { label: '操作频繁重试次数', desc: '负数 = 无限重试' },
       createElement('input', { type: 'number', className: 'ck-set-input ck-set-input-sm', step: 1, value: numVal('retry429Count'), onChange: (e: any) => setField('retry429Count', parseInt(e.target.value, 10) || 0) })),
-    createElement('div', { className: 'ck-set-row-col' },
-      createElement('div', { className: 'ck-set-row-label' }, '重试提示词'),
-      createElement('textarea', { className: 'ck-set-textarea', rows: 3, value: data.retryPrompt || '', onChange: (e: any) => setField('retryPrompt', e.target.value) }),
-    ),
     createElement(SettingRow, { label: 'AI 回复超时后重试（秒）', desc: 'AI 回复静默超过该时长则重试' },
       createElement('input', { type: 'number', className: 'ck-set-input ck-set-input-sm', min: 0, step: 1, value: numVal('xhrIdleTimeout'), onChange: (e: any) => setField('xhrIdleTimeout', parseFloat(e.target.value) || 0) })),
-    createElement('div', { className: 'ck-set-row-col' },
-      createElement('div', { className: 'ck-set-row-label' }, '超时重试提示词'),
-      createElement('textarea', { className: 'ck-set-textarea', rows: 3, value: data.watchdogPrompt || '', onChange: (e: any) => setField('watchdogPrompt', e.target.value) }),
-    ),
     createElement(SettingRow, { label: '超时重试次数', desc: '负数 = 无限重试' },
       createElement('input', { type: 'number', className: 'ck-set-input ck-set-input-sm', step: 1, value: numVal('watchdogCount'), onChange: (e: any) => setField('watchdogCount', parseInt(e.target.value, 10) || 0) })),
   );
@@ -368,11 +368,112 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
       createElement('div', { className: 'ck-set-row-desc' }, '任意一条命中即视为 XML 工具调用，会提示 AI 改用 cuckoo 代码块。支持正则表达式，不区分大小写。'),
       createElement('textarea', { className: 'ck-set-textarea', rows: 8, value: data.aiInterceptPatterns || '', onChange: (e: any) => setField('aiInterceptPatterns', e.target.value) }),
     ),
+  );
+
+  // [261101-ym9l98] 工具结果回传文案两个池（头部文案 + 脚本标题模板），同分类上下排列
+  const jsResultPhrases = createElement('div', { className: 'ck-card' },
     createElement('div', { className: 'ck-set-row-col' },
-      createElement('div', { className: 'ck-set-row-label' }, '拦截提示语'),
-      createElement('div', { className: 'ck-set-row-desc' }, '拦截命中后发送给 AI 的提示文本'),
-      createElement('textarea', { className: 'ck-set-textarea', rows: 3, value: data.aiInterceptPrompt || '', onChange: (e: any) => setField('aiInterceptPrompt', e.target.value) }),
+      createElement('div', { className: 'ck-set-row-label' }, '工具结果回复语池（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        '执行完 AI 的工具调用后，回传结果时随机取一条作为消息开头。{n} 会替换为本次脚本数；池为空时使用内置文案。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 10,
+        value: data.jsResultPhrases || '',
+        onChange: (e: any) => setField('jsResultPhrases', e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField('jsResultPhrases', DEFAULT_JS_RESULT_PHRASES.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField('jsResultPhrases', '') }, '清空'),
+      ),
     ),
+    createElement('div', { className: 'ck-set-row-col', style: { marginTop: '16px' } },
+      createElement('div', { className: 'ck-set-row-label' }, '脚本标题模板池（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        '回传结果里每段脚本的标题行，整行即最终输出，同一批脚本共用一个模板。{i} 替换为序号（从 1 开始）。写法有两种：① 用 | 分隔成功和失败，如「第 {i} 块代码跑完了，成功，你看下|第 {i} 块代码没跑通，失败，得改改」；② 单句用 {r} 表示成功/失败。池为空时使用内置模板。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 10,
+        value: data.jsResultItemTemplates || '',
+        onChange: (e: any) => setField('jsResultItemTemplates', e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField('jsResultItemTemplates', DEFAULT_JS_RESULT_ITEM_TEMPLATES.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField('jsResultItemTemplates', '') }, '清空'),
+      ),
+    ),
+  );
+
+  /**
+   * 生成一个「每行一条」的模板池编辑块（label + 说明 + textarea + 填入/清空）。
+   * [261101-ym9l98] 多个 footer 池共用，避免重复 8 行 JSX。
+   */
+  const makeFooterBlock = (field: string, label: string, placeholders: string, defaults: string[]) =>
+    createElement('div', { className: 'ck-set-row-col', style: { marginTop: '16px' } },
+      createElement('div', { className: 'ck-set-row-label' }, label + '（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        '占位符：' + placeholders + '；池为空时使用内置模板。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 6,
+        value: data[field] || '',
+        onChange: (e: any) => setField(field, e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField(field, defaults.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField(field, '') }, '清空'),
+      ),
+    );
+
+  // [261101-ym9l98] 「让 AI 继续」统一池（重试/看门狗/手动催/格式纠正 共用）
+  const continuePrompt = createElement('div', { className: 'ck-card' },
+    makeFooterBlock('continuePrompt', '「让 AI 继续」提示词池', '无占位符', DEFAULT_CONTINUE_PROMPTS),
+    createElement('div', { className: 'ck-set-row-desc', style: { marginTop: '8px', opacity: 0.75 } },
+      '用于：请求失败自动重试、回复超时催继续、手动「卡住了」按钮、AI 输出 XML/JSON 格式工具调用。每次从池里随机取一条发送。'),
+  );
+
+  // [261101-ym9l98] read 工具输出格式（首行两套池 + 结尾三套池）
+  const readHeader = createElement('div', { className: 'ck-card' },
+    createElement('div', { className: 'ck-set-row-col' },
+      createElement('div', { className: 'ck-set-row-label' }, '完整文件时的首行（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        'read 读到文件末尾时用的首行。{path} 替换为文件路径，{total} 替换为总行数；池为空时使用内置模板。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 8,
+        value: data.readHeaderFull || '',
+        onChange: (e: any) => setField('readHeaderFull', e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField('readHeaderFull', DEFAULT_READ_HEADER_FULL.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField('readHeaderFull', '') }, '清空'),
+      ),
+    ),
+    createElement('div', { className: 'ck-set-row-col', style: { marginTop: '16px' } },
+      createElement('div', { className: 'ck-set-row-label' }, '部分读取时的首行（每行一条）'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        '文件没读完时用的首行。{path} 路径、{start} 起始行、{end} 结束行、{total} 总行数、{rest} 剩余行数；池为空时使用内置模板。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea', rows: 8,
+        value: data.readHeaderPartial || '',
+        onChange: (e: any) => setField('readHeaderPartial', e.target.value),
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end' } },
+        createElement('button', { className: 'ck-btn', onClick: () => setField('readHeaderPartial', DEFAULT_READ_HEADER_PARTIAL.join('\n')) }, '填入内置默认'),
+        createElement('button', { className: 'ck-btn', onClick: () => setField('readHeaderPartial', '') }, '清空'),
+      ),
+    ),
+    makeFooterBlock('readFooterFull', '读完整个文件时的结尾', '{total} 总行数', DEFAULT_READ_FOOTER_FULL),
+    makeFooterBlock('readFooterPartial', '文件没读完时的结尾', '{start} 起始行、{end} 结束行、{total} 总行数、{next} 下一段起始行号（请包在 offset= 里）', DEFAULT_READ_FOOTER_PARTIAL),
+    makeFooterBlock('readFooterCapped', '输出字节超限被截断时的结尾', '{start} 起始行、{end} 结束行、{next} 下一段起始行号（请包在 offset= 里）', DEFAULT_READ_FOOTER_CAPPED),
+  );
+
+  // [261101-ym9l98] glob 结尾模板
+  const globFooter = createElement('div', { className: 'ck-card' },
+    makeFooterBlock('globFooterFull', '未截断时的结尾', '{count} 匹配文件数', DEFAULT_GLOB_FOOTER_FULL),
+    makeFooterBlock('globFooterTruncated', '结果被截断时的结尾', '{shown} 已显示数、{total} 总数', DEFAULT_GLOB_FOOTER_TRUNCATED),
+  );
+
+  // [261101-ym9l98] write 结尾模板（新建 / 覆盖更新两套池）
+  const writeFooter = createElement('div', { className: 'ck-card' },
+    makeFooterBlock('writeFooterCreate', '新建文件时的确认', '{path} 文件路径', DEFAULT_WRITE_FOOTER_CREATE),
+    makeFooterBlock('writeFooterUpdate', '覆盖已有文件时的确认', '{path} 文件路径', DEFAULT_WRITE_FOOTER_UPDATE),
   );
 
   // ===== 日志分类（仅打包版有用）=====
@@ -425,6 +526,10 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ['attach', '附件上传间隔'],
     ['security', '网络安全'],
     ['ai-intercept', 'AI 回复拦截'],
+    ['js-result-phrases', '工具结果回复语'],   // [261101-ym9l98]
+    ['read-header', '文件读取格式'],          // [261101-ym9l98]
+    ['glob-footer', '文件搜索格式'],          // [261101-ym9l98]
+    ['write-footer', '文件写入格式'],         // [261101-ym9l98]
     ['logs', '日志'],
     ['usage', '用量统计'],
   ];
@@ -442,11 +547,15 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   let content: any = null;
   if (loading) content = createElement('div', { className: 'ck-list-empty' }, '加载中…');
   else if (active === 'appearance') content = appearance;
-  else if (active === 'retry') content = retry;
+  else if (active === 'retry') content = createElement('div', null, retry, continuePrompt);
   else if (active === 'send') content = sendDelay;
   else if (active === 'attach') content = attachDelay;
   else if (active === 'security') content = security;
   else if (active === 'ai-intercept') content = aiIntercept;
+  else if (active === 'js-result-phrases') content = jsResultPhrases;
+  else if (active === 'read-header') content = readHeader;
+  else if (active === 'glob-footer') content = globFooter;
+  else if (active === 'write-footer') content = writeFooter;
   else if (active === 'logs') content = logs;
   else if (active === 'usage') content = createElement(UsageStats);
   else if (active.startsWith('plugin:')) {

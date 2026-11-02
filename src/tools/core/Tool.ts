@@ -74,8 +74,13 @@ export interface ToolApiMeta {
   name: string;
   /** 该工具用到的 interface/type 声明块（原样写入 api.d.ts） */
   types?: string;
-  /** 函数 JSDoc 正文（不含 @param/@returns/@throws） */
+  /** 函数 JSDoc 正文：这函数是什么、返回什么（不含 @param/@returns/@throws） */
   doc: string;
+  /**
+   * 使用指导：什么时候该用、别用什么替代（如"用 read 而不是 cat"）。
+   * 生成到 api.d.ts 时会在 doc 之后另起一段（空行分隔）。
+   */
+  usage?: string;
   /** 参数列表（带类型），如 "command: string, options?: BashOptions" */
   params: string;
   /** 返回类型，如 "Promise<string>" */

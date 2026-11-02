@@ -68,7 +68,6 @@ test('readConfig 返回默认值', async () => {
   assert.strictEqual(cfg.count, 10);
   assert.strictEqual(cfg.delay429, 120000);
   assert.strictEqual(cfg.count429, 40);
-  assert.ok(cfg.prompt);
 });
 
 test('readConfig 从 localStorage 覆盖', async () => {
@@ -79,7 +78,6 @@ test('readConfig 从 localStorage 覆盖', async () => {
   localStorage.setItem('cuckoo-retry-count', '3');
   localStorage.setItem('cuckoo-retry-429-delay', '1234');
   localStorage.setItem('cuckoo-retry-429-count', '5');
-  localStorage.setItem('cuckoo-retry-prompt', '自定义');
   const cfg = retry.readConfig();
   assert.strictEqual(cfg.enabled, false);
   assert.strictEqual(cfg.delayMin, 500);
@@ -87,12 +85,15 @@ test('readConfig 从 localStorage 覆盖', async () => {
   assert.strictEqual(cfg.count, 3);
   assert.strictEqual(cfg.delay429, 1234);
   assert.strictEqual(cfg.count429, 5);
-  assert.strictEqual(cfg.prompt, '自定义');
 });
 
-test('DEFAULT_PROMPT 存在', async () => {
+test('提示词来自统一池（不再走 localStorage）', async () => {
   await boot();
-  assert.ok(typeof retry.DEFAULT_PROMPT === 'string' && retry.DEFAULT_PROMPT.length > 0);
+  const pool = await import('../../../src/infra/continue-prompt-pool.js');
+  const seen = new Set();
+  for (let i = 0; i < 50; i++) seen.add(pool.pickContinuePrompt());
+  assert.ok(seen.size >= 3, '池应有多条可用，实际 ' + seen.size);
+  for (const s of seen) assert.ok(typeof s === 'string' && s.length > 0);
 });
 
 test('enabled=0 时错误不触发重试', async () => {

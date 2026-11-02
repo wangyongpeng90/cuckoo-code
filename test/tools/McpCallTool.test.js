@@ -11,14 +11,13 @@ test('McpCallTool 构造器', () => {
   assert.ok(t.parameters.required.includes('tool'));
 });
 
-test('McpCallTool getPromptSection', () => {
-  const t = new McpCallTool();
-  const s = t.getPromptSection();
-  assert.strictEqual(s.name, 'tool:mcpCall');
-  assert.strictEqual(s.order, 118);
-  assert.match(s.text, /mcpCall/);
-  assert.match(s.text, /mcpListServers/);
-  assert.match(s.text, /mcpGetTools/);
+test('McpCallTool apiMetas.usage 提到前置查询工具', async () => {
+  const { apiMetas } = await import('../../src/tools/impl/mcp-call.js');
+  const usage = apiMetas[0].usage;
+  assert.ok(typeof usage === 'string' && usage.length > 0, 'usage 应存在');
+  assert.match(usage, /mcpCall/);
+  assert.match(usage, /mcpListServers/);
+  assert.match(usage, /mcpGetTools/);
 });
 
 test('McpCallTool 缺 server 返回错误', async () => {

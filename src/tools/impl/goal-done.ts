@@ -28,6 +28,7 @@ export const apiMetas: ToolApiMeta[] = [
     order: 19,
     category: '任务管理',
     name: 'goalDone',
+    usage: '当 /goal 目标的所有要求都确实完成后，调用 goalDone() 结束目标的自动推进；调用前先在正文给出完成情况总结。目标未完成或遇到阻碍时不要调用，继续推进或说明原因。普通对话（非目标模式）不要调用本工具。',
     doc: [
       '宣告当前目标（/goal 设定的自动多轮任务）已全部完成，结束自动推进。',
       '仅在目标的所有要求都确实完成后调用；调用前先在正文给出完成情况总结。',
@@ -52,14 +53,6 @@ class GoalDoneTool extends Tool {
       },
       'goalDone()'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:goalDone',
-      order: 115,
-      text: '当 /goal 目标的所有要求都确实完成后，调用 goalDone() 结束目标的自动推进；调用前先在正文给出完成情况总结。目标未完成或遇到阻碍时不要调用，继续推进或说明原因。普通对话（非目标模式）不要调用本工具。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

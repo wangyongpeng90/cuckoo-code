@@ -103,6 +103,13 @@ function render(metas, minimal) {
     for (const line of m.doc.split(NL)) {
       L.push(' * ' + line);
     }
+    // usage：另起一段（空行分隔），与 doc 的"是什么"区分开
+    if (typeof m.usage === 'string' && m.usage.trim()) {
+      L.push(' *');
+      for (const line of m.usage.split(NL)) {
+        L.push(' * ' + line);
+      }
+    }
     if (m.paramDocs) {
       for (const k of Object.keys(m.paramDocs)) {
         L.push(' * @param ' + k + ' ' + m.paramDocs[k]);

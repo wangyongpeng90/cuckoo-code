@@ -54,10 +54,12 @@ test('WriteTool 新建与覆盖', async () => {
   const tool = new WriteTool();
   const r1 = await tool.execute({ filePath: 'b.txt', content: 'one', projectDir: tmpRoot });
   assert.strictEqual(r1.success, true);
-  assert.match(r1.data, /Created file/);
+  assert.ok(r1.data.indexOf('b.txt') >= 0, '新建结果应含路径：' + r1.data);
+  assert.ok(r1.data.indexOf('<path>') < 0, '不应再是 XML 格式：' + r1.data);
   const r2 = await tool.execute({ filePath: 'b.txt', content: 'two', projectDir: tmpRoot });
   assert.strictEqual(r2.success, true);
-  assert.match(r2.data, /Updated file/);
+  assert.ok(r2.data.indexOf('b.txt') >= 0, '更新结果应含路径：' + r2.data);
+  assert.ok(r2.data.indexOf('<path>') < 0, '不应再是 XML 格式：' + r2.data);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'b.txt'), 'utf8'), 'two');
 });
 
@@ -76,7 +78,18 @@ test('ReadTool 读取带行号', async () => {
   assert.strictEqual(r.success, true);
   assert.match(r.data, /1: line1/);
   assert.match(r.data, /3: line3/);
-  assert.match(r.data, /\(End of file - total 3 lines\)/);
+  assert.ok(r.data.split('\n\n').pop().indexOf('3') >= 0, '结尾应含总行数 3');
+});
+
+test('ReadTool 剥离 UTF-8 BOM（PowerShell 写的文件）', async () => {
+  const f = path.join(tmpRoot, 'bom.txt');
+  // PowerShell 5.1 的 -Encoding UTF8 会写 EF BB BF + 内容
+  fs.writeFileSync(f, Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from('中文内容\n', 'utf8')]));
+  const tool = new ReadTool();
+  const r = await tool.execute({ filePath: 'bom.txt', projectDir: tmpRoot });
+  assert.strictEqual(r.success, true);
+  assert.ok(r.data.indexOf('\uFEFF') < 0, '不应含 BOM：' + JSON.stringify(r.data.slice(0, 40)));
+  assert.match(r.data, /1: 中文内容/);
 });
 
 test('ReadTool 文件不存在', async () => {
@@ -91,7 +104,7 @@ test('EditTool 成功替换', async () => {
   const tool = new EditTool();
   const r = await tool.execute({ filePath: 'd.txt', oldString: 'world', newString: 'cuckoo', projectDir: tmpRoot });
   assert.strictEqual(r.success, true);
-  assert.match(r.data, /updated successfully/);
+  assert.match(r.data, /已更新 d.txt，替换了 1 处/);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'd.txt'), 'utf8'), 'hello cuckoo');
 });
 
@@ -124,7 +137,7 @@ test('EditTool dry-run 预览不写入', async () => {
   const tool = new EditTool();
   const r = await tool.execute({ filePath: 'd.txt', oldString: 'x', newString: 'y', replaceAll: true, dryRun: true, projectDir: tmpRoot });
   assert.strictEqual(r.success, true);
-  assert.match(r.data, /DRY-RUN/);
+  assert.match(r.data, /\[预览\]/);
   assert.match(r.data, /将全部替换 3 处/);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'd.txt'), 'utf8'), 'x x x');
 });
@@ -134,7 +147,7 @@ test('EditTool dry-run 唯一替换预览', async () => {
   const tool = new EditTool();
   const r = await tool.execute({ filePath: 'd.txt', oldString: 'world', newString: 'cuckoo', dryRun: true, projectDir: tmpRoot });
   assert.strictEqual(r.success, true);
-  assert.match(r.data, /DRY-RUN/);
+  assert.match(r.data, /\[预览\]/);
   assert.match(r.data, /将替换 1 处/);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'd.txt'), 'utf8'), 'hello world');
 });
@@ -144,8 +157,8 @@ test('EditTool dry-run 删除预览', async () => {
   const tool = new EditTool();
   const r = await tool.execute({ filePath: 'd.txt', oldString: 'remove', newString: '', dryRun: true, projectDir: tmpRoot });
   assert.strictEqual(r.success, true);
-  assert.match(r.data, /DRY-RUN/);
-  assert.match(r.data, /old: "remove" → new: ""/);
+  assert.match(r.data, /\[预览\]/);
+  assert.match(r.data, /原内容 "remove" → 新内容 ""/);
   assert.strictEqual(fs.readFileSync(path.join(tmpRoot, 'd.txt'), 'utf8'), 'remove me');
 });
 

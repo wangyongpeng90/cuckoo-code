@@ -17,6 +17,20 @@ import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
 
+// [261101-ym9l98] 让 .js 后缀的 import 解析到 .ts 源文件（tsc 要求带 .js 后缀，esbuild 默认不认）
+// 用途：壳页面脚本 import 壳外模块（如 src/overlay/js-result-phrases.js 的默认文案池），
+// 构建后仍打进同一个 IIFE bundle。
+const tsJsResolve = {
+  name: 'ts-js-resolve',
+  setup(b) {
+    b.onResolve({ filter: /\.js$/ }, (args) => {
+      const p = path.resolve(args.resolveDir, args.path.replace(/\.js$/, '.ts'));
+      if (fs.existsSync(p)) return { path: p };
+      return null;
+    });
+  },
+};
+
 const ROOT = path.resolve(import.meta.dirname, '..');
 const SRC_DIR = path.join(ROOT, 'src', 'ui', 'shell');
 const OUT = path.join(ROOT, 'src', 'ui', 'shell.html');
@@ -67,6 +81,7 @@ async function main() {
     jsx: 'automatic',
     jsxImportSource: 'react',
     loader: { '.tsx': 'tsx' },
+    plugins: [tsJsResolve],
   });
   const js = bundle.outputFiles[0].text;
 

@@ -4,6 +4,12 @@ import { ToolResult } from '../core/ToolResult.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import {
+  GLOB_FOOTER_FULL_KEY, GLOB_FOOTER_TRUNCATED_KEY,
+  DEFAULT_GLOB_FOOTER_FULL, DEFAULT_GLOB_FOOTER_TRUNCATED,
+  pickAndRender,
+} from '../../infra/read-header-templates.js';
+import { readSettingRaw } from './read.js';
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
 export const apiMetas: ToolApiMeta[] = [
@@ -11,11 +17,12 @@ export const apiMetas: ToolApiMeta[] = [
     order: 5,
     category: '搜索',
     name: 'glob',
+    usage: '使用 glob 工具（而不是 shell find）按路径模式查找文件。不含 "/" 的模式匹配任意深度的 basename，所以 "*" 匹配树中所有文件而非仅顶层。结果只包含文件，永不包含目录，且包含隐藏和已忽略文件。默认排除 node_modules、dist 等产物目录；若确需搜索这些目录，请显式传 path。',
     doc: [
       '按 glob 模式查找文件路径，返回纯文本路径列表（以 / 分隔，如 "src/utils/a.js"）。',
       '使用 ripgrep，包含隐藏文件和已忽略文件；未指定 path 时默认排除 VCS 元数据目录（.git 等）与常见产物目录（node_modules、dist、out、build 等）。',
       'glob 语法：* 匹配单层内任意字符，** 匹配任意层级目录，? 匹配单个字符。',
-      '结果包含 footer：未超限时 "(Found N files)"，超限时 "(Showing M of N paths...)"。',
+      '结果包含 footer：未超限时"(共找到 N 个文件)"，超限时说明只列出了前 M 个。',
     ].join('\n'),
     params: 'pattern: string, searchPath?: string',
     returns: 'Promise<string>',
@@ -151,10 +158,27 @@ function buildIgnoreNote(baseDir: string): string {
  */
 function formatGlobOutput(items: string[], seen: number, truncated: boolean): string {
   const body = items.join('\n');
+  // [261101-ym9l98] footer 走模板池（与 read 共用同一个设置读取注入）
   const footer = truncated
-    ? '(Showing ' + items.length + ' of ' + seen + ' paths. Narrow pattern or path to see more.)'
-    : '(Found ' + seen + ' files)';
+    ? pickAndRender(
+        readGlobPool(GLOB_FOOTER_TRUNCATED_KEY, DEFAULT_GLOB_FOOTER_TRUNCATED),
+        DEFAULT_GLOB_FOOTER_TRUNCATED,
+        { shown: items.length, total: seen }
+      )
+    : pickAndRender(
+        readGlobPool(GLOB_FOOTER_FULL_KEY, DEFAULT_GLOB_FOOTER_FULL),
+        DEFAULT_GLOB_FOOTER_FULL,
+        { count: seen }
+      );
   return body + '\n\n' + footer;
+}
+
+/** 从通用设置读取 glob 模板池；未注入 / 为空时回退默认 */
+function readGlobPool(key: string, fallback: string[]): string[] {
+  const raw = readSettingRaw(key);
+  if (raw === undefined) return fallback;
+  const list = raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  return list.length > 0 ? list : fallback;
 }
 
 /**
@@ -183,14 +207,6 @@ class GlobToolNew extends Tool {
       },
       'glob(pattern, searchPath?)'
     );
-  }
-
-  getPromptSection() {
-    return {
-      name: 'tool:glob',
-      order: 103,
-      text: '使用 glob 工具（而不是 shell find）按路径模式查找文件。不含 "/" 的模式匹配任意深度的 basename，所以 "*" 匹配树中所有文件而非仅顶层。结果只包含文件，永不包含目录，且包含隐藏和已忽略文件。默认排除 node_modules、dist 等产物目录；若确需搜索这些目录，请显式传 path。'
-    };
   }
 
   async execute(params: any): Promise<ToolResult> {

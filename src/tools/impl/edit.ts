@@ -12,10 +12,19 @@ export const apiMetas: ToolApiMeta[] = [
     order: 4,
     category: '文件读写',
     name: 'edit',
+    usage: [
+      '使用 edit 工具对现有 UTF-8 文本文件做定向修改：用 newString 替换字面量 oldString。',
+      'oldString 应是一行或多行【连续】的原文（可跨行，不必逐行改）；【务必注意空白与缩进】——',
+      '缩进、空格不一致是替换失败的最常见原因，请直接复制 read 到的原文。',
+      '默认 oldString 必须唯一匹配：若出现多次，请提供更长的上下文使其唯一，或设置 replaceAll: true 全部替换。',
+      '批量替换同一文本时优先用 replaceAll: true 一次完成，避免读全文后整体写回。',
+      '批量修改前可用 dryRun: true 预览，确认无误后再真实写入。',
+      '除非你刚在本会话中创建或编辑过该文件，否则先 read 文件。',
+      '注意：read 输出的内容带行号，oldString/newString 必须是文件原始文本，不要包含行号或 footer 提示。',
+    ].join('\n'),
     doc: [
       '在现有 UTF-8 文本文件中精确替换 oldString 为 newString。',
       '默认 oldString 必须唯一匹配；多匹配需设置 replaceAll。',
-      '返回 Claude-style 确认消息。',
     ].join('\n'),
     params: 'filePath: string, oldString: string, newString: string, replaceAll?: boolean, dryRun?: boolean',
     returns: 'Promise<string>',
@@ -83,18 +92,32 @@ function buildNormIndexMap(raw: string): { norm: string; start: number[]; len: n
   return { norm, start, len };
 }
 
-/** 统计 needle 在 haystack 中出现的次数（非重叠）。 */
-function countOccurrences(haystack: string, needle: string): number {
-  if (needle.length === 0) return 0;
-  let count = 0;
+/** 找出 needle 在 haystack 中所有出现的起始下标（非重叠）。 */
+function findOccurrencePositions(haystack: string, needle: string): number[] {
+  if (needle.length === 0) return [];
+  const out: number[] = [];
   let idx = 0;
   while (true) {
     const found = haystack.indexOf(needle, idx);
     if (found === -1) break;
-    count++;
+    out.push(found);
     idx = found + needle.length;
   }
-  return count;
+  return out;
+}
+
+/** 统计 needle 在 haystack 中出现的次数（非重叠）。 */
+function countOccurrences(haystack: string, needle: string): number {
+  return findOccurrencePositions(haystack, needle).length;
+}
+
+/** 把 LF 归一文本中的下标换算成 1-based 行号。 */
+function lineNumberOf(norm: string, pos: number): number {
+  let line = 1;
+  for (let i = 0; i < pos; i++) {
+    if (norm[i] === '\n') line++;
+  }
+  return line;
 }
 
 /**
@@ -134,14 +157,10 @@ function applyEditPreservingEol(raw: string, oldNorm: string, newNorm: string, r
   return out;
 }
 
-/**
- * 对齐 dsh formatEditOutput：Claude-style 确认语。
- */
+/** 替换成功的确认消息（中文，含实际替换处数）。 */
 function formatEditOutput(displayPath: string, replaceAll: boolean, occurrences: number = 1): string {
-  const noun = occurrences === 1 ? 'occurrence' : 'occurrences';
-  return replaceAll
-    ? 'The file ' + displayPath + ' has been updated. Replaced ' + occurrences + ' ' + noun + ' successfully.'
-    : 'The file ' + displayPath + ' has been updated successfully. Replaced 1 occurrence.';
+  const n = replaceAll ? occurrences : 1;
+  return '已更新 ' + displayPath + '，替换了 ' + n + ' 处。';
 }
 
 /**
@@ -151,8 +170,8 @@ function formatDryRunOutput(displayPath: string, oldString: string, newString: s
   const action = replaceAll
     ? '将全部替换 ' + occurrences + ' 处'
     : '将替换 1 处';
-  return '[DRY-RUN] 文件未修改。' + displayPath + '：' + action +
-    '。old: ' + JSON.stringify(oldString) + ' → new: ' + JSON.stringify(newString);
+  return '[预览] 文件未修改。' + displayPath + '：' + action +
+    '。原内容 ' + JSON.stringify(oldString) + ' → 新内容 ' + JSON.stringify(newString);
 }
 
 /**
@@ -197,21 +216,6 @@ class EditTool extends Tool {
     );
   }
 
-  getPromptSection() {
-    return {
-      name: 'tool:edit',
-      order: 102,
-      text: '使用 edit 工具对现有 UTF-8 文本文件做定向修改：用 newString 替换字面量 oldString。'
-        + 'oldString 应是一行或多行【连续】的原文（可跨行，不必逐行改）；【务必注意空白与缩进】——'
-        + '缩进、空格不一致是替换失败的最常见原因，请直接复制 read 到的原文。'
-        + '默认 oldString 必须唯一匹配：若出现多次，请提供更长的上下文使其唯一，或设置 replaceAll: true 全部替换。'
-        + '批量替换同一文本时优先用 replaceAll: true 一次完成，避免读全文后整体写回。'
-        + '批量修改前可用 dryRun: true 预览，确认无误后再真实写入；返回结果会包含实际替换处数，可用于自我校验。'
-        + '除非你刚在本会话中创建或编辑过该文件，否则先 read 文件。'
-        + '注意：read 输出的内容带行号，oldString/newString 必须是文件原始文本，不要包含行号或 footer 提示。'
-    };
-  }
-
   async execute(params: any): Promise<ToolResult> {
     const { filePath, oldString, newString, replaceAll, dryRun, projectDir } = params;
 
@@ -246,12 +250,20 @@ class EditTool extends Tool {
       const oldNorm = normalizeLineEndings(input.oldString);
       const newNorm = normalizeLineEndings(input.newString);
 
-      const occurrences = countOccurrences(content, oldNorm);
+      const positions = findOccurrencePositions(content, oldNorm);
+      const occurrences = positions.length;
       if (occurrences === 0) {
-        return ToolResult.error('未找到要替换的文本，请检查 oldString 是否与文件内容精确匹配。文件路径: ' + resolvedPath);
+        return ToolResult.error(
+          '未找到要替换的文本。最常见原因是空白/缩进与原文不一致——请直接复制 read 到的原文再试。文件路径: ' + resolvedPath
+        );
       }
       if (occurrences > 1 && !input.replaceAll) {
-        return ToolResult.error('oldString 在文件中出现 ' + occurrences + ' 次。若要全部替换，请设置 replaceAll: true；若只替换其中一处，请提供更长的唯一片段（更多上下文）。');
+        const lines = positions.slice(0, 3).map((p) => lineNumberOf(content, p));
+        const more = positions.length > 3 ? ' 等' : '';
+        return ToolResult.error(
+          'oldString 在文件中出现 ' + occurrences + ' 次（第 ' + lines.join('、') + ' 行' + more + '）。' +
+          '若要全部替换，请设置 replaceAll: true；若只替换其中一处，请提供更长的唯一片段（更多上下文）。'
+        );
       }
 
       // dry-run：只预览，不写文件
@@ -285,4 +297,4 @@ export function bootstrap(__call: any): void {
   };
 }
 
-export { EditTool, parseEditArgs, formatEditOutput, formatDryRunOutput, applyEditPreservingEol, buildNormIndexMap, countOccurrences };
+export { EditTool, parseEditArgs, formatEditOutput, formatDryRunOutput, applyEditPreservingEol, buildNormIndexMap, countOccurrences, findOccurrencePositions, lineNumberOf };

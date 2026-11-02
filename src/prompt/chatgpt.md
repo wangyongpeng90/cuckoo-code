@@ -51,7 +51,6 @@
 
 ---
 
-### 工具使用指导
 {{TOOL_SECTIONS}}
 
 ---
@@ -118,15 +117,10 @@ log(r);
 **系统返回**：
 
 ```
-【JS 执行结果汇总】(共 1 个脚本)
+刚跑完 1 段脚本，结果都在这儿了：
 
-—— 脚本 1 ——
-✅ 成功
-<path>src/greeting.txt</path>
-<type>file</type>
-<content>
-Created file
-</content>
+这是第 1 条代码块，成功，结果在下面
+已创建 src/greeting.txt
 ```
 
 > 若脚本中未调用 log() 打印返回值，系统只会提示“(脚本执行完成，无输出) 如需输出请使用 log() 方法”，不会自动显示工具的返回内容。

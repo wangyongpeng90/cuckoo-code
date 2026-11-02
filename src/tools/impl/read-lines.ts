@@ -3,6 +3,7 @@ import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { stripBom } from '../../infra/decode-output.js';
 import { READ_LIMIT, parseReadArgs, buildWindow } from './read.js';
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
@@ -33,6 +34,7 @@ export const apiMetas: ToolApiMeta[] = [
       '}',
     ].join('\n'),
     doc: '读取 UTF-8 文本文件并返回结构化行数组，供 AI 在内存中精确处理。',
+    usage: '使用 readLines 工具读取文件的结构化行数据（数组，每个元素含 number 和 text 字段），适合在内存中批量处理（如 map/filter/join 后写回）。如果只是查看文件内容，用 read 即可。',
     params: 'filePath: string, options?: ReadOptions',
     returns: 'Promise<ReadLinesResult>',
     paramDocs: {
@@ -77,14 +79,6 @@ class ReadLinesTool extends Tool {
     );
   }
 
-  getPromptSection() {
-    return {
-      name: 'tool:readLines',
-      order: 101,
-      text: '使用 readLines 工具读取文件的结构化行数据（数组，每个元素含 number 和 text 字段），适合在内存中批量处理（如 map/filter/join 后写回）。如果只是查看文件内容，用 read 即可。'
-    };
-  }
-
   async execute(params: any): Promise<ToolResult> {
     const { filePath, offset, limit, projectDir } = params;
 
@@ -110,7 +104,8 @@ class ReadLinesTool extends Tool {
       }
 
       // 读取整个文件内容
-      const content = fs.readFileSync(resolvedPath, 'utf-8');
+      // stripBom：PowerShell 写的 UTF-8 文件带 BOM，读回时首字符是看不见的 \uFEFF
+      const content = stripBom(fs.readFileSync(resolvedPath, 'utf-8'));
       const window = buildWindow(content, {
         offset: input.offset,
         limit: input.limit,
