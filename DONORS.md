@@ -4,21 +4,23 @@
 >
 > ✅ 如果你想支持本项目，欢迎向 **壹基金（One Foundation）** 捐赠：[https://onefoundation.cn/donate/](https://onefoundation.cn/donate/)
 >
-> 所有捐赠款项**直接进入壹基金公益账户**，与作者无关，纯属公益行为。
+> 所有捐赠款项**直接进入壹基金公益账户**，与作者无关，纯属公益行为,一分钱也是爱心。
 >
 > 感谢每一位向壹基金捐赠的捐赠者！
 
-**已通过壹基金捐赠的善款：6 笔 / 588 元**
 
 | 捐赠者 | 金额 | 日期 | 捐赠证书 |
 |---|---|---|---|
-| 刘先生 | 100 元 | 2026-10-29 |要求匿名|
+| 烈云 | 100 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261101152146565/](https://onefoundation.cn/cert/20261101152146565/)|
+| 石垚 | 2 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261101205925282/](https://onefoundation.cn/cert/20261101205925282/)|
+| 刘先生| 100 元 | 2026-10-29 |要求匿名|
 | CS | 100 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261029003017507/](https://onefoundation.cn/cert/20261029003017507/)|
 | 杨先生 | 88 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261029065593254/](https://onefoundation.cn/cert/20261029065593254/))|
 | Hazel | 100 元 | 2026-10-26 | [https://onefoundation.cn/cert/20261027103737586/](https://onefoundation.cn/cert/20261027103737586/)|
 | 十七不是石器ᯤ | 100 元 | 2026-10-26 | [https://onefoundation.cn/cert/20261026213679892/](https://onefoundation.cn/cert/20261026213679892/)|
 | 王先生 | 100 元 | 2026-10-26 | [https://onefoundation.cn/cert/20261026131837934/](https://onefoundation.cn/cert/20261026131837934/) |
 
+> 名单持续更新中，完整历史详见 [DONORS.md](DONORS.md)
 ---
 
 ## 捐赠者权益（凭壹基金捐赠证书联系作者获取）
