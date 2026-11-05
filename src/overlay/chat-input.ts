@@ -150,7 +150,7 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
  * @returns 是否成功
  */
 // 当前待发送的消息（可被 cancelPendingSend 取消）
-interface PendingSend { timer: any; input: any; cancelled: boolean; text: string; tag: string; }
+interface PendingSend { timer: any; input: any; cancelled: boolean; text: string; tag: string; cancelWait?: (() => void) | null; }
 let pendingSend: PendingSend | null = null;
 // 最近一条「已发出」的工具结果文本（用于上下文耗尽续接：新会话需知道工具执行结果）
 let lastToolResultText = '';
@@ -191,6 +191,13 @@ function emitMessageDelivered(text: string, tag?: string): void {
   } catch (_) { /* ignore */ }
 }
 
+/**
+ * 粘贴完成到触发发送之间的等待（毫秒）。
+ * 站点在收到粘贴后可能还要做事：长文本转成附件、上传、重新启用发送按钮。
+ * 给一段固定缓冲，避免"粘贴完立刻发"导致内容没带上或被吞。
+ */
+const POST_PASTE_SETTLE_MS = 600;
+
 async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
   const input = findInputArea();
   if (!input) {
@@ -199,32 +206,55 @@ async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterS
   }
   const token: PendingSend = { timer: null, input: input, cancelled: false, text: msg, tag: tag || '' };
   pendingSend = token;
+
+  // 顺序：先等随机延迟 → 再粘贴 → 再发送。
+  // 之前是"先粘贴、再等延迟、再发送"，待发内容会长时间摆在输入框里；
+  // 现在延迟期间输入框保持干净，到点才粘贴，粘贴后稍等站点消化（附件上传/按钮启用）即发送。
+  // 可被 cancelPendingSend/takePendingSendText 立即叫醒（否则取消后这个 Promise 会永远挂着）
+  const wait = (ms: number) => new Promise<void>((resolve) => {
+    token.cancelWait = () => { clearTimeout(token.timer); resolve(); };
+    token.timer = setTimeout(() => { token.cancelWait = null; resolve(); }, ms);
+  });
+
+  const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay();
+  console.log('[Cuckoo Code] 先等待 ' + sendDelay + 'ms，到点再粘贴并发送（tag=' + (tag || '') + '）');
+  await wait(sendDelay);
+
+  if (token.cancelled) {
+    if (pendingSend === token) pendingSend = null;
+    console.log('[Cuckoo Code] 等待期间被取消，不粘贴也不发送（tag=' + (tag || '') + '）');
+    return false;
+  }
+
   if (!(await setInputContent(input, msg))) {
     if (pendingSend === token) pendingSend = null;
     console.error('[Cuckoo Code] 消息填入输入框失败，已放弃发送（tag=' + (tag || '') + '）');
     return false;
   }
-  // 填充期间被取消：不发送（输入框内容保留）
   if (token.cancelled) {
+    if (pendingSend === token) pendingSend = null;
     return false;
   }
-  const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay();
-  console.log('[Cuckoo Code] 消息已填入输入框，等待 ' + sendDelay + 'ms 后发送...');
-  const timer = setTimeout(function() {
+
+  // 粘贴后给站点一点时间消化（长文本可能被转成附件、发送按钮需要重新启用）
+  console.log('[Cuckoo Code] 已粘贴，等待 ' + POST_PASTE_SETTLE_MS + 'ms 站点消化后发送');
+  await wait(POST_PASTE_SETTLE_MS);
+  if (token.cancelled) {
     if (pendingSend === token) pendingSend = null;
-    if (token.cancelled) return;
-    console.log('[Cuckoo Code] 等待结束，开始触发发送');
-    triggerSend(input);
-    console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
-    // 通知监听者（飞书同步等）；系统内部消息（工具结果/看门狗/重试等）不上报
-    try {
-      if (onUserMessageSentCb && !isSystemTag(tag)) onUserMessageSentCb(msg, tag);
-    } catch (_) {}
-    // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
-    emitMessageDelivered(msg, tag);
-    if (typeof afterSent === 'function') afterSent();
-  }, sendDelay);
-  token.timer = timer;
+    console.log('[Cuckoo Code] 消化期间被取消，不发送（内容保留在输入框）');
+    return false;
+  }
+
+  if (pendingSend === token) pendingSend = null;
+  triggerSend(input);
+  console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
+  // 通知监听者（飞书同步等）；系统内部消息（工具结果/看门狗/重试等）不上报
+  try {
+    if (onUserMessageSentCb && !isSystemTag(tag)) onUserMessageSentCb(msg, tag);
+  } catch (_) {}
+  // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
+  emitMessageDelivered(msg, tag);
+  if (typeof afterSent === 'function') afterSent();
   return true;
 }
 
@@ -236,6 +266,7 @@ function cancelPendingSend(): boolean {
   if (!pendingSend) return false;
   const t = pendingSend;
   t.cancelled = true;
+  if (t.cancelWait) t.cancelWait();
   if (t.timer) clearTimeout(t.timer);
   pendingSend = null;
   // 不清空输入框：保留待发内容，用户可自行决定发送或删除
@@ -260,6 +291,7 @@ function takePendingSendText(): string | null {
   if (!pendingSend) return null;
   const t = pendingSend;
   t.cancelled = true;
+  if (t.cancelWait) t.cancelWait();
   if (t.timer) clearTimeout(t.timer);
   pendingSend = null;
   const text = t.text || '';
