@@ -95,41 +95,81 @@ function chromeFullVersion(): string {
   return v || (chromeMajor() + '.0.0.0');
 }
 
+/** 运行时真实客户端提示（由主进程从页面侧读回，见 app/entry.ts） */
+interface RuntimeClientHints {
+  /** Electron/Chromium 真实品牌列表（含自家 GREASE 品牌名与版本，如 Not?A_Brand/24） */
+  brands?: Array<{ brand: string; version: string }>;
+  /** 完整内核版本，如 152.0.7977.130 */
+  fullVersion?: string;
+  /** 系统版本对应的值，如 Windows 11 的 19.0.0 */
+  platformVersion?: string;
+  architecture?: string;
+  bitness?: string;
+}
+
+/** Emulation.setUserAgentOverride 的 userAgentMetadata 结构 */
+interface UserAgentMetadata {
+  brands: Array<{ brand: string; version: string }>;
+  fullVersionList: Array<{ brand: string; version: string }>;
+  fullVersion: string;
+  platform: string;
+  platformVersion: string;
+  architecture: string;
+  bitness: string;
+  model: string;
+  mobile: boolean;
+  wow64: boolean;
+}
+
 /**
- * 生成与 UA 匹配的 Chrome 客户端提示请求头（Sec-CH-UA*）。
+ * 生成与 UA 完全自洽的客户端提示元数据，供 `Emulation.setUserAgentOverride` 使用。
  *
- * 为什么需要：Electron 默认发的 sec-ch-ua 缺少 "Google Chrome" 品牌，
- * Google 据此判定"浏览器或应用不安全"而拒绝登录。按真实 Chrome 补齐。
+ * 关键点：
+ * 1. 品牌列表沿用**运行时真实值**（Electron 自己的 Chromium + GREASE 品牌），
+ *    只在其前面补一个 "Google Chrome"——这样 sec-ch-ua 请求头才会真的带上 Chrome 品牌
+ *    （webRequest 改 sec-ch-ua 在 Electron 里不生效，实测无效）。
+ * 2. `platformVersion` 优先用运行时真实值（Windows 11 是 19.0.0 这类），
+ *    不再写死 10.0.0 —— 写死会让"系统版本"指纹露馅。
+ * 3. GREASE 品牌名（`Not?A_Brand` / `Not_A Brand`）随内核版本变化，
+ *    所以一律以运行时值为准，不硬编码。
  */
-function buildClientHintsHeaders(platform?: string, arch?: string): Record<string, string> {
-  const m = chromeMajor();
+function buildUserAgentMetadata(runtime?: RuntimeClientHints, platform?: string, arch?: string): UserAgentMetadata {
   const p = getPlatformProfile(platform, arch);
+  const full = (runtime && runtime.fullVersion) || chromeFullVersion();
+  const major = full.split('.')[0] || chromeMajor();
+
+  const base = (runtime && Array.isArray(runtime.brands) && runtime.brands.length)
+    ? runtime.brands.map((b) => ({ brand: String(b.brand), version: String(b.version) }))
+    : [{ brand: 'Chromium', version: major }, { brand: 'Not_A Brand', version: '24' }];
+
+  const brands = [{ brand: 'Google Chrome', version: major }]
+    .concat(base.filter((b) => b.brand !== 'Google Chrome'));
+
+  const fullVersionList = brands.map((b) => ({
+    brand: b.brand,
+    // Chrome / Chromium 用完整版本；GREASE 品牌固定 x.0.0.0（对齐真实 Chrome）
+    version: (b.brand === 'Google Chrome' || b.brand === 'Chromium') ? full : (b.version + '.0.0.0'),
+  }));
+
   return {
-    'sec-ch-ua': '"Google Chrome";v="' + m + '", "Chromium";v="' + m + '", "Not_A Brand";v="24"',
-    'sec-ch-ua-mobile': '?0',
-    'sec-ch-ua-platform': p.chUaPlatform,
+    brands,
+    fullVersionList,
+    fullVersion: full,
+    platform: p.uadPlatform,
+    platformVersion: (runtime && runtime.platformVersion) || p.platformVersion,
+    architecture: (runtime && runtime.architecture) || p.architecture,
+    bitness: (runtime && runtime.bitness) || p.bitness,
+    model: '',
+    mobile: false,
+    wow64: false,
   };
 }
 
-/**
- * 生成修正 navigator.userAgentData / webdriver 的主世界脚本。
- * 必须在页面脚本之前注入（preload 阶段），否则会被页面抢先读到 Electron 默认值。
- */
-function buildUserAgentDataFix(platform?: string, arch?: string): string {
-  const m = chromeMajor();
-  const full = chromeFullVersion();
-  const p = getPlatformProfile(platform, arch);
-  const uadPlatform = JSON.stringify(p.uadPlatform);
-  const platformVersion = JSON.stringify(p.platformVersion);
-  return '(function(){try{' +
-    'var brands=[{brand:"Google Chrome",version:"' + m + '"},{brand:"Chromium",version:"' + m + '"},{brand:"Not_A Brand",version:"24"}];' +
-    'var fullList=[{brand:"Google Chrome",version:"' + full + '"},{brand:"Chromium",version:"' + full + '"},{brand:"Not_A Brand",version:"24.0.0.0"}];' +
-    'var uad={brands:brands,mobile:false,platform:' + uadPlatform + ',' +
-    'getHighEntropyValues:function(){return Promise.resolve({architecture:"' + p.architecture + '",bitness:"' + p.bitness + '",brands:brands,fullVersionList:fullList,mobile:false,model:"",platform:' + uadPlatform + ',platformVersion:' + platformVersion + ',uaFullVersion:"' + full + '",wow64:false});},' +
-    'toJSON:function(){return{brands:brands,mobile:false,platform:' + uadPlatform + '};}};' +
-    'try{Object.defineProperty(navigator,"userAgentData",{get:function(){return uad;},configurable:true});}catch(e){}' +
-    'try{Object.defineProperty(navigator,"webdriver",{get:function(){return false;},configurable:true});}catch(e){}' +
-    '}catch(e){}})();';
-}
-
-export { buildChromeUserAgent, chromeMajor, buildClientHintsHeaders, buildUserAgentDataFix, getPlatformProfile };
+export {
+  buildChromeUserAgent,
+  chromeMajor,
+  chromeFullVersion,
+  buildUserAgentMetadata,
+  getPlatformProfile,
+};
+export type { RuntimeClientHints, UserAgentMetadata };

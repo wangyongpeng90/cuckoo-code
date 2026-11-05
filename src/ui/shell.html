@@ -116858,6 +116858,14 @@ body {
     const dirtyRef = (0, import_react8.useRef)(false);
     const [savedTip, setSavedTip] = (0, import_react8.useState)("");
     const [logInfo, setLogInfo] = (0, import_react8.useState)(null);
+    const [promptProviders, setPromptProviders] = (0, import_react8.useState)([]);
+    const [promptProviderId, setPromptProviderId] = (0, import_react8.useState)("");
+    const [promptBuiltin, setPromptBuiltin] = (0, import_react8.useState)("");
+    const [promptText, setPromptText] = (0, import_react8.useState)("");
+    const [promptDirty, setPromptDirty] = (0, import_react8.useState)(false);
+    const [promptSaving, setPromptSaving] = (0, import_react8.useState)(false);
+    const [promptTip, setPromptTip] = (0, import_react8.useState)("");
+    const promptLoadedRef = (0, import_react8.useRef)(false);
     const load = (0, import_react8.useCallback)(async () => {
       if (!api.getSettings) return;
       try {
@@ -116883,6 +116891,30 @@ body {
     (0, import_react8.useEffect)(() => {
       if (active === "logs") loadLogInfo();
     }, [active, loadLogInfo]);
+    (0, import_react8.useEffect)(() => {
+      if (active !== "system-prompt" || promptLoadedRef.current) return;
+      promptLoadedRef.current = true;
+      (async () => {
+        const anyApi = api;
+        if (typeof anyApi.getPromptTemplate !== "function") return;
+        try {
+          const r = await anyApi.getPromptTemplate("");
+          if (!r || !r.success) return;
+          const list = r.providers || [];
+          setPromptProviders(list);
+          if (list.length === 0) return;
+          const first = list[0].id;
+          const r2 = await anyApi.getPromptTemplate(first);
+          if (r2 && r2.success) {
+            setPromptProviderId(first);
+            setPromptBuiltin(r2.builtin || "");
+            setPromptText(r2.custom || r2.builtin || "");
+            setPromptDirty(false);
+          }
+        } catch (_) {
+        }
+      })();
+    }, [active]);
     (0, import_react8.useEffect)(() => {
       const saveFn = api.saveSettings;
       if (!data || !dirtyRef.current || !saveFn) return;
@@ -116937,6 +116969,56 @@ body {
       dirtyRef.current = true;
       setData((d) => ({ ...d, [key2]: v }));
     }, []);
+    const onPromptProviderChange = (0, import_react8.useCallback)(async (pid) => {
+      const anyApi = api;
+      if (typeof anyApi.getPromptTemplate !== "function") return;
+      setPromptProviderId(pid);
+      setPromptTip("");
+      try {
+        const r = await anyApi.getPromptTemplate(pid);
+        if (r && r.success) {
+          setPromptBuiltin(r.builtin || "");
+          setPromptText(r.custom || r.builtin || "");
+          setPromptDirty(false);
+        }
+      } catch (_) {
+      }
+    }, []);
+    const onPromptSave = (0, import_react8.useCallback)(async () => {
+      const anyApi = api;
+      if (typeof anyApi.saveSharedSettings !== "function" || !promptProviderId) return;
+      setPromptSaving(true);
+      try {
+        const key2 = "cuckoo-system-prompt-template:" + promptProviderId;
+        const r = await anyApi.saveSharedSettings({ [key2]: promptText });
+        if (r && r.success) {
+          setPromptDirty(false);
+          setPromptTip("\u5DF2\u4FDD\u5B58");
+          setTimeout(() => setPromptTip(""), 1500);
+        } else {
+          setPromptTip("\u4FDD\u5B58\u5931\u8D25");
+        }
+      } catch (_) {
+        setPromptTip("\u4FDD\u5B58\u5931\u8D25");
+      }
+      setPromptSaving(false);
+    }, [promptProviderId, promptText]);
+    const onPromptReset = (0, import_react8.useCallback)(async () => {
+      const anyApi = api;
+      if (typeof anyApi.resetSharedSettings !== "function" || !promptProviderId) return;
+      if (!await ckConfirm("\u786E\u5B9A\u6062\u590D\u5185\u7F6E\u6A21\u677F\uFF1F\u5F53\u524D\u81EA\u5B9A\u4E49\u5185\u5BB9\u5C06\u4E22\u5931\u3002")) return;
+      try {
+        const key2 = "cuckoo-system-prompt-template:" + promptProviderId;
+        const r = await anyApi.resetSharedSettings([key2]);
+        if (r && r.success) {
+          setPromptText(promptBuiltin);
+          setPromptDirty(false);
+          setPromptTip("\u5DF2\u6062\u590D\u5185\u7F6E");
+          setTimeout(() => setPromptTip(""), 1500);
+        }
+      } catch (_) {
+      }
+    }, [promptProviderId, promptBuiltin]);
     const reset = (0, import_react8.useCallback)(async () => {
       const anyApi = api;
       if (!anyApi.resetSettings) return;
@@ -117284,8 +117366,53 @@ body {
         (0, import_react8.createElement)("button", { className: "ck-btn ck-btn-danger", onClick: onDeleteLogs }, "\u6E05\u7A7A")
       )
     );
+    const systemPrompt = (0, import_react8.createElement)(
+      "div",
+      { className: "ck-card" },
+      (0, import_react8.createElement)(
+        SettingRow,
+        { label: "\u5E73\u53F0", desc: "\u4E0D\u540C\u5E73\u53F0\u5404\u5B58\u4E00\u4EFD\u6A21\u677F\uFF08\u5185\u7F6E / \u7528\u6237\u5BFC\u5165 / \u63D2\u4EF6\u8D21\u732E\uFF09" },
+        (0, import_react8.createElement)(Select, {
+          value: promptProviderId,
+          options: promptProviders.map((p) => ({ value: p.id, label: p.name })),
+          onChange: (v) => onPromptProviderChange(v)
+        })
+      ),
+      (0, import_react8.createElement)(
+        "div",
+        { className: "ck-set-row-col", style: { marginTop: "16px" } },
+        (0, import_react8.createElement)("div", { className: "ck-set-row-label" }, "\u7CFB\u7EDF\u63D0\u793A\u8BCD\u6A21\u677F"),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-row-desc" },
+          "\u5F53\u524D\u5E73\u53F0\u53D1\u7ED9 AI \u7684\u521D\u59CB\u5316\u7CFB\u7EDF\u63D0\u793A\u8BCD\u3002\u5360\u4F4D\u7B26\uFF08\u5982 {{PLATFORM_INFO}}\u3001{{TOOL_API_TYPES}}\u3001{{MCP_SECTION}}\u3001{{PROJECT_DIR}}\uFF09\u5728\u53D1\u9001\u65F6\u81EA\u52A8\u66FF\u6362\uFF0C\u8BF7\u52FF\u5220\u9664\u3002\u7559\u7A7A\u6216\u70B9\u300C\u6062\u590D\u9ED8\u8BA4\u300D\u4F7F\u7528\u5185\u7F6E\u6A21\u677F\u3002"
+        ),
+        (0, import_react8.createElement)("textarea", {
+          className: "ck-set-textarea",
+          style: { minHeight: "360px", fontFamily: "monospace", fontSize: "12.5px", lineHeight: 1.5 },
+          value: promptText,
+          onChange: (e2) => {
+            setPromptText(e2.target.value);
+            setPromptDirty(true);
+          }
+        }),
+        (0, import_react8.createElement)(
+          "div",
+          { className: "ck-set-inline", style: { marginTop: "8px", justifyContent: "flex-end", alignItems: "center" } },
+          promptTip ? (0, import_react8.createElement)("span", { style: { color: "var(--ck-text-dim)", fontSize: "12px", marginRight: "8px" } }, promptTip) : null,
+          (0, import_react8.createElement)("button", { className: "ck-btn", onClick: () => {
+            setPromptText(promptBuiltin);
+            setPromptDirty(true);
+          } }, "\u586B\u5165\u5185\u7F6E\u6A21\u677F"),
+          (0, import_react8.createElement)("button", { className: "ck-btn ck-btn-danger", onClick: onPromptReset }, "\u6062\u590D\u9ED8\u8BA4"),
+          (0, import_react8.createElement)("button", { className: "ck-btn ck-btn-primary", disabled: !promptDirty || promptSaving, onClick: onPromptSave }, promptSaving ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58")
+        )
+      )
+    );
     const NAV = [
       ["appearance", "\u5916\u89C2"],
+      ["system-prompt", "\u7CFB\u7EDF\u63D0\u793A\u8BCD"],
+      // [261105-uw877b]
       ["retry", "\u5931\u8D25\u81EA\u52A8\u91CD\u8BD5"],
       ["send", "\u53D1\u9001\u5EF6\u8FDF"],
       ["attach", "\u9644\u4EF6\u4E0A\u4F20\u95F4\u9694"],
@@ -117313,6 +117440,7 @@ body {
     let content = null;
     if (loading) content = (0, import_react8.createElement)("div", { className: "ck-list-empty" }, "\u52A0\u8F7D\u4E2D\u2026");
     else if (active === "appearance") content = appearance;
+    else if (active === "system-prompt") content = systemPrompt;
     else if (active === "retry") content = (0, import_react8.createElement)("div", null, retry, continuePrompt);
     else if (active === "send") content = sendDelay;
     else if (active === "attach") content = attachDelay;

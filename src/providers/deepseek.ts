@@ -77,6 +77,9 @@ const deepseek = {
     return el ? el.textContent.trim() : '';
   },
 
+  // [261105-geaofb] 提示词填入改用真实系统粘贴（isTrusted=true），规避合成事件检测
+  useClipboardPaste: true,
+
   // 首页判断正则（用于覆盖层首页模式）
   homeUrlPattern: /^https:\/\/chat\.deepseek\.com\/?(\?.*)?$/,
 

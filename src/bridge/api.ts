@@ -49,6 +49,10 @@ let electronAPI: any = {
   executeTool: (toolName: any, params: any, callId: any) => {
     return ipcRenderer.invoke('execute-tool', { toolName, params, callId });
   },
+  // [261105-geaofb] 真实系统粘贴：主进程写剪贴板 → webContents.paste() → 恢复
+  pasteText: (text: any) => {
+    return ipcRenderer.invoke('chat-paste-text', text);
+  },
   // 正文标记触发：AI 回复里的 [记忆]xxx / [快照]xxx
   createMemoryFromMarker: (text: any) => {
     return ipcRenderer.invoke('create-memory-marker', { text });

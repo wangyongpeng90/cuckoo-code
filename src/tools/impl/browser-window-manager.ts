@@ -9,6 +9,16 @@ interface OpenWindowOptions {
   [key: string]: any;
 }
 
+/**
+ * UA + 客户端提示下发器（由 app 层注入）。
+ * tools 层不能依赖 app 层（依赖铁律），而 CDP override 需要 Electron debugger，
+ * 所以用注入的方式把 app 层的 applyChromeUserAgent 传进来 —— 与 injectSettingReader 同套路。
+ */
+let uaApplier: ((wc: any) => void | Promise<void>) | null = null;
+function injectUaApplier(fn: (wc: any) => void | Promise<void>): void {
+  uaApplier = fn;
+}
+
 class BrowserWindowManager {
   windows: Map<string, any>;
   nextAutoId: number;
@@ -39,6 +49,10 @@ class BrowserWindowManager {
 
     // 设置与主窗口一致的普通 Chrome UA（动态取真实内核版本），避免暴露 Electron 标识
     win.webContents.setUserAgent(buildChromeUserAgent());
+    // 再补客户端提示（sec-ch-ua 等）：这一步只有 CDP 能真正生效，app 层注入后才有
+    if (uaApplier) {
+      try { void uaApplier(win.webContents); } catch (_) { /* ignore */ }
+    }
 
     if (url) win.loadURL(url);
     this.windows.set(id, win);
@@ -114,4 +128,4 @@ ${jsCode}
 }
 
 const windowManager = new BrowserWindowManager();
-export { windowManager };
+export { windowManager, injectUaApplier };

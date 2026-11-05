@@ -87,6 +87,13 @@ export interface Provider {
    */
   transformToolResult?(text: string): string;
 
+  /**
+   * 可选的「真实系统粘贴填入」开关（B 方案，[261105-geaofb]）。
+   * 为 true 时 overlay 走主进程 clipboard.writeText + webContents.paste()，
+   * 事件 isTrusted=true，与用户按 Ctrl+V 等价；主进程负责备份/恢复剪贴板，
+   * 占用窗口约 10~30ms。未开启时走现有 setter / insertText 链路。
+   */
+  useClipboardPaste?: boolean;
   findInput?(): InputElement | null;
   findSendButton?(): InputElement | null;
   /**

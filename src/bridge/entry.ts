@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cuckoo Code preload 入口
  * 原 preload.js 的全部逻辑拆分为本目录下的模块，此处负责组装与初始化，
  * 初始化时序与原文件保持一致。
@@ -28,7 +28,6 @@ import { initPlugins, bindPluginReload } from './plugin-system.js';
 import { initSharedSettingsCache, subscribeSharedSettings, getSharedSetting } from '../overlay/shared-settings-cache.js';
 import { setSharedSettingReader } from '../overlay/js-result-phrases.js';
 import { setContinueSettingReader } from '../infra/continue-prompt-pool.js';
-import { buildUserAgentDataFix } from '../infra/user-agent.js';
 
 const require = createRequire(import.meta.url);
 const { webFrame, ipcRenderer } = require('electron');
@@ -40,17 +39,11 @@ const useIntercept = !!(currentProvider && currentProvider.useIntercept);
 console.log('[Cuckoo Code] 平台=' + (currentProvider ? currentProvider.id : 'unknown') +
   ', 模式=' + (useIntercept ? '网络拦截' : 'DOM 抓取'));
 
-// ========== 主世界指纹修正（所有平台，最早注入）==========
-// Google OAuth 会检测 navigator.userAgentData / navigator.webdriver 等指纹，
-// 判定"内嵌浏览器不安全"而拒绝登录。必须在页面脚本之前注入到主世界修正。
-try {
-  webFrame.executeJavaScript(buildUserAgentDataFix()).then(
-    () => console.log('[Cuckoo Code] 主世界指纹修正已注入'),
-    (err: any) => console.warn('[Cuckoo Code] 主世界指纹修正注入失败:', err && err.message)
-  );
-} catch (err) {
-  console.warn('[Cuckoo Code] 主世界指纹修正异常:', err);
-}
+// ========== 指纹（已改由主进程用 CDP 统一处理）==========
+// 旧实现在这里用 executeJavaScript 覆盖 navigator.userAgentData，但请求头 sec-ch-ua
+// 仍由 Chromium 按自己的品牌列表生成，导致「JS 说 Chrome、请求头说 Chromium」自相矛盾。
+// 现改为主进程 webContents.debugger + Emulation.setUserAgentOverride（见 app/entry.ts），
+// UA 字符串 / navigator.userAgentData / sec-ch-ua 请求头三者由同一份元数据生成。
 
 // ========== 主世界注入（拦截模式）==========
 // 必须在页面脚本执行前把 hook 注入到主世界，才能覆盖到 window.fetch / XHR。

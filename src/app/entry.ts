@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Cuckoo Code 主进程入口（多窗口多 profile 版）
  * 由项目根目录 main.js 薄壳加载。
  */
@@ -44,6 +44,8 @@ const globalDb = initDatabase(app.getPath('userData'));
 initSettingsStore(globalDb);
 // 注入给 tools 层（read 首行模板等需要读通用设置）
 injectSettingReader((key: string) => getSetting(key));
+// [261105-uw877b] 注入给 session 层（系统提示词自定义模板，按平台存 SQLite）
+injectPromptSettingReader((key: string) => getSetting(key));
 // 迁移老 JSON 数据
 migrateLegacyData(globalDb, app.getPath('userData'));
 
@@ -70,11 +72,12 @@ if (RENDERER_LOG_DIR) {
 
 import { registerIpcHandlers } from './ipc/index.js';
 import { injectSessionDeps } from './ipc/session.js';
-import { buildChromeUserAgent, buildClientHintsHeaders } from '../infra/user-agent.js';
+import { buildChromeUserAgent, buildUserAgentMetadata } from '../infra/user-agent.js';
 import { initFeishu } from './ipc/feishu.js';
 import { injectSubagentDeps, runAgent as runAgentImpl } from './subagent.js';
 import { injectAgentRunner, injectSubagentChecker } from '../tools/impl/run-agent.js';
 import { injectSettingReader } from '../tools/impl/read.js';
+import { injectUaApplier } from '../tools/impl/browser-window-manager.js';
 import { injectGoalDonePusher } from '../tools/impl/goal-done.js';
 import { isSubagentWindow, pushGoalDone } from './goal.js';
 import { injectSessionTitleSetter } from '../tools/impl/name-conversation.js';
@@ -82,6 +85,8 @@ import { pushUrlState } from './ipc/shell.js';
 import { pushHarnessState, stopGeneration } from './ipc/harness.js';
 import { injectWindowGroupDeps, requestSwitchShare } from './ipc/window-groups.js';
 import { initProject } from '../session/project-context.js';
+// [261105-uw877b] 系统提示词自定义模板：把通用设置读取能力注入 session 层
+import { injectPromptSettingReader } from '../session/prompt-builder.js';
 import * as windowGroups from './window-groups.js';
 
 // 全局默认 UA：Electron 默认的 app.userAgentFallback 含 "Electron/x.y.z Chrome/<内核完整版>"
@@ -90,6 +95,140 @@ import * as windowGroups from './window-groups.js';
 // 造成"一处 Chrome 版本、一处源内核版本"的矛盾（DeepSeek / Google OAuth 判定环境异常）。
 // 在 app.whenReady() 之前统一设置为干净 UA，保证所有 WebContents 一致。
 app.userAgentFallback = buildChromeUserAgent();
+
+// [261105-ua0001] UA / 客户端提示统一（CDP）
+// 背景：只改 UA 字符串不够 —— 请求头 sec-ch-ua 由 Chromium 生成，Electron 的品牌列表
+// 只有 Chromium（没有 "Google Chrome"）。曾经用 webRequest.onBeforeSendHeaders 改写，
+// 实测**无效**（线上仍发 "Not?A_Brand";v="24", "Chromium";v="152"）。
+// 唯一生效的途径是 CDP 的 Emulation.setUserAgentOverride：它会同时改 UA 字符串、
+// navigator.userAgentData 与真实的 sec-ch-ua 请求头。
+// 品牌列表/平台版本一律取运行时真实值（Electron 自己的 GREASE 品牌、Win11 的 19.0.0 等），
+// 只补一个 "Google Chrome"，保证看起来是"装了 Chrome 的同一台机器"，而非伪造。
+
+/** 运行时真实客户端提示（进程内只读一次，所有窗口共用） */
+let cachedRuntimeHints: any = null;
+/** 后台读取运行时提示只做一次 */
+let hintsLoading: Promise<any> | null = null;
+
+/** Promise 超时包装：executeJavaScript 在页面未加载完时可能永远不 settle，必须兜住 */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    p,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]).catch(() => null) as Promise<T | null>;
+}
+
+/** 从任意页面读回真实 userAgentData（壳页面是 file://，属于安全上下文，可读） */
+async function readRuntimeClientHints(wc: any): Promise<any> {
+  if (!wc || wc.isDestroyed()) return null;
+  try {
+    const raw = await withTimeout(wc.executeJavaScript(
+      '(async () => {' +
+      '  const u = navigator.userAgentData;' +
+      '  if (!u || !u.getHighEntropyValues) return null;' +
+      '  const h = await u.getHighEntropyValues(["platformVersion","architecture","bitness","uaFullVersion"]);' +
+      '  return { brands: u.brands, platformVersion: h.platformVersion, architecture: h.architecture, bitness: h.bitness, fullVersion: h.uaFullVersion };' +
+      '})()',
+      true
+    ), 800);
+    return raw || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/** 读运行时客户端提示；壳页面可能还没加载完，重试几次（拿到后进程内缓存） */
+async function ensureRuntimeHints(win: any): Promise<any> {
+  if (cachedRuntimeHints) return cachedRuntimeHints;
+  for (let i = 0; i < 8; i++) {
+    const h = await readRuntimeClientHints(win && win.webContents);
+    if (h && h.brands && h.brands.length) { cachedRuntimeHints = h; return h; }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return null;
+}
+
+/** 已成功下发 override 的 webContents（避免重复下发 / 重复日志） */
+const uaApplied = new WeakSet<any>();
+/** 用兜底元数据下发过、等真实运行时值到位后需要重刷的 webContents */
+const uaPendingRefresh = new Set<any>();
+
+/** 用当前缓存（可能为空 → 兜底值）给某个 WebContents 下发 UA override */
+async function pushUaOverride(wc: any): Promise<boolean> {
+  if (!wc || wc.isDestroyed()) return false;
+  try {
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] debugger.attach 失败:', err && err.message);
+    return false;
+  }
+  const metadata = buildUserAgentMetadata(cachedRuntimeHints || undefined);
+  try {
+    // 页面还没加载时 sendCommand 可能永远不返回，必须超时兜住（否则会卡住导航）
+    const sent = await withTimeout(wc.debugger.sendCommand('Emulation.setUserAgentOverride', {
+      userAgent: buildChromeUserAgent(),
+      userAgentMetadata: metadata,
+    }), 3000);
+    if (sent === null) {
+      console.warn('[Cuckoo Code] UA override 超时（页面未就绪），待 dom-ready 后重试');
+      return false;
+    }
+    uaApplied.add(wc);
+    console.log('[Cuckoo Code] UA/客户端提示已统一: ' +
+      metadata.brands.map((b: any) => b.brand + '/' + b.version).join(', ') +
+      ' | platformVersion=' + metadata.platformVersion);
+    return true;
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] UA override 失败（退回 setUserAgent）:', err && err.message);
+    return false;
+  }
+}
+
+/**
+ * 给某个 WebContents 打上"普通 Chrome"的 UA + 客户端提示。
+ * 先用缓存/兜底值下发（不阻塞导航）；页面就绪后若还没成功会自动补一次。
+ */
+async function applyChromeUserAgent(wc: any, win: any): Promise<void> {
+  try { wc.setUserAgent(buildChromeUserAgent()); } catch (_) { /* ignore */ }
+  // 兜底开关：调试期若要占用 DevTools（debugger 只能被一方 attach），
+  // 设 CUCKOO_UA_OVERRIDE=off 可跳过 CDP override（此时只剩干净的 UA 串）。
+  if (process.env.CUCKOO_UA_OVERRIDE === 'off') {
+    console.warn('[Cuckoo Code] CUCKOO_UA_OVERRIDE=off：跳过 UA/客户端提示 override（仅设置 UA 串）');
+    return;
+  }
+  void pushUaOverride(wc);
+  try {
+    wc.on('dom-ready', () => { if (!uaApplied.has(wc)) void pushUaOverride(wc); });
+  } catch (_) { /* ignore */ }
+  // window.open 打开的新窗口（如 OAuth 弹窗）默认是 Electron 的指纹，
+  // 这里让子窗口继承同一套 UA/客户端提示。
+  try {
+    wc.on('did-create-window', (child: any) => {
+      try {
+        if (child && child.webContents) void applyChromeUserAgent(child.webContents, win);
+      } catch (_) { /* ignore */ }
+    });
+  } catch (_) { /* ignore */ }
+
+  if (!cachedRuntimeHints) {
+    uaPendingRefresh.add(wc);
+    if (!hintsLoading) {
+      hintsLoading = ensureRuntimeHints(win).then(async (h) => {
+        if (!h) { console.warn('[Cuckoo Code] 未读到运行时客户端提示，使用兜底元数据'); uaPendingRefresh.clear(); return; }
+        console.log('[Cuckoo Code] 已读到运行时客户端提示，按真实值重刷 UA override');
+        const targets = Array.from(uaPendingRefresh);
+        uaPendingRefresh.clear();
+        for (const target of targets) {
+          try { await pushUaOverride(target); } catch (_) { /* ignore */ }
+        }
+      });
+    }
+  }
+}
+
+// 工具创建的浏览器窗口（openBrowserWindow）也要用同一套 UA + 客户端提示：
+// tools 层不能依赖 app 层，所以把上面的下发函数注入过去。
+injectUaApplier((wc: any) => applyChromeUserAgent(wc, windowState.getMainWindow()));
 
 // 退出前需要 flush 的 sessions
 const sessionsToFlush = new Set<any>();
@@ -512,51 +651,22 @@ function createWindow(profile: any) {
     mainWindow.maximize();
   }
 
-  // 设置普通 Chrome UA（动态取真实内核版本）：
-  // 1. 不带 Electron 标识，避免 DeepSeek 识别为第三方客户端
-  // 2. 与内核版本一致，避免 Google OAuth 因 UA/sec-ch-ua 不一致报"浏览器不安全"
-  view.webContents.setUserAgent(buildChromeUserAgent());
-
-  // 补齐 Chrome 客户端提示请求头（Sec-CH-UA*）：
-  // Electron 默认的 sec-ch-ua 缺少 "Google Chrome" 品牌，Google 据此判定
-  // "浏览器或应用不安全"而拒绝 OAuth 登录。本会话所有请求统一改写，
-  // 只在本窗口 session 上注册（不影响其他窗口）。
-  try {
-    const hints = buildClientHintsHeaders();
-    const ses = view.webContents.session;
-    ses.webRequest.onBeforeSendHeaders((details: any, callback: any) => {
-      try {
-        const h = details.requestHeaders || {};
-        for (const k of Object.keys(h)) {
-          const lk = k.toLowerCase();
-          if (lk === 'sec-ch-ua' || lk === 'sec-ch-ua-mobile' || lk === 'sec-ch-ua-platform' ||
-              lk === 'sec-ch-ua-full-version' || lk === 'sec-ch-ua-full-version-list') {
-            delete h[k];
-          }
-        }
-        Object.assign(h, hints);
-        callback({ requestHeaders: h });
-      } catch (_) {
-        callback({ requestHeaders: details.requestHeaders });
-      }
-    });
-  } catch (err: any) {
-    console.error('[Cuckoo Code] 注册客户端提示请求头失败:', err && err.message);
-  }
-
-  // 优先恢复上次关闭时的 URL（仅 http/https，且平台已确定）
+  // UA + 客户端提示：走 CDP override（唯一能真正影响 sec-ch-ua 请求头的方式）
   const lastUrl = profileData.lastUrl;
   console.log('[Cuckoo Code] 创建窗口: profile=' + profileData.id + ' providerChosen=' + providerChosen + ' lastUrl=' + (lastUrl || '(无)'));
-  if (providerChosen && provider && lastUrl && /^https?:\/\//i.test(lastUrl)) {
-    view.webContents.loadURL(lastUrl);
-  } else if (providerChosen && provider) {
-    // 平台已确定且存在，直接进入平台首页
-    view.webContents.loadURL(provider.homeUrl);
-  } else {
-    // 平台未确定（或对应 provider 已缺失），显示平台选择页
-    const selectPage = resolveSrc('ui/platform-select.html');
-    view.webContents.loadFile(selectPage);
-  }
+  void (async () => {
+    await applyChromeUserAgent(view.webContents, mainWindow);
+    if (view.webContents.isDestroyed()) return;
+    if (providerChosen && provider && lastUrl && /^https?:\/\//i.test(lastUrl)) {
+      view.webContents.loadURL(lastUrl);
+    } else if (providerChosen && provider) {
+      // 平台已确定且存在，直接进入平台首页
+      view.webContents.loadURL(provider.homeUrl);
+    } else {
+      // 平台未确定（或对应 provider 已缺失），显示平台选择页
+      view.webContents.loadFile(resolveSrc('ui/platform-select.html'));
+    }
+  })();
 
   // 项目目录确定后，异步自动连该项目的 MCP（不阻塞导航/窗口）
   const autoConnectMcp = () => {

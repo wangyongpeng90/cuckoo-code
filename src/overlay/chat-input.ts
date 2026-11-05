@@ -33,8 +33,61 @@ function randomDelay(): number {
  * @param msg - 要填入的文本
  * @returns 是否成功填入
  */
+// [261105-geaofb] 真实系统粘贴填入（B 方案）。
+// 走主进程 clipboard.writeText + webContents.paste()，事件 isTrusted=true，
+// 与用户按 Ctrl+V 等价；主进程在派发后立即恢复剪贴板（占用 ~10~30ms）。
+// 注：粘贴是「替换」语义，调用方需先把要保留的内容拼进 msg。
+//
+// 注意：**不做任何输入框内容校验**。站点可以把粘贴内容吃掉（例如 DeepSeek 把
+// 超长粘贴直接转成 .txt 附件，输入框留空），这属于站点的正常行为，不该判失败，
+// 更不能再回退 setter 把原文写一遍（那会变成「附件 + 正文」双份）。
+// 唯一失败条件是主进程 paste 本身失败（view 已销毁 / 文本为空）。
+async function pasteViaClipboard(input: any, msg: string): Promise<boolean> {
+  try {
+    // 仅 DOM 焦点，不抢系统窗口焦点（避免打断用户在其他窗口的操作）
+    try { input.focus(); } catch (_) { /* ignore */ }
+
+    // 用「全选」而不是 setter 清空：粘贴替换选区，输入框只会被写一次。
+    // 之前用原生 setter 清空 + input 事件，等于先程序化写一次空值，
+    // 站点（React 受控组件）会先渲染一次，再被粘贴内容覆盖 —— 视觉上像"填了两次"。
+    if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
+      try { input.select(); } catch (_) { /* ignore */ }
+    } else if (input.isContentEditable || input.getAttribute('contenteditable') === 'true') {
+      document.execCommand('selectAll', false, undefined);
+    }
+
+    // 优先走 bridge 暴露的 API（IPC 通道名在 preload 单点维护），无则直连
+    const api = (window as any).electronAPI;
+    const r = api && typeof api.pasteText === 'function'
+      ? await api.pasteText(msg)
+      : await ipcRenderer.invoke('chat-paste-text', msg);
+    if (!r || !r.success) {
+      console.warn('[Cuckoo Code] 系统粘贴失败:', r && r.error);
+      return false;
+    }
+
+    // paste() 已派发即视为成功：内容是否真的进输入框、还是被站点转成附件，
+    // 由站点自己决定，我们不做内容校验，也绝不回退 setter 二次写入。
+    console.log('[Cuckoo Code] 系统粘贴已派发(' + msg.length + ' 字)，不做内容校验');
+    return true;
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 系统粘贴异常，回退:', err && err.message);
+    return false;
+  }
+}
+
 async function setInputContent(input: any, msg: string): Promise<boolean> {
   try {
+    // [261105-geaofb] 平台声明使用真实系统粘贴时优先走该路径；失败回退原链路
+    try {
+      const p = getCurrentProvider();
+      if (p && p.useClipboardPaste) {
+        if (await pasteViaClipboard(input, msg)) return true;
+        console.warn('[Cuckoo Code] 系统粘贴未生效，回退通用填入');
+      }
+    } catch (err: any) {
+      console.warn('[Cuckoo Code] useClipboardPaste 分支异常，回退:', err && err.message);
+    }
     // 平台自定义填入（优先）：部分站点对 ClipboardEvent('paste') 敏感
     // （ChatGPT 会识别为"粘贴的文件"附件），由 provider.fillInput 覆盖。
     try {
@@ -97,7 +150,7 @@ async function setInputContent(input: any, msg: string): Promise<boolean> {
  * @returns 是否成功
  */
 // 当前待发送的消息（可被 cancelPendingSend 取消）
-interface PendingSend { timer: any; input: any; cancelled: boolean; text: string; tag: string; }
+interface PendingSend { timer: any; input: any; cancelled: boolean; text: string; tag: string; cancelWait?: (() => void) | null; }
 let pendingSend: PendingSend | null = null;
 // 最近一条「已发出」的工具结果文本（用于上下文耗尽续接：新会话需知道工具执行结果）
 let lastToolResultText = '';
@@ -138,6 +191,13 @@ function emitMessageDelivered(text: string, tag?: string): void {
   } catch (_) { /* ignore */ }
 }
 
+/**
+ * 粘贴完成到触发发送之间的等待（毫秒）。
+ * 站点在收到粘贴后可能还要做事：长文本转成附件、上传、重新启用发送按钮。
+ * 给一段固定缓冲，避免"粘贴完立刻发"导致内容没带上或被吞。
+ */
+const POST_PASTE_SETTLE_MS = 600;
+
 async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
   const input = findInputArea();
   if (!input) {
@@ -146,32 +206,55 @@ async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterS
   }
   const token: PendingSend = { timer: null, input: input, cancelled: false, text: msg, tag: tag || '' };
   pendingSend = token;
+
+  // 顺序：先等随机延迟 → 再粘贴 → 再发送。
+  // 之前是"先粘贴、再等延迟、再发送"，待发内容会长时间摆在输入框里；
+  // 现在延迟期间输入框保持干净，到点才粘贴，粘贴后稍等站点消化（附件上传/按钮启用）即发送。
+  // 可被 cancelPendingSend/takePendingSendText 立即叫醒（否则取消后这个 Promise 会永远挂着）
+  const wait = (ms: number) => new Promise<void>((resolve) => {
+    token.cancelWait = () => { clearTimeout(token.timer); resolve(); };
+    token.timer = setTimeout(() => { token.cancelWait = null; resolve(); }, ms);
+  });
+
+  const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay();
+  console.log('[Cuckoo Code] 先等待 ' + sendDelay + 'ms，到点再粘贴并发送（tag=' + (tag || '') + '）');
+  await wait(sendDelay);
+
+  if (token.cancelled) {
+    if (pendingSend === token) pendingSend = null;
+    console.log('[Cuckoo Code] 等待期间被取消，不粘贴也不发送（tag=' + (tag || '') + '）');
+    return false;
+  }
+
   if (!(await setInputContent(input, msg))) {
     if (pendingSend === token) pendingSend = null;
     console.error('[Cuckoo Code] 消息填入输入框失败，已放弃发送（tag=' + (tag || '') + '）');
     return false;
   }
-  // 填充期间被取消：不发送（输入框内容保留）
   if (token.cancelled) {
+    if (pendingSend === token) pendingSend = null;
     return false;
   }
-  const sendDelay = fixedDelay !== undefined ? fixedDelay : randomDelay();
-  console.log('[Cuckoo Code] 消息已填入输入框，等待 ' + sendDelay + 'ms 后发送...');
-  const timer = setTimeout(function() {
+
+  // 粘贴后给站点一点时间消化（长文本可能被转成附件、发送按钮需要重新启用）
+  console.log('[Cuckoo Code] 已粘贴，等待 ' + POST_PASTE_SETTLE_MS + 'ms 站点消化后发送');
+  await wait(POST_PASTE_SETTLE_MS);
+  if (token.cancelled) {
     if (pendingSend === token) pendingSend = null;
-    if (token.cancelled) return;
-    console.log('[Cuckoo Code] 等待结束，开始触发发送');
-    triggerSend(input);
-    console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
-    // 通知监听者（飞书同步等）；系统内部消息（工具结果/看门狗/重试等）不上报
-    try {
-      if (onUserMessageSentCb && !isSystemTag(tag)) onUserMessageSentCb(msg, tag);
-    } catch (_) {}
-    // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
-    emitMessageDelivered(msg, tag);
-    if (typeof afterSent === 'function') afterSent();
-  }, sendDelay);
-  token.timer = timer;
+    console.log('[Cuckoo Code] 消化期间被取消，不发送（内容保留在输入框）');
+    return false;
+  }
+
+  if (pendingSend === token) pendingSend = null;
+  triggerSend(input);
+  console.log('[Cuckoo Code] 已触发发送, ' + (tag || '') + ', 长度=' + msg.length);
+  // 通知监听者（飞书同步等）；系统内部消息（工具结果/看门狗/重试等）不上报
+  try {
+    if (onUserMessageSentCb && !isSystemTag(tag)) onUserMessageSentCb(msg, tag);
+  } catch (_) {}
+  // 纯净模式：任何投递（含框架内部消息）都派发一次，用于显示"框架正在驱动"运行态
+  emitMessageDelivered(msg, tag);
+  if (typeof afterSent === 'function') afterSent();
   return true;
 }
 
@@ -183,6 +266,7 @@ function cancelPendingSend(): boolean {
   if (!pendingSend) return false;
   const t = pendingSend;
   t.cancelled = true;
+  if (t.cancelWait) t.cancelWait();
   if (t.timer) clearTimeout(t.timer);
   pendingSend = null;
   // 不清空输入框：保留待发内容，用户可自行决定发送或删除
@@ -207,6 +291,7 @@ function takePendingSendText(): string | null {
   if (!pendingSend) return null;
   const t = pendingSend;
   t.cancelled = true;
+  if (t.cancelWait) t.cancelWait();
   if (t.timer) clearTimeout(t.timer);
   pendingSend = null;
   const text = t.text || '';
@@ -319,6 +404,7 @@ function isInputVisible(el: any): boolean {
 async function sendInitialPromptToInput(): Promise<boolean> {
   if (!state.initialPromptContent) {
     state.pendingInitialPrompt = false;
+    initialPromptInFlight = false;
     return false;
   }
 
@@ -333,13 +419,19 @@ async function sendInitialPromptToInput(): Promise<boolean> {
   }
 
   // 校验：填充后输入框确实有内容（contenteditable 合成粘贴可能被站点拒绝）
-  try {
-    const filled = getInputText(input);
-    if (!filled || filled.trim().length < 10) {
-      console.log('[Cuckoo Code] 初始提示填充后输入框为空，判定失败');
-      return false;
-    }
-  } catch (_) { /* ignore */ }
+  // 走真实粘贴的站点跳过此校验：内容可能被站点转成附件，输入框本来就是空的。
+  const providerUsesPaste = (() => {
+    try { const p = getCurrentProvider(); return !!(p && p.useClipboardPaste); } catch (_) { return false; }
+  })();
+  if (!providerUsesPaste) {
+    try {
+      const filled = getInputText(input);
+      if (!filled || filled.trim().length < 10) {
+        console.log('[Cuckoo Code] 初始提示填充后输入框为空，判定失败');
+        return false;
+      }
+    } catch (_) { /* ignore */ }
+  }
 
   const sendDelay = randomDelay();
   console.log('[Cuckoo Code] 初始提示已填入，随机等待 ' + sendDelay + 'ms 后发送...');
@@ -347,6 +439,7 @@ async function sendInitialPromptToInput(): Promise<boolean> {
     console.log('[Cuckoo Code] 等待结束，开始发送初始提示');
     triggerSend(input);
     state.pendingInitialPrompt = false;
+    initialPromptInFlight = false;
     // 纯净模式：系统提示词投递也要有运行态反馈（内容不显示）
     emitMessageDelivered(state.initialPromptContent || '', '系统提示词');
   }, sendDelay);
@@ -365,6 +458,7 @@ function trySendInitialPrompt(attempt: number): void {
   if (!input) {
     if (attempt >= INITIAL_PROMPT_MAX_ATTEMPTS) {
       state.pendingInitialPrompt = false;
+      initialPromptInFlight = false;
       console.log('[Cuckoo Code] 等待输入框超时，放弃发送初始提示');
       return;
     }
@@ -380,14 +474,27 @@ function trySendInitialPrompt(attempt: number): void {
     } else {
       console.log('[Cuckoo Code] 初始提示发送失败，已达上限，放弃');
       state.pendingInitialPrompt = false;
+      initialPromptInFlight = false;
     }
   }).catch(() => {
     if (attempt < INITIAL_PROMPT_MAX_ATTEMPTS) setTimeout(() => trySendInitialPrompt(attempt + 1), 500);
   });
 }
 
+/**
+ * 初始提示是否正在发送中（防重复发送）：
+ * initial-prompt 事件可能连续到达（重复点"初始化项目"、会话切换重投等），
+ * 每次都会武装一个随机延迟的发送定时器 —— 不拦住就会把同一段提示词发两遍。
+ */
+let initialPromptInFlight = false;
+
 /** 等待输入框出现后再发送初始提示（对外入口，从 0 开始） */
 function waitForInitialPromptAndSend(): void {
+  if (initialPromptInFlight) {
+    console.log('[Cuckoo Code] 初始提示已在发送中，忽略重复触发');
+    return;
+  }
+  initialPromptInFlight = true;
   trySendInitialPrompt(0);
 }
 /** 读取输入框当前文本 */
