@@ -20,6 +20,7 @@ import { registerLogIpc } from './logs.js';
 import { registerThemeIpc } from './theme.js';
 import { registerWindowGroupsIpc, onSwitchShareResult } from './window-groups.js';
 import { registerUsageIpc } from './usage.js';
+import { registerPromptTemplateIpc } from './prompt-template.js';
 
 import { createRequire } from 'node:module';
 
@@ -47,7 +48,7 @@ function registerIpcHandlers(): void {
   registerThemeIpc();
   registerWindowGroupsIpc();
   registerUsageIpc();
-
+  registerPromptTemplateIpc();
 }
 
 export { registerIpcHandlers };

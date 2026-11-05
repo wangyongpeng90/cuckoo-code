@@ -20,15 +20,47 @@ import { getPromptSections as getDshPromptSections } from '../plugins/dsh-compat
 // 提示词模板目录（D20：锚定应用根，与 dist 结构解耦）
 const PROMPT_DIR = resolveSrc('prompt');
 
+// [261105-uw877b] 用户自定义模板（存 SQLite 通用设置）。
+// settings-store 在 app 层，本模块在 session 层——依赖铁律禁止 session → app，
+// 因此由 app/entry.ts 注入读取函数（与 injectSettingReader 同套路）。
+let promptSettingReader: ((key: string) => string | undefined) | null = null;
+
+/** 注入通用设置读取函数（app 启动时调用一次） */
+function injectPromptSettingReader(fn: (key: string) => string | undefined): void {
+  promptSettingReader = fn;
+}
+
+/** 自定义模板的 SQLite 键（按平台分开存） */
+function customTemplateKey(providerId: string): string {
+  return 'cuckoo-system-prompt-template:' + providerId;
+}
+
+/** 读自定义模板；未设置或空白返回空串 */
+function getCustomTemplate(providerId: string): string {
+  if (!promptSettingReader || !providerId) return '';
+  try {
+    const v = promptSettingReader(customTemplateKey(providerId));
+    return (v && v.trim()) ? v : '';
+  } catch (_) {
+    return '';
+  }
+}
+
 /**
  * 读取平台提示词模板。
- * 优先级：1) provider.getPromptTemplate()  2) src/prompt/{id}.md  3) src/prompt/default.md
+ * 优先级：0) 用户自定义（SQLite，261105-uw877b）  1) provider.getPromptTemplate()  2) src/prompt/{id}.md  3) src/prompt/default.md
  * @returns { content, path }，失败时 content 为空串并带 message
  */
 function loadTemplate(providerId: string): { content: string; path: string; error?: string } {
   const provider = getProvider(providerId);
   let templateContent = '';
   let templatePath = '';
+
+  // [261105-uw877b] 最高优先级：用户自定义模板（SQLite 通用设置，按平台分开）
+  const custom = getCustomTemplate(providerId);
+  if (custom) {
+    return { content: custom, path: '(custom:sqlite)' };
+  }
 
   if (provider && typeof provider.getPromptTemplate === 'function') {
     try {
@@ -218,4 +250,4 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   return { prompt: combined };
 }
 
-export { PROMPT_DIR, loadTemplate, buildPrompt };
+export { PROMPT_DIR, loadTemplate, buildPrompt, injectPromptSettingReader, customTemplateKey, getCustomTemplate };

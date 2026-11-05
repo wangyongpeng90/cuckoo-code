@@ -118,6 +118,14 @@ export interface ShellAPI {
   triggerCompact?: () => Promise<any>;
   // [261101-ym9l98] 跨窗口通用设置（主进程内存 + DB）
   getSharedSettings?: () => Promise<{ success: boolean; data?: Record<string, string>; error?: string }>;
+  /** 系统提示词模板（按平台）：返回内置与自定义内容 [261105-uw877b] */
+  getPromptTemplate?: (providerId: string) => Promise<{
+    success: boolean;
+    providers?: Array<{ id: string; name: string }>;
+    builtin?: string;
+    custom?: string;
+    error?: string;
+  }>;
   saveSharedSettings?: (data: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
   resetSharedSettings?: (keys: string[]) => Promise<{ success: boolean; error?: string }>;
   onSharedSettingsChanged?: (cb: (payload: any) => void) => void;

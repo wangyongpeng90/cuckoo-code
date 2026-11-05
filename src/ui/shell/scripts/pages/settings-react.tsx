@@ -202,6 +202,16 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   // 日志（仅打包版有意义；开发版提示"由 start.js 写日志"）
   const [logInfo, setLogInfo] = useState<{ enabled: boolean; dir: string; file: string; size: number } | null>(null);
 
+  // [261105-uw877b] 系统提示词模板（按平台，存 SQLite 通用设置）
+  const [promptProviders, setPromptProviders] = useState<Array<{ id: string; name: string }>>([]);
+  const [promptProviderId, setPromptProviderId] = useState('');
+  const [promptBuiltin, setPromptBuiltin] = useState('');
+  const [promptText, setPromptText] = useState('');
+  const [promptDirty, setPromptDirty] = useState(false);
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptTip, setPromptTip] = useState('');
+  const promptLoadedRef = useRef(false);
+
   const load = useCallback(async () => {
     if (!api.getSettings) return;
     try {
@@ -221,6 +231,31 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     } catch (_) { /* ignore */ }
   }, []);
   useEffect(() => { if (active === 'logs') loadLogInfo(); }, [active, loadLogInfo]);
+
+  // [261105-uw877b] 首次进入「系统提示词」分类时拉取平台列表 + 模板内容
+  useEffect(() => {
+    if (active !== 'system-prompt' || promptLoadedRef.current) return;
+    promptLoadedRef.current = true;
+    (async () => {
+      const anyApi = api as any;
+      if (typeof anyApi.getPromptTemplate !== 'function') return;
+      try {
+        const r = await anyApi.getPromptTemplate('');
+        if (!r || !r.success) return;
+        const list = (r.providers || []) as Array<{ id: string; name: string }>;
+        setPromptProviders(list);
+        if (list.length === 0) return;
+        const first = list[0].id;
+        const r2 = await anyApi.getPromptTemplate(first);
+        if (r2 && r2.success) {
+          setPromptProviderId(first);
+          setPromptBuiltin(r2.builtin || '');
+          setPromptText(r2.custom || r2.builtin || '');
+          setPromptDirty(false);
+        }
+      } catch (_) { /* ignore */ }
+    })();
+  }, [active]);
 
   // 自动保存：data 变化 + 用户改过 → 防抖保存
   useEffect(() => {
@@ -269,6 +304,58 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     dirtyRef.current = true;
     setData((d: any) => ({ ...d, [key]: v }));
   }, []);
+
+  // [261105-uw877b] 切换平台 → 拉该平台的 builtin / custom
+  const onPromptProviderChange = useCallback(async (pid: string) => {
+    const anyApi = api as any;
+    if (typeof anyApi.getPromptTemplate !== 'function') return;
+    setPromptProviderId(pid);
+    setPromptTip('');
+    try {
+      const r = await anyApi.getPromptTemplate(pid);
+      if (r && r.success) {
+        setPromptBuiltin(r.builtin || '');
+        setPromptText(r.custom || r.builtin || '');
+        setPromptDirty(false);
+      }
+    } catch (_) { /* ignore */ }
+  }, []);
+
+  // [261105-uw877b] 保存当前平台模板（写 SQLite 通用设置）
+  const onPromptSave = useCallback(async () => {
+    const anyApi = api as any;
+    if (typeof anyApi.saveSharedSettings !== 'function' || !promptProviderId) return;
+    setPromptSaving(true);
+    try {
+      const key = 'cuckoo-system-prompt-template:' + promptProviderId;
+      const r = await anyApi.saveSharedSettings({ [key]: promptText });
+      if (r && r.success) {
+        setPromptDirty(false);
+        setPromptTip('已保存');
+        setTimeout(() => setPromptTip(''), 1500);
+      } else {
+        setPromptTip('保存失败');
+      }
+    } catch (_) { setPromptTip('保存失败'); }
+    setPromptSaving(false);
+  }, [promptProviderId, promptText]);
+
+  // [261105-uw877b] 恢复内置（删 SQLite 键）
+  const onPromptReset = useCallback(async () => {
+    const anyApi = api as any;
+    if (typeof anyApi.resetSharedSettings !== 'function' || !promptProviderId) return;
+    if (!(await ckConfirm('确定恢复内置模板？当前自定义内容将丢失。'))) return;
+    try {
+      const key = 'cuckoo-system-prompt-template:' + promptProviderId;
+      const r = await anyApi.resetSharedSettings([key]);
+      if (r && r.success) {
+        setPromptText(promptBuiltin);
+        setPromptDirty(false);
+        setPromptTip('已恢复内置');
+        setTimeout(() => setPromptTip(''), 1500);
+      }
+    } catch (_) { /* ignore */ }
+  }, [promptProviderId, promptBuiltin]);
 
   const reset = useCallback(async () => {
     const anyApi = api as any;
@@ -519,8 +606,37 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ),
   );
 
+  // [261105-uw877b] 系统提示词模板编辑块
+  const systemPrompt = createElement('div', { className: 'ck-card' },
+    createElement(SettingRow, { label: '平台', desc: '不同平台各存一份模板（内置 / 用户导入 / 插件贡献）' },
+      createElement(Select, {
+        value: promptProviderId,
+        options: promptProviders.map((p) => ({ value: p.id, label: p.name })),
+        onChange: (v: string) => onPromptProviderChange(v),
+      }),
+    ),
+    createElement('div', { className: 'ck-set-row-col', style: { marginTop: '16px' } },
+      createElement('div', { className: 'ck-set-row-label' }, '系统提示词模板'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        '当前平台发给 AI 的初始化系统提示词。占位符（如 {{PLATFORM_INFO}}、{{TOOL_API_TYPES}}、{{MCP_SECTION}}、{{PROJECT_DIR}}）在发送时自动替换，请勿删除。留空或点「恢复默认」使用内置模板。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea',
+        style: { minHeight: '360px', fontFamily: 'monospace', fontSize: '12.5px', lineHeight: 1.5 },
+        value: promptText,
+        onChange: (e: any) => { setPromptText(e.target.value); setPromptDirty(true); },
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end', alignItems: 'center' } },
+        promptTip ? createElement('span', { style: { color: 'var(--ck-text-dim)', fontSize: '12px', marginRight: '8px' } }, promptTip) : null,
+        createElement('button', { className: 'ck-btn', onClick: () => { setPromptText(promptBuiltin); setPromptDirty(true); } }, '填入内置模板'),
+        createElement('button', { className: 'ck-btn ck-btn-danger', onClick: onPromptReset }, '恢复默认'),
+        createElement('button', { className: 'ck-btn ck-btn-primary', disabled: !promptDirty || promptSaving, onClick: onPromptSave }, promptSaving ? '保存中…' : '保存'),
+      ),
+    ),
+  );
+
   const NAV: [string, string][] = [
     ['appearance', '外观'],
+    ['system-prompt', '系统提示词'],  // [261105-uw877b]
     ['retry', '失败自动重试'],
     ['send', '发送延迟'],
     ['attach', '附件上传间隔'],
@@ -547,6 +663,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   let content: any = null;
   if (loading) content = createElement('div', { className: 'ck-list-empty' }, '加载中…');
   else if (active === 'appearance') content = appearance;
+  else if (active === 'system-prompt') content = systemPrompt;
   else if (active === 'retry') content = createElement('div', null, retry, continuePrompt);
   else if (active === 'send') content = sendDelay;
   else if (active === 'attach') content = attachDelay;

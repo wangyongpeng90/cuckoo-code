@@ -44,6 +44,8 @@ const globalDb = initDatabase(app.getPath('userData'));
 initSettingsStore(globalDb);
 // 注入给 tools 层（read 首行模板等需要读通用设置）
 injectSettingReader((key: string) => getSetting(key));
+// [261105-uw877b] 注入给 session 层（系统提示词自定义模板，按平台存 SQLite）
+injectPromptSettingReader((key: string) => getSetting(key));
 // 迁移老 JSON 数据
 migrateLegacyData(globalDb, app.getPath('userData'));
 
@@ -82,6 +84,8 @@ import { pushUrlState } from './ipc/shell.js';
 import { pushHarnessState, stopGeneration } from './ipc/harness.js';
 import { injectWindowGroupDeps, requestSwitchShare } from './ipc/window-groups.js';
 import { initProject } from '../session/project-context.js';
+// [261105-uw877b] 系统提示词自定义模板：把通用设置读取能力注入 session 层
+import { injectPromptSettingReader } from '../session/prompt-builder.js';
 import * as windowGroups from './window-groups.js';
 
 // 全局默认 UA：Electron 默认的 app.userAgentFallback 含 "Electron/x.y.z Chrome/<内核完整版>"

@@ -239,6 +239,8 @@ const shellAPI = {
     ipcRenderer.on('cuckoo-shared-settings-changed', (_e: any, payload: any) => cb(payload));
   },
   getSettings: () => ipcRenderer.invoke('get-settings'),
+  // [261105-uw877b] 系统提示词模板（按平台）
+  getPromptTemplate: (providerId: string) => ipcRenderer.invoke('get-prompt-template', { providerId }),
   getUsageStats: (params: any) => ipcRenderer.invoke('get-usage-stats', params),
   saveSettings: (data: any) => ipcRenderer.invoke('save-settings', { data }),
   resetSettings: () => ipcRenderer.invoke('reset-settings'),
