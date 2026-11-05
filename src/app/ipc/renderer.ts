@@ -4,11 +4,27 @@
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
 import * as profileManager from '../profile.js';
+import { pasteText, createClipboardLock } from './clipboard-paste.js';
 
 const require = createRequire(import.meta.url);
-const { ipcMain, Notification } = require('electron');
+const { ipcMain, Notification, clipboard } = require('electron');
+
+// [261105-geaofb] 剪贴板借用串行锁：clipboard 是进程级全局资源，
+// 多窗口并发粘贴会交错备份/恢复，必须全局串行。
+const withClipboardLock = createClipboardLock();
 
 function registerRendererIpc(): void {
+  // [261105-geaofb] 真实系统粘贴：写剪贴板 → webContents.paste() → 立即恢复。
+  // paste() 同步派发，数据快照即刻进入渲染进程，故占用窗口约 10~30ms；
+  // 恢复早于 overlay 侧的读回校验，校验失败也不影响用户剪贴板。
+  ipcMain.handle('chat-paste-text', async (event: any, text: string) => {
+    const sender = event.sender;
+    if (!sender || sender.isDestroyed()) return { success: false, error: 'view-destroyed' };
+    if (typeof text !== 'string' || !text) return { success: false, error: 'invalid-text' };
+
+    return withClipboardLock(() => pasteText(clipboard, () => sender.paste(), text));
+  });
+
   // AI 回复完成时：窗口已聚焦则不打扰；否则弹通知并让任务栏/Dock 闪烁
   ipcMain.handle('show-ai-notification', async (event: any) => {
     try {

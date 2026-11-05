@@ -33,8 +33,65 @@ function randomDelay(): number {
  * @param msg - 要填入的文本
  * @returns 是否成功填入
  */
+// [261105-geaofb] 真实系统粘贴填入（B 方案）。
+// 走主进程 clipboard.writeText + webContents.paste()，事件 isTrusted=true，
+// 与用户按 Ctrl+V 等价；主进程在派发后立即恢复剪贴板（占用 ~10~30ms）。
+// 注：粘贴是「替换」语义，调用方需先把要保留的内容拼进 msg。
+async function pasteViaClipboard(input: any, msg: string): Promise<boolean> {
+  try {
+    // 仅 DOM 焦点，不抢系统窗口焦点（避免打断用户在其他窗口的操作）
+    try { input.focus(); } catch (_) { /* ignore */ }
+
+    // 清空现有内容，保证粘贴结果为 msg 本身
+    if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
+      const setter = Object.getOwnPropertyDescriptor(
+        input.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
+        'value'
+      )!.set!;
+      setter.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    } else if (input.isContentEditable || input.getAttribute('contenteditable') === 'true') {
+      document.execCommand('selectAll', false, undefined);
+      document.execCommand('delete', false, undefined);
+    }
+
+    // 优先走 bridge 暴露的 API（IPC 通道名在 preload 单点维护），无则直连
+    const api = (window as any).electronAPI;
+    const r = api && typeof api.pasteText === 'function'
+      ? await api.pasteText(msg)
+      : await ipcRenderer.invoke('chat-paste-text', msg);
+    if (!r || !r.success) {
+      console.warn('[Cuckoo Code] 系统粘贴失败:', r && r.error);
+      return false;
+    }
+
+    // 读回校验：此时主进程早已恢复剪贴板，校验失败也不影响用户
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const probe = msg.replace(/\s+/g, '');
+    const written = getInputText(input).replace(/\s+/g, '');
+    if (!written || written.length < probe.length * 0.9) {
+      console.error('[Cuckoo Code] 系统粘贴校验失败：期望约 ' + probe.length + ' 字，实际 ' + written.length + ' 字');
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn('[Cuckoo Code] 系统粘贴异常，回退:', err && err.message);
+    return false;
+  }
+}
+
 async function setInputContent(input: any, msg: string): Promise<boolean> {
   try {
+    // [261105-geaofb] 平台声明使用真实系统粘贴时优先走该路径；失败回退原链路
+    try {
+      const p = getCurrentProvider();
+      if (p && p.useClipboardPaste) {
+        if (await pasteViaClipboard(input, msg)) return true;
+        console.warn('[Cuckoo Code] 系统粘贴未生效，回退通用填入');
+      }
+    } catch (err: any) {
+      console.warn('[Cuckoo Code] useClipboardPaste 分支异常，回退:', err && err.message);
+    }
     // 平台自定义填入（优先）：部分站点对 ClipboardEvent('paste') 敏感
     // （ChatGPT 会识别为"粘贴的文件"附件），由 provider.fillInput 覆盖。
     try {
