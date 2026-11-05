@@ -42,17 +42,13 @@ async function pasteViaClipboard(input: any, msg: string): Promise<boolean> {
     // 仅 DOM 焦点，不抢系统窗口焦点（避免打断用户在其他窗口的操作）
     try { input.focus(); } catch (_) { /* ignore */ }
 
-    // 清空现有内容，保证粘贴结果为 msg 本身
+    // 用「全选」而不是 setter 清空：粘贴替换选区，输入框只会被写一次。
+    // 之前用原生 setter 清空 + input 事件，等于先程序化写一次空值，
+    // 站点（React 受控组件）会先渲染一次，再被粘贴内容覆盖 —— 视觉上像"填了两次"。
     if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
-      const setter = Object.getOwnPropertyDescriptor(
-        input.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype,
-        'value'
-      )!.set!;
-      setter.call(input, '');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
+      try { input.select(); } catch (_) { /* ignore */ }
     } else if (input.isContentEditable || input.getAttribute('contenteditable') === 'true') {
       document.execCommand('selectAll', false, undefined);
-      document.execCommand('delete', false, undefined);
     }
 
     // 优先走 bridge 暴露的 API（IPC 通道名在 preload 单点维护），无则直连
@@ -65,15 +61,23 @@ async function pasteViaClipboard(input: any, msg: string): Promise<boolean> {
       return false;
     }
 
-    // 读回校验：此时主进程早已恢复剪贴板，校验失败也不影响用户
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    // 轮询等待粘贴内容落地：站点可能 preventDefault 后异步插入，
+    // 大文本（初始化提示词几万字）尤其明显，只等 30ms 会误判失败。
+    // 关键：一旦粘贴派发成功，就绝不再走 setter 兜底 —— 否则输入框会被写第二次。
     const probe = msg.replace(/\s+/g, '');
-    const written = getInputText(input).replace(/\s+/g, '');
-    if (!written || written.length < probe.length * 0.9) {
-      console.error('[Cuckoo Code] 系统粘贴校验失败：期望约 ' + probe.length + ' 字，实际 ' + written.length + ' 字');
-      return false;
+    const startedAt = Date.now();
+    let written = '';
+    while (Date.now() - startedAt < 1200) {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      written = getInputText(input).replace(/\s+/g, '');
+      if (written.length >= probe.length * 0.9) {
+        console.log('[Cuckoo Code] 系统粘贴填入成功(' + written.length + ' 字, ' + (Date.now() - startedAt) + 'ms)');
+        return true;
+      }
     }
-    return true;
+
+    console.error('[Cuckoo Code] 系统粘贴未落地：期望约 ' + probe.length + ' 字，实际 ' + written.length + ' 字（不再重复写入）');
+    return false;
   } catch (err: any) {
     console.warn('[Cuckoo Code] 系统粘贴异常，回退:', err && err.message);
     return false;
@@ -376,6 +380,7 @@ function isInputVisible(el: any): boolean {
 async function sendInitialPromptToInput(): Promise<boolean> {
   if (!state.initialPromptContent) {
     state.pendingInitialPrompt = false;
+    initialPromptInFlight = false;
     return false;
   }
 
@@ -404,6 +409,7 @@ async function sendInitialPromptToInput(): Promise<boolean> {
     console.log('[Cuckoo Code] 等待结束，开始发送初始提示');
     triggerSend(input);
     state.pendingInitialPrompt = false;
+    initialPromptInFlight = false;
     // 纯净模式：系统提示词投递也要有运行态反馈（内容不显示）
     emitMessageDelivered(state.initialPromptContent || '', '系统提示词');
   }, sendDelay);
@@ -422,6 +428,7 @@ function trySendInitialPrompt(attempt: number): void {
   if (!input) {
     if (attempt >= INITIAL_PROMPT_MAX_ATTEMPTS) {
       state.pendingInitialPrompt = false;
+      initialPromptInFlight = false;
       console.log('[Cuckoo Code] 等待输入框超时，放弃发送初始提示');
       return;
     }
@@ -437,14 +444,27 @@ function trySendInitialPrompt(attempt: number): void {
     } else {
       console.log('[Cuckoo Code] 初始提示发送失败，已达上限，放弃');
       state.pendingInitialPrompt = false;
+      initialPromptInFlight = false;
     }
   }).catch(() => {
     if (attempt < INITIAL_PROMPT_MAX_ATTEMPTS) setTimeout(() => trySendInitialPrompt(attempt + 1), 500);
   });
 }
 
+/**
+ * 初始提示是否正在发送中（防重复发送）：
+ * initial-prompt 事件可能连续到达（重复点"初始化项目"、会话切换重投等），
+ * 每次都会武装一个随机延迟的发送定时器 —— 不拦住就会把同一段提示词发两遍。
+ */
+let initialPromptInFlight = false;
+
 /** 等待输入框出现后再发送初始提示（对外入口，从 0 开始） */
 function waitForInitialPromptAndSend(): void {
+  if (initialPromptInFlight) {
+    console.log('[Cuckoo Code] 初始提示已在发送中，忽略重复触发');
+    return;
+  }
+  initialPromptInFlight = true;
   trySendInitialPrompt(0);
 }
 /** 读取输入框当前文本 */
