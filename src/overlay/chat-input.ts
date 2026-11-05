@@ -38,17 +38,12 @@ function randomDelay(): number {
 // 与用户按 Ctrl+V 等价；主进程在派发后立即恢复剪贴板（占用 ~10~30ms）。
 // 注：粘贴是「替换」语义，调用方需先把要保留的内容拼进 msg。
 //
-// 长度上限：DeepSeek 会把「超长的粘贴内容」直接转成 .txt 附件，输入框里留空。
-// 这种转换对我们是灾难 —— 校验会判失败 → 回退把原文再写一遍 → 附件 + 正文双份。
-// 所以超过阈值的文本一律不走粘贴，直接走原来的 setter 链路。
-const PASTE_MAX_CHARS = 2000;
-
+// 注意：**不做任何输入框内容校验**。站点可以把粘贴内容吃掉（例如 DeepSeek 把
+// 超长粘贴直接转成 .txt 附件，输入框留空），这属于站点的正常行为，不该判失败，
+// 更不能再回退 setter 把原文写一遍（那会变成「附件 + 正文」双份）。
+// 唯一失败条件是主进程 paste 本身失败（view 已销毁 / 文本为空）。
 async function pasteViaClipboard(input: any, msg: string): Promise<boolean> {
   try {
-    if (msg.length > PASTE_MAX_CHARS) {
-      console.log('[Cuckoo Code] 文本 ' + msg.length + ' 字超过粘贴阈值 ' + PASTE_MAX_CHARS + '，改走 setter 链路（避免被站点转成附件）');
-      return false;
-    }
     // 仅 DOM 焦点，不抢系统窗口焦点（避免打断用户在其他窗口的操作）
     try { input.focus(); } catch (_) { /* ignore */ }
 
@@ -71,23 +66,10 @@ async function pasteViaClipboard(input: any, msg: string): Promise<boolean> {
       return false;
     }
 
-    // 轮询等待粘贴内容落地：站点可能 preventDefault 后异步插入，
-    // 大文本（初始化提示词几万字）尤其明显，只等 30ms 会误判失败。
-    // 关键：一旦粘贴派发成功，就绝不再走 setter 兜底 —— 否则输入框会被写第二次。
-    const probe = msg.replace(/\s+/g, '');
-    const startedAt = Date.now();
-    let written = '';
-    while (Date.now() - startedAt < 1200) {
-      await new Promise((resolve) => setTimeout(resolve, 60));
-      written = getInputText(input).replace(/\s+/g, '');
-      if (written.length >= probe.length * 0.9) {
-        console.log('[Cuckoo Code] 系统粘贴填入成功(' + written.length + ' 字, ' + (Date.now() - startedAt) + 'ms)');
-        return true;
-      }
-    }
-
-    console.error('[Cuckoo Code] 系统粘贴未落地：期望约 ' + probe.length + ' 字，实际 ' + written.length + ' 字（不再重复写入）');
-    return false;
+    // paste() 已派发即视为成功：内容是否真的进输入框、还是被站点转成附件，
+    // 由站点自己决定，我们不做内容校验，也绝不回退 setter 二次写入。
+    console.log('[Cuckoo Code] 系统粘贴已派发(' + msg.length + ' 字)，不做内容校验');
+    return true;
   } catch (err: any) {
     console.warn('[Cuckoo Code] 系统粘贴异常，回退:', err && err.message);
     return false;
@@ -405,13 +387,19 @@ async function sendInitialPromptToInput(): Promise<boolean> {
   }
 
   // 校验：填充后输入框确实有内容（contenteditable 合成粘贴可能被站点拒绝）
-  try {
-    const filled = getInputText(input);
-    if (!filled || filled.trim().length < 10) {
-      console.log('[Cuckoo Code] 初始提示填充后输入框为空，判定失败');
-      return false;
-    }
-  } catch (_) { /* ignore */ }
+  // 走真实粘贴的站点跳过此校验：内容可能被站点转成附件，输入框本来就是空的。
+  const providerUsesPaste = (() => {
+    try { const p = getCurrentProvider(); return !!(p && p.useClipboardPaste); } catch (_) { return false; }
+  })();
+  if (!providerUsesPaste) {
+    try {
+      const filled = getInputText(input);
+      if (!filled || filled.trim().length < 10) {
+        console.log('[Cuckoo Code] 初始提示填充后输入框为空，判定失败');
+        return false;
+      }
+    } catch (_) { /* ignore */ }
+  }
 
   const sendDelay = randomDelay();
   console.log('[Cuckoo Code] 初始提示已填入，随机等待 ' + sendDelay + 'ms 后发送...');
