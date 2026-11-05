@@ -88,6 +88,17 @@ test('正常路径：html/rtf/bookmark 一并还原', async () => {
   assert.equal(cb.readBookmark(), 'https://example.com');
 });
 
+test('日志实测占用窗口：恢复成功后打印毫秒数（真机验收第 6 项依赖它）', async () => {
+  const cb = new FakeClipboard({ text: '用户原文' });
+  const logs = [];
+  const recLog = { info: (m) => logs.push(m), error: (m) => logs.push('ERR:' + m) };
+
+  await pasteText(cb, () => {}, '提示词', { sleep: noSleep, log: recLog });
+
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /占用 \d+ms（已恢复原内容）/, '应打印可直接对照 30ms 阈值的耗时');
+});
+
 test('原剪贴板为空：恢复走 clear()，不残留提示词', async () => {
   const cb = new FakeClipboard();
 

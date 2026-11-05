@@ -91,6 +91,8 @@ export async function pasteText(
   };
 
   const backup = readSnapshot(clipboard);
+  // 占用计时起点：从写剪贴板算到恢复完成（真机验收要求 ≤ 30ms）
+  const startedAt = Date.now();
   let wrote = false;
   try {
     clipboard.writeText(text);
@@ -106,12 +108,15 @@ export async function pasteText(
       try {
         if (clipboard.readText() === text) {
           restoreSnapshot(clipboard, backup);
+          log.info('[Cuckoo Code] 剪贴板借用占用 ' + (Date.now() - startedAt) + 'ms（已恢复原内容）');
         } else {
           log.info('[Cuckoo Code] 剪贴板已被用户更新，跳过恢复');
         }
       } catch (err: any) {
         log.error('[Cuckoo Code] 恢复剪贴板失败: ' + ((err && err.message) || err));
       }
+    } else {
+      log.info('[Cuckoo Code] 剪贴板未写入，占用 0ms');
     }
   }
 }
