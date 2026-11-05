@@ -37,8 +37,18 @@ function randomDelay(): number {
 // 走主进程 clipboard.writeText + webContents.paste()，事件 isTrusted=true，
 // 与用户按 Ctrl+V 等价；主进程在派发后立即恢复剪贴板（占用 ~10~30ms）。
 // 注：粘贴是「替换」语义，调用方需先把要保留的内容拼进 msg。
+//
+// 长度上限：DeepSeek 会把「超长的粘贴内容」直接转成 .txt 附件，输入框里留空。
+// 这种转换对我们是灾难 —— 校验会判失败 → 回退把原文再写一遍 → 附件 + 正文双份。
+// 所以超过阈值的文本一律不走粘贴，直接走原来的 setter 链路。
+const PASTE_MAX_CHARS = 2000;
+
 async function pasteViaClipboard(input: any, msg: string): Promise<boolean> {
   try {
+    if (msg.length > PASTE_MAX_CHARS) {
+      console.log('[Cuckoo Code] 文本 ' + msg.length + ' 字超过粘贴阈值 ' + PASTE_MAX_CHARS + '，改走 setter 链路（避免被站点转成附件）');
+      return false;
+    }
     // 仅 DOM 焦点，不抢系统窗口焦点（避免打断用户在其他窗口的操作）
     try { input.focus(); } catch (_) { /* ignore */ }
 
