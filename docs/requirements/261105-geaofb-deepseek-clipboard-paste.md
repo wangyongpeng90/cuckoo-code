@@ -83,10 +83,14 @@ if (provider && provider.useClipboardPaste) {
 
 `pasteViaClipboard` 步骤：
 1. `input.focus()`（DOM 焦点，非窗口焦点）
-2. 清空现有内容（粘贴是替换语义；追加场景由调用方先拼好 `msg`）
-3. `await ipcRenderer.invoke('chat-paste-text', msg)`
-4. 读回校验（此时剪贴板早已恢复，失败不影响用户）
-5. 失败 → 返回 false，回退原链路
+2. **全选**现有内容（粘贴是替换语义；替代早期"setter 清空 + input 事件"，避免多写一次）
+3. `await` bridge 暴露的 `pasteText(msg)`（无 bridge 时直连 IPC）
+4. **不做任何输入框内容校验**：paste 派发成功即返回 true
+
+> 2026-11-05 调整：早期版本在粘贴后读回输入框长度做校验，并设了 2000 字上限。
+> DeepSeek 会把**超长粘贴直接转成 `.txt` 附件**（输入框留空），导致校验必然判失败
+> → 回退 setter 再写一遍 → 变成「附件 + 正文」双份。现改为：**不校验内容、不设长度上限、
+> 粘贴派发成功即成功**；站点把内容转成附件属于站点正常行为，一律接受。
 
 ## 验收标准
 
