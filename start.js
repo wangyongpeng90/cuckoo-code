@@ -130,7 +130,18 @@ if (debugPort) {
 }
 // 开关必须在应用路径（.）之前，否则会被当成应用参数
 const cmd = isWin ? ('chcp 65001 > nul && electron' + debugArg + ' .') : ('electron' + debugArg + ' .');
-const child = spawn(cmd, { shell: true, stdio: ['inherit', 'pipe', 'pipe'] });
+
+// 某些 Electron 系 IDE 的终端（VS Code / JetBrains 等）会带 ELECTRON_RUN_AS_NODE=1，
+// 子进程继承后 electron.exe 会以「纯 Node 模式」启动，直接报
+//   electron.exe: bad option: --remote-debugging-port=...
+// 然后退出 —— 表现为 npm start 跑到一半就没了，窗口不出现。启动前显式剔除。
+const childEnv = { ...process.env };
+if (childEnv.ELECTRON_RUN_AS_NODE) {
+  console.log('[start.js] ⚠️ 检测到 ELECTRON_RUN_AS_NODE=' + childEnv.ELECTRON_RUN_AS_NODE + '，已为 Electron 剔除（否则会以 Node 模式启动而闪退）');
+  delete childEnv.ELECTRON_RUN_AS_NODE;
+}
+
+const child = spawn(cmd, { shell: true, stdio: ['inherit', 'pipe', 'pipe'], env: childEnv });
 
 child.stdout.pipe(logStream);
 child.stderr.pipe(logStream);
@@ -139,6 +150,7 @@ child.stderr.pipe(process.stderr);
 
 child.on('close', (code) => {
   logStream.end();
+  if (code) console.error('[start.js] Electron 退出码 ' + code + '（完整输出见 wyp/log/electron.log）');
   process.exit(code ?? 0);
 });
 child.on('error', (err) => {
