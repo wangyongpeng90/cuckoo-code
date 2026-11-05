@@ -7,7 +7,7 @@
  */
 import { test } from 'vitest';
 import assert from 'node:assert';
-import { buildChromeUserAgent, chromeMajor, buildClientHintsHeaders, buildUserAgentDataFix, getPlatformProfile } from '../../src/infra/user-agent.js';
+import { buildChromeUserAgent, chromeMajor, buildUserAgentMetadata, getPlatformProfile } from '../../src/infra/user-agent.js';
 
 test('chromeMajor 取主版本号', () => {
   const prev = process.versions.chrome;
@@ -102,39 +102,73 @@ test('buildChromeUserAgent 三平台 UA 串正确且不含 Electron', () => {
   }
 });
 
-test('buildClientHintsHeaders 的 sec-ch-ua-platform 随平台变化', () => {
-  assert.strictEqual(buildClientHintsHeaders('win32', 'x64')['sec-ch-ua-platform'], '"Windows"');
-  assert.strictEqual(buildClientHintsHeaders('darwin', 'arm64')['sec-ch-ua-platform'], '"macOS"');
-  assert.strictEqual(buildClientHintsHeaders('linux', 'x64')['sec-ch-ua-platform'], '"Linux"');
-});
+// ================= 客户端提示元数据（CDP userAgentMetadata）=================
 
-test('buildUserAgentDataFix 注入脚本内 platform 与平台一致（不再恒为 Windows）', () => {
+test('buildUserAgentMetadata 必含 Google Chrome 品牌（sec-ch-ua 的关键）', () => {
   const prev = process.versions.chrome;
   try {
     Object.defineProperty(process.versions, 'chrome', { value: '152.0.7977.130', configurable: true });
-
-    const macScript = buildUserAgentDataFix('darwin', 'arm64');
-    assert.ok(macScript.includes('platform:"macOS"'), 'userAgentData.platform 应为 macOS');
-    assert.ok(!macScript.includes('platform:"Windows"'), 'macOS 脚本不应含 Windows');
-    assert.ok(macScript.includes('architecture:"arm"'), 'Apple Silicon 架构应为 arm');
-    assert.ok(macScript.includes('navigator,"webdriver"'), '应仍修正 webdriver');
-
-    const linuxScript = buildUserAgentDataFix('linux', 'x64');
-    assert.ok(linuxScript.includes('platform:"Linux"'));
-    assert.ok(linuxScript.includes('platformVersion:""'), 'Linux platformVersion 应为空串');
-
-    const winScript = buildUserAgentDataFix('win32', 'x64');
-    assert.ok(winScript.includes('platform:"Windows"'));
-    assert.ok(winScript.includes('platformVersion:"10.0.0"'));
+    const m = buildUserAgentMetadata();
+    const chrome = m.brands.find((b) => b.brand === 'Google Chrome');
+    assert.ok(chrome, '必须包含 Google Chrome 品牌');
+    assert.strictEqual(chrome.version, '152', '版本取真实主版本');
+    assert.strictEqual(m.brands[0].brand, 'Google Chrome', 'Google Chrome 排在最前');
+    assert.ok(m.brands.some((b) => b.brand === 'Chromium'), '仍保留 Chromium 品牌');
   } finally {
     Object.defineProperty(process.versions, 'chrome', { value: prev, configurable: true });
   }
+});
+
+test('buildUserAgentMetadata 沿用运行时真实品牌（GREASE 名不硬编码）', () => {
+  const prev = process.versions.chrome;
+  try {
+    Object.defineProperty(process.versions, 'chrome', { value: '152.0.7977.130', configurable: true });
+    // 模拟从页面读回的真实值：Windows 11 的 platformVersion 19.0.0 + GREASE 名 Not?A_Brand
+    const runtime = {
+      brands: [
+        { brand: 'Not?A_Brand', version: '24' },
+        { brand: 'Chromium', version: '152' },
+      ],
+      platformVersion: '19.0.0',
+      architecture: 'x86',
+      bitness: '64',
+      fullVersion: '152.0.7977.130',
+    };
+    const m = buildUserAgentMetadata(runtime);
+    assert.deepStrictEqual(m.brands.map((b) => b.brand), ['Google Chrome', 'Not?A_Brand', 'Chromium']);
+    assert.strictEqual(m.brands[1].version, '24', 'GREASE 版本沿用运行时值');
+    assert.strictEqual(m.platformVersion, '19.0.0', 'platformVersion 用运行时真实值（不写死 10.0.0）');
+    assert.strictEqual(m.fullVersion, '152.0.7977.130');
+    assert.deepStrictEqual(
+      m.fullVersionList.map((b) => b.brand + '=' + b.version),
+      ['Google Chrome=152.0.7977.130', 'Not?A_Brand=24.0.0.0', 'Chromium=152.0.7977.130'],
+      'GREASE 品牌用 x.0.0.0，Chrome/Chromium 用完整版本'
+    );
+  } finally {
+    Object.defineProperty(process.versions, 'chrome', { value: prev, configurable: true });
+  }
+});
+
+test('buildUserAgentMetadata 无运行时数据时给出自洽兜底', () => {
+  const m = buildUserAgentMetadata(undefined, 'win32', 'x64');
+  assert.strictEqual(m.platform, 'Windows');
+  assert.ok(m.brands.some((b) => b.brand === 'Google Chrome'));
+  assert.ok(m.brands.some((b) => b.brand === 'Chromium'));
+  assert.strictEqual(m.mobile, false);
+  assert.strictEqual(m.wow64, false);
+  assert.strictEqual(m.model, '');
+});
+
+test('buildUserAgentMetadata 的 platform 随平台变化', () => {
+  assert.strictEqual(buildUserAgentMetadata(undefined, 'win32', 'x64').platform, 'Windows');
+  assert.strictEqual(buildUserAgentMetadata(undefined, 'darwin', 'arm64').platform, 'macOS');
+  assert.strictEqual(buildUserAgentMetadata(undefined, 'linux', 'x64').platform, 'Linux');
 });
 
 test('默认参数走 process.platform（Windows 环境回归保护）', () => {
   // 测试机是 Windows：默认调用应与显式传 win32 一致
   if (process.platform === 'win32') {
     assert.strictEqual(buildChromeUserAgent(), buildChromeUserAgent('win32', process.arch));
-    assert.deepStrictEqual(buildClientHintsHeaders(), buildClientHintsHeaders('win32', process.arch));
+    assert.strictEqual(buildUserAgentMetadata().platform, 'Windows');
   }
 });

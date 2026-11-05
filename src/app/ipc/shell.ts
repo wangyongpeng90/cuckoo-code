@@ -290,6 +290,14 @@ function registerShellIpc(): void {
         autoHideMenuBar: true,
         webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
       });
+      // 文档里的外链（飞书官网等）走系统浏览器，避免在本应用内开一个
+      // 没打 UA 客户端提示补丁的 Electron 子窗口
+      try {
+        win.webContents.setWindowOpenHandler(({ url }: any) => {
+          if (/^https?:\/\//i.test(url)) { shell.openExternal(url); }
+          return { action: 'deny' };
+        });
+      } catch (_) { /* ignore */ }
       win.loadFile(htmlPath);
       return { success: true };
     } catch (err: any) {

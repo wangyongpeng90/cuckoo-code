@@ -37,6 +37,7 @@
 | 261101-lzrtxr | refactor | [工具描述收归 apiMetas（消除三处重复）](./261101-lzrtxr-tool-api-consolidate.md) | review | feat/261101-lzrtxr-tool-api-consolidate | 2026-11-01 |
 | 261101-ym9l98 | feature | [工具结果回传文案拟人化（含跨窗口通用存储与 read 首行模板）](./261101-ym9l98-js-result-phrases.md) | review | feat/261101-ym9l98-js-result-phrases | 2026-11-01 |
 | 261105-geaofb | feature | [DeepSeek 发送提示词改为模拟真实粘贴（B 方案，最小化剪贴板占用）](./261105-geaofb-deepseek-clipboard-paste.md) | review | feat/261105-geaofb-deepseek-clipboard-paste | 2026-11-05 |
+| 261105-uaovrd | fix | [UA 与客户端提示（sec-ch-ua）不一致修正（改走 CDP override）](./261105-uaovrd-ua-client-hints.md) | review | feat/261105-geaofb-deepseek-clipboard-paste | 2026-11-05 |
 | 261105-uw877b | feature | [系统提示词模板可编辑（按平台，存 SQLite）](./261105-uw877b-editable-system-prompt.md) | review | feat/261105-geaofb-deepseek-clipboard-paste | 2026-11-05 |
 
-共 33 个需求。
+共 34 个需求。
