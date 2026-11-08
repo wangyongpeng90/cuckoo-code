@@ -147,6 +147,8 @@ function install(): void {
     var msgIds = null;
     // 诊断：记录收到的所有 status 帧（response/status、quasi_status）
     var statusFrames = [];
+    // 诊断：最近若干原始帧（截断），判 error 时一并上报，便于不装探针定位协议变化
+    var frameRing = [];
 
     // 从对象里捕获消息 id 字段
     function captureMsgIds(src) {
@@ -192,9 +194,29 @@ function install(): void {
       var s = lastSeg(p);
       return s === 'reasoning_content' || s === 'thinking_content';
     }
-    function isFragmentsAppend(p) {
-      return p && typeof p.p === 'string' && p.p.slice(-10) === '/fragments' &&
-        p.o === 'APPEND' && Array.isArray(p.v);
+    /**
+     * 片段数组消费。两种形态（2026-11 实抓）：
+     *  - APPEND：v 是"新增的若干片段"，追加类型并累计其内容
+     *  - SET / 无 o：v 是**全量快照**（含每个片段的累计 content），
+     *    以它为准重建 think/text，避免与之前的增量重复累计。
+     *    旧实现只认 APPEND，全量快照被整体丢弃 → 片段类型（THINK/RESPONSE）
+     *    永远停在旧值，后续无 p 的 {"v":"..."} 增量全被当成思考，正文恒为 0。
+     */
+    function consumeFragments(frags, append) {
+      var ts = [];
+      for (var i = 0; i < frags.length; i++) ts.push(String((frags[i] && frags[i].type) || 'RESPONSE'));
+      observed = true;
+      if (append) {
+        for (var j = 0; j < ts.length; j++) fragmentTypes.push(ts[j]);
+        currentIndex = fragmentTypes.length - 1;
+        consumeFragmentContent(frags, ts);
+        return;
+      }
+      fragmentTypes = ts;
+      currentIndex = fragmentTypes.length ? fragmentTypes.length - 1 : -1;
+      text = '';
+      thinkText = '';
+      consumeFragmentContent(frags, ts);
     }
     function snapshotFragments(p) {
       if (!p || p.p !== undefined || !p.v || typeof p.v !== 'object') return null;
@@ -247,28 +269,14 @@ function install(): void {
       if (parsed.updated_at !== undefined) {
         captureTokenUsage(parsed);
       }
-      if (isFragmentsAppend(parsed)) {
-        var types = [];
-        for (var j = 0; j < parsed.v.length; j++) {
-          types.push(String((parsed.v[j] && parsed.v[j].type) || 'RESPONSE'));
-        }
-        for (var ti = 0; ti < types.length; ti++) fragmentTypes.push(types[ti]);
-        currentIndex = fragmentTypes.length - 1;
-        observed = true;
-        consumeFragmentContent(parsed.v, types);
+      // 片段数组：APPEND=增量片段；SET/无 o=全量快照（实抓：{"p":"response/fragments","v":[...]}）
+      if (typeof parsed.p === 'string' && lastSeg(parsed.p) === 'fragments' && Array.isArray(parsed.v)) {
+        consumeFragments(parsed.v, parsed.o === 'APPEND');
         return;
       }
       var snap = snapshotFragments(parsed);
       if (snap) {
-        var first = !observed;
-        var stypes = [];
-        for (var k = 0; k < snap.length; k++) {
-          stypes.push(String((snap[k] && snap[k].type) || 'RESPONSE'));
-        }
-        fragmentTypes = stypes;
-        currentIndex = fragmentTypes.length - 1;
-        observed = true;
-        if (first) consumeFragmentContent(snap, stypes);
+        consumeFragments(snap, false);
         return;
       }
       if (isThinkingPatch(parsed.p) && typeof parsed.v === 'string') return;
@@ -294,6 +302,12 @@ function install(): void {
 
     return {
       consume: consume,
+      rememberFrame: function (raw) {
+        try {
+          frameRing.push(String(raw).replace(/\s+/g, ' ').slice(0, 160));
+          if (frameRing.length > 12) frameRing.shift();
+        } catch (e) { /* ignore */ }
+      },
       get text() { return text; },
       get think() { return thinkText; },
       get finished() { return finished; },
@@ -311,7 +325,8 @@ function install(): void {
           textLen: text.length,
           textTail: text.slice(-200),
           thinkTail: thinkText.slice(-200),
-          statusFrames: statusFrames.slice()
+          statusFrames: statusFrames.slice(),
+          frames: frameRing.slice()
         };
       }
     };
@@ -358,6 +373,7 @@ function install(): void {
     function feed(chunk) {
       var frames = frameDecoder.push(chunk);
       for (var i = 0; i < frames.length; i++) {
+        extractor.rememberFrame(frames[i]);
         var parsed = parseBlock(frames[i]);
         if (parsed) extractor.consume(parsed);
       }
@@ -565,6 +581,7 @@ function install(): void {
       lastLen = raw.length;
       var frames = frameDecoder.push(chunk);
       for (var i = 0; i < frames.length; i++) {
+        extractor.rememberFrame(frames[i]);
         var parsed = parseBlock(frames[i]);
         if (parsed) extractor.consume(parsed);
       }
