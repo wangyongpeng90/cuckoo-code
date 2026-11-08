@@ -37,10 +37,14 @@
 >
 > 所有捐赠款项**直接进入壹基金公益账户**，与作者无关，纯属公益行为。
 
-**已通过壹基金捐赠的善款：8 笔 / 690 元**
+**已通过壹基金捐赠的善款：12 笔 / 1078.88 元**
 
 | 捐赠者 | 金额 | 日期 | 捐赠证书 |
 |---|---|---|---|
+| 无妄海(群内昵称) | 100 元 | 2026-11-04 | [https://onefoundation.cn/cert/20261104141722603/](https://onefoundation.cn/cert/20261104141722603/) |
+| 张淳 | 100 元 | 2026-11-03 | [https://onefoundation.cn/cert/20261103170383032/](https://onefoundation.cn/cert/20261103170383032/) |
+| 勿痕(群内昵称) | 100 元 | 2026-11-03 | [https://onefoundation.cn/cert/20261103173624856/](https://onefoundation.cn/cert/20261103173624856/) |
+| coco | 88.88 元 | 2026-11-03 | [https://onefoundation.cn/cert/20261103165289162/](https://onefoundation.cn/cert/20261103165289162/) |
 | 烈云 | 100 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261101152146565/](https://onefoundation.cn/cert/20261101152146565/)|
 | 石垚 | 2 元 | 2026-10-29 |[https://onefoundation.cn/cert/20261101205925282/](https://onefoundation.cn/cert/20261101205925282/)|
 | 刘先生| 100 元 | 2026-10-29 |要求匿名|
