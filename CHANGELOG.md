@@ -8,9 +8,6 @@
 - **DeepSeek 提示词改用真实系统粘贴（B 方案）**：走主进程 `clipboard.writeText` + `webContents.paste()`，
   事件 `isTrusted=true`，与真人 Ctrl+V 等价；剪贴板占用约 10~30ms 后自动还原，
   用户复制的内容不会被覆盖（借用期间用户抢先复制则跳过还原）。
-- **系统提示词模板可编辑**：设置页新增「系统提示词」分类，按平台（内置 / 用户导入 / 插件贡献）各存一份，
-  持久化到 SQLite（`cuckoo-system-prompt-template:{providerId}`）；未自定义时回退内置模板，
-  支持「填入内置模板」与「恢复默认」。
 - **诊断增强**：DeepSeek hook 保留最近 12 个原始 SSE 帧，判错时随 `dbg.frames` 上报，协议变化可自证。
 
 ### Fixed
