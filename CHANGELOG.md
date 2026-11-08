@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+## [0.8.22] - 2026-11-08
+
+### Added
+- **DeepSeek 提示词改用真实系统粘贴（B 方案）**：走主进程 `clipboard.writeText` + `webContents.paste()`，
+  事件 `isTrusted=true`，与真人 Ctrl+V 等价；剪贴板占用约 10~30ms 后自动还原，
+  用户复制的内容不会被覆盖（借用期间用户抢先复制则跳过还原）。
+- **系统提示词模板可编辑**：设置页新增「系统提示词」分类，按平台（内置 / 用户导入 / 插件贡献）各存一份，
+  持久化到 SQLite（`cuckoo-system-prompt-template:{providerId}`）；未自定义时回退内置模板，
+  支持「填入内置模板」与「恢复默认」。
+- **诊断增强**：DeepSeek hook 保留最近 12 个原始 SSE 帧，判错时随 `dbg.frames` 上报，协议变化可自证。
+
+### Fixed
+- **DeepSeek 新版 SSE 下正文恒为 0**：新版流用 `{"p":"response/fragments","v":[...]}`（SET，无 `o`）
+  下发片段全量快照，旧逻辑只认 `APPEND` 导致整帧被丢弃 → 片段类型停在 THINK → 正文全被当成思考。
+  现按全量快照重建片段类型与正文，思考/正文正确分离。
+- **UA 与客户端提示自相矛盾**：此前页面 JS 的 `navigator.userAgentData` 被改写为 Chrome，但真实请求头
+  `sec-ch-ua` 仍只带 Chromium（`webRequest` 改写对客户端提示无效）。改为主进程 CDP
+  `Emulation.setUserAgentOverride`，UA 串 / `userAgentData` / `sec-ch-ua` 由同一份元数据生成，
+  `platformVersion` 取运行时真值；`window.open` 弹窗与工具窗口同样继承。
+- **初始化提示词被写入两次**：粘贴后按输入框内容校验，站点把超长粘贴转成附件时必然判失败，
+  于是回退 setter 又写一遍（附件 + 正文双份）。现不做内容校验、不设长度上限，粘贴派发成功即成功。
+- **启动健壮性**：`start.js` 启动前剔除 `ELECTRON_RUN_AS_NODE`（IDE 终端会带，导致 Electron 以 Node 模式闪退）；
+  仓库内 `electron` 无法启动时自动镜像到用户目录并用外部副本启动（源码运行场景）。
+
+### Changed
+- **工具结果发送时序**：由「先粘贴 → 等延迟 → 发送」改为「**先等延迟 → 再粘贴 → 等 600ms → 发送**」，
+  延迟期间输入框保持干净，不再把待发内容长时间摆在用户面前。
+
 ## [0.8.21] - 2026-11-02
 
 ### Added
