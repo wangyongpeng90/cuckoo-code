@@ -3,6 +3,7 @@
  * 由项目根目录 main.js 薄壳加载。
  */
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import * as windowState from './window.js';
@@ -18,7 +19,7 @@ import * as mcpClient from '../mcp/client.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
 
 const require = createRequire(import.meta.url);
-const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');
+const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, session, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');
 
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
@@ -1139,7 +1140,78 @@ ipcMainForProfile.handle('rate-limit-hit', async (event: any) => {
 });
 
 // ========== IPC 处理器 ==========
+
 registerIpcHandlers();
+
+// ========== Cuko API 独立工作窗口 ==========
+let cukoWindow: any = null;
+
+function openCukoWindow(): void {
+  if (cukoWindow && !cukoWindow.isDestroyed()) {
+    if (cukoWindow.isMinimized()) cukoWindow.restore();
+    cukoWindow.show();
+    cukoWindow.focus();
+    return;
+  }
+
+  const pagePath = resolveSrc('ui/cuko/built.html');
+  const allowedUrl = pathToFileURL(pagePath).href;
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 900,
+    minWidth: 760,
+    minHeight: 560,
+    title: 'Cuckoo Code - Cuko API',
+    webPreferences: {
+      preload: path.join(import.meta.dirname, 'cuko-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      session: session.fromPartition('cuko-api'),
+    },
+  });
+
+  cukoWindow = win;
+
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event: any, url: string) => {
+    if (url !== allowedUrl) event.preventDefault();
+  });
+  win.webContents.on('will-redirect', (event: any, url: string) => {
+    if (url !== allowedUrl) event.preventDefault();
+  });
+
+  win.on('closed', () => {
+    if (cukoWindow === win) cukoWindow = null;
+  });
+
+  win.loadFile(pagePath).catch((err: any) => {
+    console.error('[Cuko API] 页面加载失败:', err?.message || err);
+  });
+}
+
+ipcMainForProfile.handle('shell-open-cuko-window', (event: any) => {
+  const ctx = windowState.getContextByWebContents(event.sender);
+  if (
+    !ctx ||
+    !ctx.win ||
+    ctx.win.isDestroyed() ||
+    ctx.win.webContents !== event.sender ||
+    ctx.isSubagent ||
+    (event.senderFrame && event.sender.mainFrame && event.senderFrame !== event.sender.mainFrame)
+  ) {
+    return { success: false, error: 'Unauthorized sender' };
+  }
+
+  try {
+    openCukoWindow();
+    return { success: true };
+  } catch (err: any) {
+    console.error('[Cuko API] 窗口创建失败:', err?.message || err);
+    return { success: false, error: 'Failed to open Cuko API window' };
+  }
+});
+
 
 // ========== 飞书同步（若已配置启用则自动连接）==========
 try { initFeishu(); } catch (err: any) { console.error('[Feishu] 初始化失败:', err.message); }

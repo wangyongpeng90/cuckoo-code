@@ -12,6 +12,7 @@ const platformArg = (process.argv || []).find((a) => a.startsWith('--cuckoo-plat
 const platform = platformArg ? platformArg.slice('--cuckoo-platform='.length) : process.platform;
 
 const shellAPI = {
+  openCukoWindow: () => ipcRenderer.invoke('shell-open-cuko-window'),
   platform,
   selectProjectDir: () => ipcRenderer.invoke('select-project-dir'),
   cancelInitPrompt: () => ipcRenderer.send('cancel-init-prompt'),

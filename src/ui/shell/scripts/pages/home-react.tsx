@@ -109,6 +109,11 @@ export function HomePage() {
     if (anyApi.toggleHarness) { try { await anyApi.toggleHarness(); } catch (_) {} }
   }, []);
 
+  const openCukoWindow = useCallback(async () => {
+    const anyApi = api as any;
+    if (anyApi.openCukoWindow) { try { await anyApi.openCukoWindow(); } catch (_) {} }
+  }, []);
+
   const invokeCommand = useCallback((spec: any) => {
     const anyApi = api as any;
     if (spec && spec.command && typeof anyApi.commandInvoke === 'function') anyApi.commandInvoke(spec.command).catch(() => {});
@@ -171,6 +176,11 @@ export function HomePage() {
       ),
       createElement('div', { className: 'ck-actions', style: { flexDirection: 'column', gap: 10, alignItems: 'stretch' } },
         createElement(UiButton, { icon: 'M12 5v14M5 12h14', onClick: newSession }, '新建会话'),
+        createElement('button', {
+          className: 'ck-btn ck-btn-anim',
+          onClick: openCukoWindow,
+          title: '打开 Cuko API 工作窗口',
+        }, createElement('span', null, 'Cuko 模式')),
         createElement('button', {
           className: 'ck-btn ck-btn-anim',
           onClick: toggleHarness,
