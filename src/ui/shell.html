@@ -116714,6 +116714,7 @@ body {
   function UsageStats() {
     const chartRef = (0, import_react8.useRef)(null);
     const chartInst = (0, import_react8.useRef)(null);
+    const reqIdRef = (0, import_react8.useRef)(0);
     const [granularity, setGranularity] = (0, import_react8.useState)("day");
     const [loading, setLoading] = (0, import_react8.useState)(false);
     const [profiles, setProfiles] = (0, import_react8.useState)([]);
@@ -116743,13 +116744,24 @@ body {
     }, []);
     const loadData = (0, import_react8.useCallback)(async (g, pId, sTime, eTime) => {
       if (!api.getUsageStats) return;
+      const reqId = ++reqIdRef.current;
       setLoading(true);
       try {
         const startStr = sTime.replace("T", " ") + ":00";
         const endStr = eTime.replace("T", " ") + ":59";
         const res = await api.getUsageStats({ granularity: g, startTime: startStr, endTime: endStr, profileId: pId || null });
-        if (res && res.success && chartInst.current) {
+        if (reqId !== reqIdRef.current) return;
+        if (!chartInst.current) return;
+        if (!res || !res.success) {
+          chartInst.current.clear();
+          return;
+        }
+        if (res.success) {
           const data = res.data || [];
+          if (data.length === 0) {
+            chartInst.current.clear();
+            return;
+          }
           const xData = data.map((d) => {
             if (g === "day") return d.time_label.slice(5);
             if (g === "hour") return d.time_label.slice(11) + ":00";
@@ -116790,16 +116802,14 @@ body {
           });
         }
       } catch (_) {
+        if (reqId === reqIdRef.current) chartInst.current?.clear();
       } finally {
-        setLoading(false);
+        if (reqId === reqIdRef.current) setLoading(false);
       }
     }, []);
     (0, import_react8.useEffect)(() => {
       if (!chartRef.current) return;
-      if (!chartInst.current) {
-        chartInst.current = init2(chartRef.current);
-      }
-      loadData(granularity, selectedProfile, startTime, endTime);
+      chartInst.current = init2(chartRef.current);
       const handleResize = () => chartInst.current?.resize();
       window.addEventListener("resize", handleResize);
       return () => {
@@ -116807,6 +116817,9 @@ body {
         chartInst.current?.dispose();
         chartInst.current = null;
       };
+    }, []);
+    (0, import_react8.useEffect)(() => {
+      loadData(granularity, selectedProfile, startTime, endTime);
     }, [granularity, selectedProfile, startTime, endTime, loadData]);
     return (0, import_react8.createElement)(
       "div",
