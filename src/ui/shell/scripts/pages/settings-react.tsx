@@ -100,19 +100,55 @@ function UsageStats() {
         return;
       }
       if (res.success) {
-        const data = res.data || [];
-        if (data.length === 0) {
-          chartInst.current.clear(); // 显式清空，防 ECharts 保留旧 series
+        const rawData = res.data || [];
+        // 前端补齐缺失的时间段，避免 category 轴把稀疏数据挤在一起
+        const startMs = new Date(startStr.replace(/-/g, '/')).getTime(); // 兼容各平台
+        const endMs = new Date(endStr.replace(/-/g, '/')).getTime();
+        let stepMs = 86400000;
+        if (g === 'hour') stepMs = 3600000;
+        else if (g === 'minute') stepMs = 60000;
+
+        const dataMap = new Map();
+        rawData.forEach((d: any) => dataMap.set(d.time_label, d));
+
+        const fullData: any[] = [];
+        const pad = (n: number) => String(n).padStart(2, '0');
+        let count = 0;
+        const MAX_POINTS = 15000; // 防卡死，最多 1.5 万个点
+
+        for (let t = startMs; t <= endMs && count < MAX_POINTS; t += stepMs) {
+          count++;
+          const d = new Date(t);
+          let label = '';
+          if (g === 'day') {
+            label = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+          } else if (g === 'hour') {
+            label = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}`;
+          } else {
+            label = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          }
+          const row = dataMap.get(label) || { send_count: 0, reply_count: 0, diff_token: 0 };
+          fullData.push({
+            time_label: label,
+            send_count: row.send_count || 0,
+            reply_count: row.reply_count || 0,
+            diff_token: row.diff_token || 0
+          });
+        }
+
+        if (fullData.length === 0) {
+          chartInst.current.clear();
           return;
         }
-        const xData = data.map((d: any) => {
+
+        const xData = fullData.map((d: any) => {
           if (g === 'day') return d.time_label.slice(5); // MM-DD
-          if (g === 'hour') return d.time_label.slice(11) + ':00'; // HH:00
-          return d.time_label.slice(11, 16); // HH:mm
+          if (g === 'hour') return d.time_label.slice(5) + ':00'; // MM-DD HH:00
+          return d.time_label.slice(5); // MM-DD HH:mm
         });
-        const sendData = data.map((d: any) => d.send_count);
-        const replyData = data.map((d: any) => d.reply_count);
-        const tokenData = data.map((d: any) => d.diff_token);
+        const sendData = fullData.map((d: any) => d.send_count);
+        const replyData = fullData.map((d: any) => d.reply_count);
+        const tokenData = fullData.map((d: any) => d.diff_token);
 
         const cs = getComputedStyle(document.documentElement);
         const textColor = cs.getPropertyValue('--ck-text').trim() || '#333';
@@ -134,7 +170,7 @@ function UsageStats() {
             right: 10
           },
           grid: { left: '3%', right: '4%', bottom: '3%', top: '40px', containLabel: true },
-          xAxis: { type: 'category', data: xData, axisLabel: { color: dimColor } },
+          xAxis: { type: 'category', data: xData, axisLabel: { color: dimColor, hideOverlap: true } },
           yAxis: [
             { type: 'value', axisLabel: { color: dimColor }, splitLine: { lineStyle: { color: borderColor } } },
             { type: 'value', axisLabel: { color: dimColor }, splitLine: { show: false } }

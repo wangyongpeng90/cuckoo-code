@@ -116757,19 +116757,49 @@ body {
           return;
         }
         if (res.success) {
-          const data = res.data || [];
-          if (data.length === 0) {
+          const rawData = res.data || [];
+          const startMs = new Date(startStr.replace(/-/g, "/")).getTime();
+          const endMs = new Date(endStr.replace(/-/g, "/")).getTime();
+          let stepMs = 864e5;
+          if (g === "hour") stepMs = 36e5;
+          else if (g === "minute") stepMs = 6e4;
+          const dataMap = /* @__PURE__ */ new Map();
+          rawData.forEach((d) => dataMap.set(d.time_label, d));
+          const fullData = [];
+          const pad2 = (n) => String(n).padStart(2, "0");
+          let count2 = 0;
+          const MAX_POINTS = 15e3;
+          for (let t = startMs; t <= endMs && count2 < MAX_POINTS; t += stepMs) {
+            count2++;
+            const d = new Date(t);
+            let label = "";
+            if (g === "day") {
+              label = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+            } else if (g === "hour") {
+              label = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}`;
+            } else {
+              label = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+            }
+            const row = dataMap.get(label) || { send_count: 0, reply_count: 0, diff_token: 0 };
+            fullData.push({
+              time_label: label,
+              send_count: row.send_count || 0,
+              reply_count: row.reply_count || 0,
+              diff_token: row.diff_token || 0
+            });
+          }
+          if (fullData.length === 0) {
             chartInst.current.clear();
             return;
           }
-          const xData = data.map((d) => {
+          const xData = fullData.map((d) => {
             if (g === "day") return d.time_label.slice(5);
-            if (g === "hour") return d.time_label.slice(11) + ":00";
-            return d.time_label.slice(11, 16);
+            if (g === "hour") return d.time_label.slice(5) + ":00";
+            return d.time_label.slice(5);
           });
-          const sendData = data.map((d) => d.send_count);
-          const replyData = data.map((d) => d.reply_count);
-          const tokenData = data.map((d) => d.diff_token);
+          const sendData = fullData.map((d) => d.send_count);
+          const replyData = fullData.map((d) => d.reply_count);
+          const tokenData = fullData.map((d) => d.diff_token);
           const cs = getComputedStyle(document.documentElement);
           const textColor = cs.getPropertyValue("--ck-text").trim() || "#333";
           const dimColor = cs.getPropertyValue("--ck-text-dim").trim() || "#666";
@@ -116789,7 +116819,7 @@ body {
               right: 10
             },
             grid: { left: "3%", right: "4%", bottom: "3%", top: "40px", containLabel: true },
-            xAxis: { type: "category", data: xData, axisLabel: { color: dimColor } },
+            xAxis: { type: "category", data: xData, axisLabel: { color: dimColor, hideOverlap: true } },
             yAxis: [
               { type: "value", axisLabel: { color: dimColor }, splitLine: { lineStyle: { color: borderColor } } },
               { type: "value", axisLabel: { color: dimColor }, splitLine: { show: false } }
