@@ -4,10 +4,12 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import * as windowState from '../app/window.js';
 import { buildPrompt, PROMPT_DIR } from './prompt-builder.js';
 import type { WebId } from './ids.js';
+import { executeTool } from '../tools/index.js';
 
 const require = createRequire(import.meta.url);
 const { app, dialog } = require('electron');
@@ -147,10 +149,61 @@ async function sendSystemPrompt(
   const tStart = Date.now();
   const stepLog = (msg: string) => logWithFile(providerId, '[Cuckoo Code][耗时] ' + msg + ' +' + (Date.now() - tStart) + 'ms');
 
-  const built = buildPrompt({ providerId, selectedDir, isCompaction });
+  // [261104-oocqpd] DeepSeek 工具 API 附件上传：其他 Provider 保持原有内联提示词流程。
+  const useToolApiAttachment = providerId === 'deepseek';
+  const built = buildPrompt({ providerId, selectedDir, isCompaction, toolApiAttachment: useToolApiAttachment });
   if (built.error) {
     return { success: false, message: built.error };
   }
+
+  if (useToolApiAttachment) {
+    if (!built.toolApiTypes) {
+      return { success: false, message: '读取 Cuckoo 系统说明书内容失败，已停止发送系统提示词' };
+    }
+    if (!ctx || !ctx.win || ctx.win.isDestroyed()) {
+      return { success: false, message: '无法定位当前 DeepSeek 窗口，已停止发送系统提示词' };
+    }
+
+    let tempDir = "";
+    try {
+      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-tool-spec-'));
+      const attachmentPath = path.join(tempDir, 'cuckoo系统说明书.md');
+      const fence = String.fromCharCode(96).repeat(3);
+      const documentContent = [
+        '# Cuckoo 系统说明书',
+        '',
+        '以下是 Cuckoo 代码块中可用的全部全局工具函数与数据类型的 TypeScript 声明。',
+        '',
+        fence + 'ts',
+        built.toolApiTypes,
+        fence,
+        ''
+      ].join('\n');
+      fs.writeFileSync(attachmentPath, documentContent, 'utf8');
+
+      // [261104-oocqpd] 先上传附件，再发送 initial-prompt，确保附件与文本随同一条消息发出。
+      const uploadResult = await executeTool('attachFile', {
+        filePath: attachmentPath,
+        projectDir: selectedDir,
+        currentWindowId: ctx.win.id
+      });
+      if (!uploadResult || uploadResult.success !== true) {
+        const reason = uploadResult && uploadResult.error ? String(uploadResult.error) : '未知错误';
+        return { success: false, message: '上传 Cuckoo 系统说明书附件失败：' + reason };
+      }
+      stepLog('Cuckoo 系统说明书附件上传完成');
+    } catch (err: any) {
+      return { success: false, message: '准备或上传 Cuckoo 系统说明书附件失败：' + (err && err.message ? err.message : String(err)) };
+    } finally {
+      // [261104-oocqpd] attachFile 已将文件内容注入页面，临时文件不再需要。
+      if (tempDir) {
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch (_) { /* 临时文件清理失败不影响已完成的附件上传 */ }
+      }
+    }
+  }
+
   stepLog('提示词组装完成');
 
   let combined = built.prompt;

@@ -43,16 +43,7 @@
 
 ---
 
-## 工具 API 类型定义（TypeScript）
-
-以下是 cuckoo 代码块中可用的全部全局工具函数与数据类型的 TypeScript 声明，帮助你写出正确的调用代码：
-
-- 所有函数都是异步的，调用时必须使用 await
-- 相对路径基于当前项目根目录（projectDir）解析
-- 工具出错时抛出异常（Error.message 为错误描述）；唯一例外是 bash()/pwsh()：非零退出不抛异常，通过返回文本中的 [exit code] 标记报告
-```ts 
-{{TOOL_API_TYPES}}
-```
+{{TOOL_API_TYPES_SECTION}}
 
 ---
 

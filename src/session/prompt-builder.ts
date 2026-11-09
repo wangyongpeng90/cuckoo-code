@@ -140,8 +140,8 @@ function readProjectIntro(selectedDir: string): string {
  * @param opts { providerId, selectedDir, isCompaction }
  * @returns { prompt, error? }，error 存在时 prompt 为空
  */
-function buildPrompt(opts: { providerId: string; selectedDir: string; isCompaction?: boolean }): { prompt: string; error?: string } {
-  const { providerId, selectedDir, isCompaction } = opts;
+function buildPrompt(opts: { providerId: string; selectedDir: string; isCompaction?: boolean; toolApiAttachment?: boolean }): { prompt: string; error?: string; toolApiTypes?: string } {
+  const { providerId, selectedDir, isCompaction, toolApiAttachment = false } = opts;
 
   const tpl = loadTemplate(providerId);
   if (tpl.error) return { prompt: '', error: tpl.error };
@@ -156,6 +156,15 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     console.error('[Cuckoo Code] 读取 cuckoo-tools.d.ts 失败:', resolveToolSpec());
   }
 
+  // [261104-oocqpd-mod] 仅普通 DeepSeek 初始化使用附件；默认内联以兼容 Harness。
+  const useToolApiAttachment = providerId === 'deepseek' && toolApiAttachment;
+  const toolApiTypesPlaceholder = useToolApiAttachment ? '' : toolApiTypes;
+  const fence = String.fromCharCode(96).repeat(3);
+  const toolApiTypesSection = providerId === 'deepseek'
+    ? (useToolApiAttachment
+      ? ['## 工具 API 类型定义', '', '完整的 TypeScript 工具接口定义已作为附件上传，文件名为 cuckoo系统说明书.md。调用工具前请阅读该附件，并严格按照其中的函数签名与类型传参。'].join('\n')
+      : ['## 工具 API 类型定义（TypeScript）', '', '以下是 cuckoo 代码块中可用的全部全局工具函数与数据类型的 TypeScript 声明，帮助你写出正确的调用代码：', '', '- 所有函数都是异步的，调用时必须使用 await', '- 相对路径基于当前项目根目录（projectDir）解析', '- 工具出错时抛出异常（Error.message 为错误描述）；唯一例外是 bash()/pwsh()：非零退出不抛异常，通过返回文本中的 [exit code] 标记报告', fence + 'ts', toolApiTypes, fence].join('\n'))
+    : '';
   // [261101-lzrtxr] {{TOOLS_LIST}} 已废弃（与 {{TOOL_API_TYPES}} 重复），保留占位符以兼容自定义模板
   const toolsDescription = '';
   // C4：DSH 插件注册的提示词段（与工具 section 合并）
@@ -193,7 +202,8 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   const rulesSection = buildUnscopedRulesSection(getUnscopedRules(scanRules(selectedDir, pluginRoots.ruleDirs)));
 
   const placeholders: Record<string, string> = {
-    '{{TOOL_API_TYPES}}': toolApiTypes,
+    '{{TOOL_API_TYPES}}': toolApiTypesPlaceholder,
+    '{{TOOL_API_TYPES_SECTION}}': toolApiTypesSection,
     '{{TOOLS_LIST}}': toolsDescription,
     '{{TOOL_SECTIONS}}': promptSections,
     '{{PLATFORM_INFO}}': platformInfo,
@@ -215,7 +225,7 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
     combined += '\n\n---\n\n请继续你之前的工作';
   }
 
-  return { prompt: combined };
+  return { prompt: combined, ...(useToolApiAttachment ? { toolApiTypes } : {}) };
 }
 
 export { PROMPT_DIR, loadTemplate, buildPrompt };
