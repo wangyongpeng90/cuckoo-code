@@ -57,7 +57,7 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "@vitest/coverage-v8": "^5.0.1",
-    "electron": "^44.4.3",
+    "electron": "^45.2.3",
     "electron-builder": "^26.15.3",
     "eslint": "^10.11.0",
     "katex": "^0.18.9",
@@ -177,7 +177,7 @@
     "turndown": "^7.2.4"
   },
   "allowScripts": {
-    "electron@44.4.3": true,
+    "electron@45.2.3": true,
     "esbuild@0.28.2": true,
     "electron-winstaller@5.4.0": true,
     "protobufjs@7.6.6": true
