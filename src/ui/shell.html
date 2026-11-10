@@ -116714,6 +116714,7 @@ body {
   function UsageStats() {
     const chartRef = (0, import_react8.useRef)(null);
     const chartInst = (0, import_react8.useRef)(null);
+    const reqIdRef = (0, import_react8.useRef)(0);
     const [granularity, setGranularity] = (0, import_react8.useState)("day");
     const [loading, setLoading] = (0, import_react8.useState)(false);
     const [profiles, setProfiles] = (0, import_react8.useState)([]);
@@ -116743,21 +116744,62 @@ body {
     }, []);
     const loadData = (0, import_react8.useCallback)(async (g, pId, sTime, eTime) => {
       if (!api.getUsageStats) return;
+      const reqId = ++reqIdRef.current;
       setLoading(true);
       try {
         const startStr = sTime.replace("T", " ") + ":00";
         const endStr = eTime.replace("T", " ") + ":59";
         const res = await api.getUsageStats({ granularity: g, startTime: startStr, endTime: endStr, profileId: pId || null });
-        if (res && res.success && chartInst.current) {
-          const data = res.data || [];
-          const xData = data.map((d) => {
+        if (reqId !== reqIdRef.current) return;
+        if (!chartInst.current) return;
+        if (!res || !res.success) {
+          chartInst.current.clear();
+          return;
+        }
+        if (res.success) {
+          const rawData = res.data || [];
+          const startMs = new Date(startStr.replace(/-/g, "/")).getTime();
+          const endMs = new Date(endStr.replace(/-/g, "/")).getTime();
+          let stepMs = 864e5;
+          if (g === "hour") stepMs = 36e5;
+          else if (g === "minute") stepMs = 6e4;
+          const dataMap = /* @__PURE__ */ new Map();
+          rawData.forEach((d) => dataMap.set(d.time_label, d));
+          const fullData = [];
+          const pad2 = (n) => String(n).padStart(2, "0");
+          let count2 = 0;
+          const MAX_POINTS = 15e3;
+          for (let t = startMs; t <= endMs && count2 < MAX_POINTS; t += stepMs) {
+            count2++;
+            const d = new Date(t);
+            let label = "";
+            if (g === "day") {
+              label = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+            } else if (g === "hour") {
+              label = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}`;
+            } else {
+              label = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+            }
+            const row = dataMap.get(label) || { send_count: 0, reply_count: 0, diff_token: 0 };
+            fullData.push({
+              time_label: label,
+              send_count: row.send_count || 0,
+              reply_count: row.reply_count || 0,
+              diff_token: row.diff_token || 0
+            });
+          }
+          if (fullData.length === 0) {
+            chartInst.current.clear();
+            return;
+          }
+          const xData = fullData.map((d) => {
             if (g === "day") return d.time_label.slice(5);
-            if (g === "hour") return d.time_label.slice(11) + ":00";
-            return d.time_label.slice(11, 16);
+            if (g === "hour") return d.time_label.slice(5) + ":00";
+            return d.time_label.slice(5);
           });
-          const sendData = data.map((d) => d.send_count);
-          const replyData = data.map((d) => d.reply_count);
-          const tokenData = data.map((d) => d.diff_token);
+          const sendData = fullData.map((d) => d.send_count);
+          const replyData = fullData.map((d) => d.reply_count);
+          const tokenData = fullData.map((d) => d.diff_token);
           const cs = getComputedStyle(document.documentElement);
           const textColor = cs.getPropertyValue("--ck-text").trim() || "#333";
           const dimColor = cs.getPropertyValue("--ck-text-dim").trim() || "#666";
@@ -116777,7 +116819,7 @@ body {
               right: 10
             },
             grid: { left: "3%", right: "4%", bottom: "3%", top: "40px", containLabel: true },
-            xAxis: { type: "category", data: xData, axisLabel: { color: dimColor } },
+            xAxis: { type: "category", data: xData, axisLabel: { color: dimColor, hideOverlap: true } },
             yAxis: [
               { type: "value", axisLabel: { color: dimColor }, splitLine: { lineStyle: { color: borderColor } } },
               { type: "value", axisLabel: { color: dimColor }, splitLine: { show: false } }
@@ -116790,16 +116832,14 @@ body {
           });
         }
       } catch (_) {
+        if (reqId === reqIdRef.current) chartInst.current?.clear();
       } finally {
-        setLoading(false);
+        if (reqId === reqIdRef.current) setLoading(false);
       }
     }, []);
     (0, import_react8.useEffect)(() => {
       if (!chartRef.current) return;
-      if (!chartInst.current) {
-        chartInst.current = init2(chartRef.current);
-      }
-      loadData(granularity, selectedProfile, startTime, endTime);
+      chartInst.current = init2(chartRef.current);
       const handleResize = () => chartInst.current?.resize();
       window.addEventListener("resize", handleResize);
       return () => {
@@ -116807,6 +116847,9 @@ body {
         chartInst.current?.dispose();
         chartInst.current = null;
       };
+    }, []);
+    (0, import_react8.useEffect)(() => {
+      loadData(granularity, selectedProfile, startTime, endTime);
     }, [granularity, selectedProfile, startTime, endTime, loadData]);
     return (0, import_react8.createElement)(
       "div",

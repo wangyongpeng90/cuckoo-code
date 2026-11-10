@@ -52,6 +52,7 @@ function ToggleRow({ label, desc, checked, onChange }: { label: string; desc?: s
 function UsageStats() {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInst = useRef<any>(null);
+  const reqIdRef = useRef(0);
   const [granularity, setGranularity] = useState<'day'|'hour'|'minute'>('day');
   const [loading, setLoading] = useState(false);
   const [profiles, setProfiles] = useState<any[]>([]);
@@ -84,22 +85,70 @@ function UsageStats() {
 
   const loadData = useCallback(async (g: 'day'|'hour'|'minute', pId: string, sTime: string, eTime: string) => {
     if (!api.getUsageStats) return;
+    const reqId = ++reqIdRef.current;
     setLoading(true);
     try {
       const startStr = sTime.replace('T', ' ') + ':00';
       const endStr = eTime.replace('T', ' ') + ':59';
 
       const res = await api.getUsageStats({ granularity: g, startTime: startStr, endTime: endStr, profileId: pId || null });
-      if (res && res.success && chartInst.current) {
-        const data = res.data || [];
-        const xData = data.map((d: any) => {
+      // 竞态保护：只认最后一次请求的响应，过期响应直接丢弃
+      if (reqId !== reqIdRef.current) return;
+      if (!chartInst.current) return;
+      if (!res || !res.success) {
+        chartInst.current.clear(); // 查询失败也清空，避免残留旧数据
+        return;
+      }
+      if (res.success) {
+        const rawData = res.data || [];
+        // 前端补齐缺失的时间段，避免 category 轴把稀疏数据挤在一起
+        const startMs = new Date(startStr.replace(/-/g, '/')).getTime(); // 兼容各平台
+        const endMs = new Date(endStr.replace(/-/g, '/')).getTime();
+        let stepMs = 86400000;
+        if (g === 'hour') stepMs = 3600000;
+        else if (g === 'minute') stepMs = 60000;
+
+        const dataMap = new Map();
+        rawData.forEach((d: any) => dataMap.set(d.time_label, d));
+
+        const fullData: any[] = [];
+        const pad = (n: number) => String(n).padStart(2, '0');
+        let count = 0;
+        const MAX_POINTS = 15000; // 防卡死，最多 1.5 万个点
+
+        for (let t = startMs; t <= endMs && count < MAX_POINTS; t += stepMs) {
+          count++;
+          const d = new Date(t);
+          let label = '';
+          if (g === 'day') {
+            label = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+          } else if (g === 'hour') {
+            label = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}`;
+          } else {
+            label = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+          }
+          const row = dataMap.get(label) || { send_count: 0, reply_count: 0, diff_token: 0 };
+          fullData.push({
+            time_label: label,
+            send_count: row.send_count || 0,
+            reply_count: row.reply_count || 0,
+            diff_token: row.diff_token || 0
+          });
+        }
+
+        if (fullData.length === 0) {
+          chartInst.current.clear();
+          return;
+        }
+
+        const xData = fullData.map((d: any) => {
           if (g === 'day') return d.time_label.slice(5); // MM-DD
-          if (g === 'hour') return d.time_label.slice(11) + ':00'; // HH:00
-          return d.time_label.slice(11, 16); // HH:mm
+          if (g === 'hour') return d.time_label.slice(5) + ':00'; // MM-DD HH:00
+          return d.time_label.slice(5); // MM-DD HH:mm
         });
-        const sendData = data.map((d: any) => d.send_count);
-        const replyData = data.map((d: any) => d.reply_count);
-        const tokenData = data.map((d: any) => d.diff_token);
+        const sendData = fullData.map((d: any) => d.send_count);
+        const replyData = fullData.map((d: any) => d.reply_count);
+        const tokenData = fullData.map((d: any) => d.diff_token);
 
         const cs = getComputedStyle(document.documentElement);
         const textColor = cs.getPropertyValue('--ck-text').trim() || '#333';
@@ -121,7 +170,7 @@ function UsageStats() {
             right: 10
           },
           grid: { left: '3%', right: '4%', bottom: '3%', top: '40px', containLabel: true },
-          xAxis: { type: 'category', data: xData, axisLabel: { color: dimColor } },
+          xAxis: { type: 'category', data: xData, axisLabel: { color: dimColor, hideOverlap: true } },
           yAxis: [
             { type: 'value', axisLabel: { color: dimColor }, splitLine: { lineStyle: { color: borderColor } } },
             { type: 'value', axisLabel: { color: dimColor }, splitLine: { show: false } }
@@ -133,18 +182,17 @@ function UsageStats() {
           ]
         });
       }
-    } catch (_) { /* ignore */ } finally {
-      setLoading(false);
+    } catch (_) {
+      if (reqId === reqIdRef.current) chartInst.current?.clear();
+    } finally {
+      if (reqId === reqIdRef.current) setLoading(false);
     }
   }, []);
 
+  // 图表生命周期：只在挂载/卸载时初始化与销毁（不在筛选变化时重建）
   useEffect(() => {
     if (!chartRef.current) return;
-    if (!chartInst.current) {
-      chartInst.current = echarts.init(chartRef.current);
-    }
-    loadData(granularity, selectedProfile, startTime, endTime);
-    
+    chartInst.current = echarts.init(chartRef.current);
     const handleResize = () => chartInst.current?.resize();
     window.addEventListener('resize', handleResize);
     return () => {
@@ -152,6 +200,11 @@ function UsageStats() {
       chartInst.current?.dispose();
       chartInst.current = null;
     };
+  }, []);
+
+  // 数据加载：筛选条件变化时重新查询
+  useEffect(() => {
+    loadData(granularity, selectedProfile, startTime, endTime);
   }, [granularity, selectedProfile, startTime, endTime, loadData]);
 
   return createElement('div', { className: 'ck-card', style: { height: '500px', display: 'flex', flexDirection: 'column' } },
