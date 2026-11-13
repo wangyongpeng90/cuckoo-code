@@ -83,7 +83,7 @@ export async function pasteText(
   text: string,
   options: PasteOptions = {}
 ): Promise<PasteResult> {
-  const restoreDelayMs = options.restoreDelayMs ?? 16;
+  const restoreDelayMs = options.restoreDelayMs ?? 100;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const log = options.log ?? {
     info: (msg: string) => console.log(msg),
@@ -106,13 +106,10 @@ export async function pasteText(
   } finally {
     if (wrote) {
       try {
-        // Windows 系统可能会在末尾加不可见字符（如 \0），使用 trim 过滤后比对
-        if (clipboard.readText().trim() === text.trim()) {
-          restoreSnapshot(clipboard, backup);
-          log.info('[Cuckoo Code] 剪贴板借用占用 ' + (Date.now() - startedAt) + 'ms（已恢复原内容）');
-        } else {
-          log.info('[Cuckoo Code] 剪贴板已被用户更新，跳过恢复');
-        }
+        // 依靠全局串行锁保证在此期间没有其他 Cuckoo 窗口操作剪贴板。
+        // 只要写入过，就无条件恢复原内容，避免因跨平台编码差异（如换行符）导致污染剪贴板。
+        restoreSnapshot(clipboard, backup);
+        log.info('[Cuckoo Code] 剪贴板借用占用 ' + (Date.now() - startedAt) + 'ms（已无条件恢复原内容）');
       } catch (err: any) {
         log.error('[Cuckoo Code] 恢复剪贴板失败: ' + ((err && err.message) || err));
       }
