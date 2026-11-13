@@ -53,7 +53,18 @@ async function pasteViaClipboard(input: any, msg: string): Promise<boolean> {
     if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
       try { input.select(); } catch (_) { /* ignore */ }
     } else if (input.isContentEditable || input.getAttribute('contenteditable') === 'true') {
-      document.execCommand('selectAll', false, undefined);
+      try {
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(input);
+        if (selection) {
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+      } catch (err) {
+        // 降级方案
+        document.execCommand('selectAll', false, undefined);
+      }
     }
 
     // 优先走 bridge 暴露的 API（IPC 通道名在 preload 单点维护），无则直连
@@ -196,7 +207,7 @@ function emitMessageDelivered(text: string, tag?: string): void {
  * 站点在收到粘贴后可能还要做事：长文本转成附件、上传、重新启用发送按钮。
  * 给一段固定缓冲，避免"粘贴完立刻发"导致内容没带上或被吞。
  */
-const POST_PASTE_SETTLE_MS = 600;
+const POST_PASTE_SETTLE_MS = 2000;
 
 async function sendToChat(msg: string, tag?: string, fixedDelay?: number, afterSent?: () => void): Promise<boolean> {
   const input = findInputArea();
