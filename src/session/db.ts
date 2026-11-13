@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 // 当前数据库结构版本（每次改表结构 +1）
-const CURRENT_DB_VERSION = 3;
+const CURRENT_DB_VERSION = 4;
 
 // [261031-x7k9p2] AI 用量统计日志表
 const AI_USAGE_LOGS_DDL = `
@@ -24,6 +24,42 @@ const AI_USAGE_LOGS_DDL = `
 // [022] workspaces 表 DDL——启动时建表（和 sessions 一致）
 // 决策 9.5：持久化注册表。详见 docs/dsh-compat-decisions.md 9.5
 // 注：workspace-registry.ts 里也有同一 DDL 的兜底副本（供测试用 :memory: 场景）
+
+// [261109-cuko-api] Cuko API 配置表
+
+// [261109-cuko-api] Cuko 会话表
+const CUKO_SESSIONS_DDL = `
+  CREATE TABLE IF NOT EXISTS cuko_sessions (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    provider_session_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+`;
+
+// [261109-cuko-api] Cuko 消息表
+const CUKO_MESSAGES_DDL = `
+  CREATE TABLE IF NOT EXISTS cuko_messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    think TEXT,
+    usage_json TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(session_id) REFERENCES cuko_sessions(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_cuko_messages_session ON cuko_messages(session_id, created_at);
+`;
+
+const CUKO_CONFIG_DDL = `
+  CREATE TABLE IF NOT EXISTS cuko_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`;
+
 const WORKSPACES_DDL = `
   CREATE TABLE IF NOT EXISTS workspaces (
     id TEXT PRIMARY KEY,
@@ -45,72 +81,63 @@ function initDatabase(userDataDir: string): DatabaseSync {
   const dbPath = path.join(userDataDir, 'cuckoo.db');
   const db = new DatabaseSync(dbPath);
 
-  // 开启 WAL 模式（支持多窗口并发读写）
+  // 基础配置
   db.exec('PRAGMA journal_mode = WAL;');
-  // 开启外键约束
   db.exec('PRAGMA foreign_keys = ON;');
 
-  // 检查当前数据库版本
+  // 获取当前数据库版本
   const verRow = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  let dbVersion = verRow.user_version;
+  let currentVersion = verRow.user_version;
 
-  if (dbVersion === 0) {
-    // 全新安装：建最新表
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS meta (
-        key TEXT PRIMARY KEY,
-        value TEXT
-      );
-      CREATE TABLE IF NOT EXISTS sessions (
-        logic_id TEXT PRIMARY KEY,
-        web_id TEXT UNIQUE,
-        profile_id TEXT,
-        project_dir TEXT,
-        title TEXT,
-        pending_messages TEXT,
-        archived INTEGER DEFAULT 0,
-        superseded INTEGER DEFAULT 0,
-        parent_id TEXT,
-        kind TEXT,
-        agent_name TEXT,
-        created_at TEXT,
-        updated_at TEXT
-      );
-      ${WORKSPACES_DDL}
-      ${AI_USAGE_LOGS_DDL}
-    `);
-    dbVersion = CURRENT_DB_VERSION;
-    db.exec(`PRAGMA user_version = ${dbVersion};`);
-    
-    // 全新安装直接结束，不需要迁移老数据
-    return db;
+  // === 执行迁移 (Migration) ===
+  while (currentVersion < CURRENT_DB_VERSION) {
+    const nextVersion = currentVersion + 1;
+    db.exec('BEGIN TRANSACTION;');
+    try {
+      if (nextVersion === 1) {
+        // 初始版本：核心表
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
+          CREATE TABLE IF NOT EXISTS sessions (
+            logic_id TEXT PRIMARY KEY, web_id TEXT UNIQUE, profile_id TEXT, project_dir TEXT,
+            title TEXT, pending_messages TEXT, archived INTEGER DEFAULT 0, superseded INTEGER DEFAULT 0,
+            parent_id TEXT, kind TEXT, agent_name TEXT, created_at TEXT, updated_at TEXT
+          );
+          ${WORKSPACES_DDL}
+          ${AI_USAGE_LOGS_DDL}
+        `);
+      } else if (nextVersion === 2) {
+        // 版本 2 跳过（历史遗留）
+      } else if (nextVersion === 3) {
+        // 版本 3 新增 workspaces 和 usage_logs（为了兼容老代码，确保建表）
+        db.exec(WORKSPACES_DDL);
+        db.exec(AI_USAGE_LOGS_DDL);
+      } else if (nextVersion === 4) {
+        // 版本 4 新增 Cuko API 相关表
+        db.exec(CUKO_CONFIG_DDL);
+        db.exec(CUKO_SESSIONS_DDL);
+        db.exec(CUKO_MESSAGES_DDL);
+      }
+      
+      db.exec(`PRAGMA user_version = ${nextVersion};`);
+      db.exec('COMMIT;');
+      currentVersion = nextVersion;
+      console.log(`[db] 迁移至版本 ${nextVersion}`);
+    } catch (e) {
+      db.exec('ROLLBACK;');
+      console.error(`[db] 迁移至版本 ${nextVersion} 失败:`, e);
+      throw e;
+    }
   }
 
-  // 如果有历史版本，在此处按顺序写 Migration 逻辑
-  // 版本 2 不再需要 system_prompt_sent，所以不升级，直接跳过。
-  if (dbVersion < 2) {
-    dbVersion = 2;
-  }
-
-  // 最后确保版本号是最新的
-  if (dbVersion < CURRENT_DB_VERSION) {
-    db.exec(`PRAGMA user_version = ${CURRENT_DB_VERSION};`);
-  }
-
-  // [022] 老库补建 workspaces 表（幂等，已在全新安装分支建过则无副作用）
-  // 决策 9.5：workspaces 表随会话表一起在启动时建好，避免"谁用谁建"的补丁感
-  db.exec(WORKSPACES_DDL);
-
-  // [261031-x7k9p2] 老库补建 ai_usage_logs 表
-  db.exec(AI_USAGE_LOGS_DDL);
+  // 强制兜底：不管历史版本号是多少，确保最新的 Cuko 表一定存在
+  db.exec(CUKO_CONFIG_DDL);
+  db.exec(CUKO_SESSIONS_DDL);
+  db.exec(CUKO_MESSAGES_DDL);
 
   return db;
 }
 
-/**
- * 从旧的 JSON 文件迁移数据到 SQLite。
- * 只读，绝不修改或删除用户的原始 JSON 文件。
- */
 function migrateLegacyData(db: DatabaseSync, userDataDir: string): void {
   // 0. 检查是否已经迁移过
   try {

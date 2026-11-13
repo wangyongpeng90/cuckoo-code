@@ -61,12 +61,16 @@ function registerSettingsIpc(): void {
 
   // 读设置
   ipcMain.handle('get-settings', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx) return { success: true, data: {} }; // Cuko 独立窗口没有 AI 页面，返回空设置
     const r = await requestFromAiPage(event, 'cuckoo-get-settings');
     return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
   });
 
   // 保存设置
   ipcMain.handle('save-settings', async (event: any, { data }: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx) return { success: true }; // Cuko 独立窗口，设置直接跳过
     const r = await requestFromAiPage(event, 'cuckoo-save-settings', data);
     return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
   });

@@ -1,7 +1,275 @@
-import { contextBridge, ipcRenderer } from 'electron';
+/**
+ * 地址栏壳页面 preload（与 AI 页面 preload 分离）
+ * 暴露 window.shellAPI：导航控制 + 地址变化订阅。不能有顶层 await（P3a 教训）。
+ */
+import { createRequire } from 'node:module';
 
-contextBridge.exposeInMainWorld('cukoAPI', {
-  // 预留给未来与主进程通信，比如读取/保存 Endpoint 配置
+const require = createRequire(import.meta.url);
+const { contextBridge, ipcRenderer } = require('electron');
+
+// 平台（主进程经 additionalArguments 传入）：mac 上保留系统红绿灯、隐藏自绘窗口按钮
+const platformArg = (process.argv || []).find((a) => a.startsWith('--cuckoo-platform='));
+const platform = platformArg ? platformArg.slice('--cuckoo-platform='.length) : process.platform;
+
+const shellAPI = {
+  openCukoWindow: () => ipcRenderer.invoke('shell-open-cuko-window'),
+  platform,
+  selectProjectDir: () => ipcRenderer.invoke('select-project-dir'),
+  cancelInitPrompt: () => ipcRenderer.send('cancel-init-prompt'),
+  sendNormalMessage: (text: string) => ipcRenderer.invoke('send-normal-message', { text }),
+  sendInitMessage: (text: string, projectDir: string) => ipcRenderer.invoke('send-init-message', { text, projectDir }),
+  onShowInitPrompt: (cb: (data?: any) => void) => {
+    ipcRenderer.on('shell-show-init-prompt', (_e: any, data?: any) => cb(data));
+  },
+  navigate: (url: string) => ipcRenderer.invoke('shell-navigate', { url }),
+  back: () => ipcRenderer.invoke('shell-back'),
+  forward: () => ipcRenderer.invoke('shell-forward'),
+  reload: () => ipcRenderer.invoke('shell-reload'),
+  home: () => ipcRenderer.invoke('shell-home'),
+  onUrlUpdated: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-url-updated', (_e: any, data: any) => cb(data));
+  },
+  onTokenUpdated: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-token-updated', (_e: any, data: any) => cb(data));
+  },
+  onTpsUpdated: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-tps-updated', (_e: any, data: any) => cb(data));
+  },
+  onTotalUpdated: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-total-updated', (_e: any, data: any) => cb(data));
+  },
+  /** 拉取最近一次 token / tps（页面挂载时用） */
+  getTokenUsage: () => ipcRenderer.invoke('get-token-usage'),
+  getSystemTotal: () => ipcRenderer.invoke('get-system-total'),
+  getProjectDir: () => ipcRenderer.invoke('get-project-dir'),
+  // 点击"项目目录" → 弹目录选择框 + 重新初始化（复用 init-project 通道）
+  initProject: () => ipcRenderer.invoke('init-project', {}),
+  onProjectDir: (cb: (dir: string | null) => void) => {
+    ipcRenderer.on('shell-project-dir', (_e: any, dir: any) => cb(dir));
+  },
+  toggleSidebar: (width: number) => ipcRenderer.invoke('shell-toggle-sidebar', { width }),
+  // 隐藏/显示 AI 视图（壳页面弹窗需要盖过 AI 区域时用）
+  setAiViewVisible: (visible: boolean) => ipcRenderer.invoke('shell-set-ai-view-visible', { visible }),
+  // 侧边栏拖拽调宽（AI 视图会临时移出，鼠标事件全落在壳页面；主进程轮询算宽度后推回）
+  startSidebarDrag: () => ipcRenderer.send('shell-sidebar-drag-start'),
+  endSidebarDrag: () => ipcRenderer.send('shell-sidebar-drag-end'),
+  onSidebarDrag: (cb: (width: number) => void) => {
+    ipcRenderer.on('shell-sidebar-drag', (_e: any, width: any) => cb(width));
+  },
+  // ========== 侧栏「对话」分页：读网页会话列表 + 导航 ==========
+  listWebSessions: () => ipcRenderer.invoke('web-list-sessions'),
+  navigateWebSession: (url: string) => ipcRenderer.invoke('web-navigate-session', { url }),
+  newWebConversation: () => ipcRenderer.invoke('web-new-conversation'),
+  onWebUrlChanged: (cb: () => void) => { ipcRenderer.on('shell-web-url-changed', () => cb()); },
+  onHarnessBusy: (cb: (busy: boolean) => void) => { ipcRenderer.on('shell-harness-busy', (_e: any, d: any) => cb(!!(d && d.busy))); },
+  // 纯净对话模式（Harness）切换 + 状态订阅
+  toggleHarness: () => ipcRenderer.invoke('shell-toggle-harness'),
+  onHarnessMode: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-harness-mode', (_e: any, data: any) => cb(data));
+  },
+  // 插件界面挂载（主进程 → 壳页面）
+  onPluginShellMount: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-plugin-mount', (_e: any, data: any) => cb(data));
+  },
+  // 拉取"已缓存的插件挂载"（壳页面就绪后补渲染）
+  listPluginShellMounts: () => ipcRenderer.invoke('plugin-shell-list'),
+  // 插件注入壳页面 CSS
+  onPluginShellStyle: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-plugin-style', (_e: any, data: any) => cb(data));
+  },
+  onPluginShellStyleRemove: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-plugin-style-remove', (_e: any, data: any) => cb(data));
+  },
+  listPluginShellStyles: () => ipcRenderer.invoke('plugin-shell-style-list'),
+  // 插件背景图（基座对齐）
+  onShellBackground: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-background', (_e: any, data: any) => cb(data));
+  },
+  getShellBackground: () => ipcRenderer.invoke('plugin-shell-background-list'),
+  // 命令（插件命令，工具栏按钮等触发）
+  commandInvoke: (commandId: string) => ipcRenderer.invoke('plugin-command-invoke', { commandId }),
+  commandList: () => ipcRenderer.invoke('plugin-command-list'),
+  // 通用槽位
+  // P2：DSH remote.$on 事件（plugin-manager/changed 等）
+  onRemoteEvent: (cb: (evt: string, data: any) => void) => {
+    ipcRenderer.on('plugin-manager-changed', (_e: any, d: any) => cb('plugin-manager/changed', d));
+    ipcRenderer.on('plugin-manager-install-log', (_e: any, d: any) => cb('plugin-manager/install-log', d));
+    ipcRenderer.on('plugin-manager-install-state', (_e: any, d: any) => cb('plugin-manager/install-state', d));
+  },
+  // HMR：主进程通知壳页面重载 DSH client（插件启用/禁用后）
+  onCuckooReload: (cb: (data: any) => void) => {
+    ipcRenderer.on('cuckoo-reload-dsh-clients', (_e: any, d: any) => cb(d));
+  },
+  onPluginSlotRegister: (cb: (m: any) => void) => { ipcRenderer.on('shell-slot-register', (_e: any, m: any) => cb(m)); },
+  onPluginSlotUnregister: (cb: (m: any) => void) => { ipcRenderer.on('shell-slot-unregister', (_e: any, m: any) => cb(m)); },
+  listPluginSlots: () => ipcRenderer.invoke('plugin-slot-list'),
+  // 插件本地 HTTP 服务端口（壳页面 fetch /api/* 需要）
+  webServerInfo: () => ipcRenderer.invoke('plugin-webserver-info'),
+  webRoutes: () => ipcRenderer.invoke('plugin-web-routes'),
+  // 壳页面令牌（fetch 时带 X-Cuckoo-Shell 头，让插件的同源检查放行）
+  getShellToken: () => ipcRenderer.invoke('shell-token'),
+  // 插件配置
+  pluginConfigGet: (pluginId: string) => ipcRenderer.invoke('plugin-config-get', { pluginId }),
+  pluginConfigSet: (pluginId: string, values: any) => ipcRenderer.invoke('plugin-config-set', { pluginId, values }),
+  // 壳页面上报真实可视尺寸（供主进程精确布局 WebContentsView，避免菜单栏高度误差）
+  reportShellSize: (w: number, h: number) => ipcRenderer.send('shell-report-size', { w, h }),
+  // ========== 窗口组 ==========
+  wgList: () => ipcRenderer.invoke('wg-list'),
+  wgCreate: (name?: string) => ipcRenderer.invoke('wg-create', { name }),
+  wgAddWindow: (groupId: string, windowId: string) => ipcRenderer.invoke('wg-add-window', { groupId, windowId }),
+  wgRemoveWindow: (groupId: string, windowId: string) => ipcRenderer.invoke('wg-remove-window', { groupId, windowId }),
+  wgRename: (groupId: string, name: string) => ipcRenderer.invoke('wg-rename', { groupId, name }),
+  wgDelete: (groupId: string) => ipcRenderer.invoke('wg-delete', { groupId }),
+  wgSwitch: (groupId: string) => ipcRenderer.invoke('wg-switch', { groupId }),
+  // ========== 窗口管理 ==========
+  listProfiles: () => ipcRenderer.invoke('list-profiles'),
+  listProviders: () => ipcRenderer.invoke('list-providers'),
+  createProfileWindow: (providerId?: string) => ipcRenderer.invoke('create-profile-window', { providerId }),
+  openProfileWindow: (profileId: string) => ipcRenderer.invoke('open-profile-window', { profileId }),
+  deleteProfileWindow: (profileId: string) => ipcRenderer.invoke('delete-profile', { profileId }),
+  setProfileAutoOpen: (profileId: string, autoOpen: boolean) => ipcRenderer.invoke('set-profile-auto-open', { profileId, autoOpen }),
+  // ========== 会话（侧边栏「工作区」页）==========
+  listAllSessions: () => ipcRenderer.invoke('list-all-sessions'),
+  navigateSession: (sessionId: string) => ipcRenderer.invoke('navigate-session', { sessionId }),
+  setSessionArchived: (sessionId: string, archived: boolean) => ipcRenderer.invoke('set-session-archived', { sessionId, archived }),
+  getDirInfo: (dir: string) => ipcRenderer.invoke('get-dir-info', { dir }),
+  // 项目文件树（只读浏览）
+  listProjectTree: () => ipcRenderer.invoke('list-project-tree'),
+  readProjectFile: (relPath: string) => ipcRenderer.invoke('read-project-file', { relPath }),
+  openFileExternal: (relPath: string) => ipcRenderer.invoke('open-project-file-external', { relPath }),
+  setProjectArchived: (dir: string, archived: boolean) => ipcRenderer.invoke('set-project-archived', { dir, archived }),
+  setSessionTitle: (sessionId: string, title: string) => ipcRenderer.invoke('set-session-title', { sessionId, title }),
+  newConversationForProject: (projectDir: string) => ipcRenderer.invoke('new-conversation-for-project', { projectDir }),
+  // ========== 快捷提示词 ==========
+  listSnippets: () => ipcRenderer.invoke('list-snippets'),
+  saveSnippets: (snippets: any) => ipcRenderer.invoke('save-snippets', { snippets }),
+  triggerSnippet: (content: string, autoSend: boolean) => ipcRenderer.invoke('trigger-snippet', { content, autoSend }),
+  onSnippetsChanged: (cb: () => void) => {
+    ipcRenderer.on('shell-snippets-changed', () => cb());
+  },
+  onPlatformMode: (cb: (data: any) => void) => {
+    ipcRenderer.on('shell-platform-mode', (_e: any, data: any) => cb(data));
+  },
+  onSessionsChanged: (cb: () => void) => {
+    ipcRenderer.on('shell-sessions-changed', () => cb());
+  },
+  // ========== 自绘标题栏：窗口控制 ==========
+  windowMinimize: () => ipcRenderer.invoke('shell-window-minimize'),
+  windowMaximize: () => ipcRenderer.invoke('shell-window-maximize'),
+  windowClose: () => ipcRenderer.invoke('shell-window-close'),
+  windowIsMaximized: () => ipcRenderer.invoke('shell-window-is-maximized'),
+  // ========== 主题 ==========
+  themeGet: () => ipcRenderer.invoke('theme-get'),
+  themeSet: (id: string) => ipcRenderer.invoke('theme-set', { id }),
+  themeList: () => ipcRenderer.invoke('theme-list'),
+  themeSubscribe: () => ipcRenderer.invoke('theme-subscribe'),
+  onThemeChanged: (cb: (snapshot: any) => void) => {
+    ipcRenderer.on('theme-changed', (_e: any, snap: any) => cb(snap));
+  },
+  // ========== 技能 ==========
+  listSkills: () => ipcRenderer.invoke('list-skills'),
+  // ========== 子代理 ==========
+  listAgents: () => ipcRenderer.invoke('list-agents'),
+  createAgentFile: (name: string, scope: string) => ipcRenderer.invoke('create-agent-file', { name, scope }),
+  openAgentFile: (agentPath: string) => ipcRenderer.invoke('open-agent-file', { agentPath }),
+  renameAgent: (agentPath: string, newName: string) => ipcRenderer.invoke('rename-agent', { agentPath, newName }),
+  deleteAgentFile: (agentPath: string) => ipcRenderer.invoke('delete-agent-file', { agentPath }),
+  // ========== MCP ==========
+  listMcpServers: () => ipcRenderer.invoke('list-mcp-servers', {}),
+  enableMcpServer: (name: string) => ipcRenderer.invoke('enable-mcp-server', { name }),
+  disableMcpServer: (name: string) => ipcRenderer.invoke('disable-mcp-server', { name }),
+  appendSnippet: (text: string) => ipcRenderer.invoke('append-to-input', { text }),
+  // ========== 插件 ==========
+  // 市场列表（topic:cuckoo-plugin；force=true 跳过本地缓存）。
+  // 返回 { items, installed }，installed 为 repo → 已安装摘要（用于隐藏安装按钮 / 显示更新）
+  pluginMarketList: (opts?: any) => ipcRenderer.invoke('plugin-market-list', opts || {}),
+  // 远端 plugin.json（版本 / 最低应用版本）。搜索接口不返回这些，需单独拉取
+  pluginMarketRemote: (targets: any) => ipcRenderer.invoke('plugin-market-remote', { targets }),
+  // 安装 / 更新：upgrade=true 时覆盖已安装的同 id 插件
+  pluginInstall: (repo: string, branch: string, upgrade: boolean) =>
+    ipcRenderer.invoke('plugin-install', { repo, branch, upgrade }),
+  pluginUninstall: (id: string) => ipcRenderer.invoke('plugin-uninstall', { id }),
+  listInstalledPlugins: () => ipcRenderer.invoke('plugin-list-installed'),
+  // 启用 / 禁用开关（插件总开关）：开启后技能/代理/规则/MCP/可执行内容全部生效
+  pluginSetEnabled: (id: string, enabled: boolean) =>
+    ipcRenderer.invoke('plugin-set-enabled', { id, enabled }),
+  pluginOpenDir: () => ipcRenderer.invoke('plugin-open-dir'),
+  // ===== Cuckoo 插件（DSH 兼容）=====
+  cuckooPluginList: () => ipcRenderer.invoke('cuckoo-plugin-list'),
+  cuckooPluginInstall: (pkgName: string) => ipcRenderer.invoke('cuckoo-plugin-install', { pkgName }),
+  /** DSH 插件 client 入口源码 */
+  cuckooPluginClientSources: () => ipcRenderer.invoke('cuckoo-plugin-client-sources'),
+  cuckooPluginUninstall: (id: string) => ipcRenderer.invoke('cuckoo-plugin-uninstall', { id }),
+  cuckooPluginToggle: (id: string, enabled: boolean) => ipcRenderer.invoke('cuckoo-plugin-toggle', { id, enabled }),
+  cuckooPluginOpenDir: () => ipcRenderer.invoke('cuckoo-plugin-open-dir'),
+  // DSH plugin-manager RPC（对齐 remote.pluginManager / remote.pluginInventory）
+  pluginManagerListBundles: () => ipcRenderer.invoke('plugin-manager-list-bundles'),
+  pluginManagerListPlugins: () => ipcRenderer.invoke('plugin-manager-list-plugins'),
+  pluginManagerSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('plugin-manager-set-enabled', { id, enabled }),
+  pluginManagerRemoveBundle: (name: string) => ipcRenderer.invoke('plugin-manager-remove-bundle', { name }),
+  pluginManagerInstallBundle: (spec: string, opts?: any) => ipcRenderer.invoke('plugin-manager-install-bundle', { spec, opts }),
+  pluginManagerInspect: (spec: string) => ipcRenderer.invoke('plugin-manager-inspect', { spec }),
+  pluginManagerCancelInstall: () => ipcRenderer.invoke('plugin-manager-cancel-install'),
+  pluginInventoryList: () => ipcRenderer.invoke('plugin-inventory-list'),
+  // ========== 关于 ==========
+  getAppInfo: () => ipcRenderer.invoke('get-app-info'),
+  checkUpdate: () => ipcRenderer.invoke('check-update'),
+  getAssetUrl: (rel: string) => ipcRenderer.invoke('get-asset-url', { rel }),
+  openExternal: (url: string) => ipcRenderer.invoke('open-external', { url }),
+  openFeishuSetup: () => ipcRenderer.invoke('open-feishu-setup'),
+  // ========== 飞书同步 ==========
+  getFeishuConfig: () => ipcRenderer.invoke('feishu-get-config'),
+  saveFeishuConfig: (data: any) => ipcRenderer.invoke('feishu-save-config', { data }),
+  reconnectFeishu: () => ipcRenderer.invoke('feishu-reconnect'),
+  disconnectFeishu: () => ipcRenderer.invoke('feishu-disconnect'),
+  listFeishuChats: () => ipcRenderer.invoke('feishu-list-chats'),
+  getFeishuBinding: () => ipcRenderer.invoke('feishu-get-binding'),
+  bindFeishuChat: (chatId: string, chatName: string) => ipcRenderer.invoke('feishu-bind-chat', { chatId, chatName }),
+  // ========== 自动压缩 ==========
+  getAutoCompact: () => ipcRenderer.invoke('get-autocompact'),
+  saveAutoCompact: (data: any) => ipcRenderer.invoke('save-autocompact', { data }),
+  triggerCompact: () => ipcRenderer.invoke('trigger-compact'),
+  // ========== 记忆 ==========
+
+  // ========== 设置 ==========
+  // [261101-ym9l98] 跨窗口通用设置（主进程内存 + DB；与历史 localStorage 设置并存）
+  getSharedSettings: () => ipcRenderer.invoke('get-shared-settings'),
+  saveSharedSettings: (data: any) => ipcRenderer.invoke('save-shared-settings', { data }),
+  resetSharedSettings: (keys: any) => ipcRenderer.invoke('reset-shared-settings', { keys }),
+  onSharedSettingsChanged: (cb: (payload: any) => void) => {
+    ipcRenderer.on('cuckoo-shared-settings-changed', (_e: any, payload: any) => cb(payload));
+  },
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  // [261105-uw877b] 系统提示词模板（按平台）
+  getPromptTemplate: (providerId: string) => ipcRenderer.invoke('get-prompt-template', { providerId }),
+  getUsageStats: (params: any) => ipcRenderer.invoke('get-usage-stats', params),
+  saveSettings: (data: any) => ipcRenderer.invoke('save-settings', { data }),
+  resetSettings: () => ipcRenderer.invoke('reset-settings'),
+  // ========== 日志（仅打包版生效）==========
+  getLogInfo: () => ipcRenderer.invoke('get-log-info'),
+  setLogEnabled: (enabled: boolean) => ipcRenderer.invoke('set-log-enabled', { enabled }),
+  deleteLogs: () => ipcRenderer.invoke('delete-logs'),
+  openLogDir: () => ipcRenderer.invoke('open-log-dir'),
+};
+
+try {
+  contextBridge.exposeInMainWorld('shellAPI', shellAPI);
+const cukoAPI = {
   getConfig: () => ipcRenderer.invoke('cuko:get-config'),
   saveConfig: (config: any) => ipcRenderer.invoke('cuko:save-config', config),
-});
+  listSessions: () => ipcRenderer.invoke('cuko:sessions:list'),
+  createSession: (sessionId: string) => ipcRenderer.invoke('cuko:sessions:create', sessionId),
+  renameSession: (sessionId: string, title: string) => ipcRenderer.invoke('cuko:sessions:rename', { sessionId, title }),
+  deleteSession: (sessionId: string) => ipcRenderer.invoke('cuko:sessions:delete', sessionId),
+  updateProviderId: (sessionId: string, providerId: string) => ipcRenderer.invoke('cuko:sessions:update-provider', { sessionId, providerId }),
+  getMessages: (sessionId: string) => ipcRenderer.invoke('cuko:messages:get', sessionId),
+  saveMessage: (msg: any) => ipcRenderer.invoke('cuko:messages:save', msg),
+};
+
+contextBridge.exposeInMainWorld('cukoAPI', cukoAPI);
+} catch (err) {
+  console.error('[Cuckoo Shell] contextBridge 失败:', err);
+}
+(window as any).shellAPI = shellAPI;
+
+

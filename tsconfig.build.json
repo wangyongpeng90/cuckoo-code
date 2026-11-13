@@ -21,6 +21,10 @@
     ".cuckooCode",
     ".playwright-mcp",
     "src/providers/hooks",
-    "src/ui/shell"
+    "src/ui/shell",
+    "src/components",
+    "src/hooks",
+    "src/lib",
+    "src/ui/cuko"
   ]
 }

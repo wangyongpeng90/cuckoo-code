@@ -72,3 +72,4 @@ src/ui/vendor/monaco/
 npm-install.log
 test/session/*.tmp
 src/ui/cuko/built.html
+src/ui/cuko/built.css

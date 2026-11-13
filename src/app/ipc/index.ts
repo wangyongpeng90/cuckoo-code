@@ -21,6 +21,7 @@ import { registerThemeIpc } from './theme.js';
 import { registerWindowGroupsIpc, onSwitchShareResult } from './window-groups.js';
 import { registerUsageIpc } from './usage.js';
 import { registerPromptTemplateIpc } from './prompt-template.js';
+import { registerCukoIpc } from './cuko.js';
 
 import { createRequire } from 'node:module';
 
@@ -49,6 +50,7 @@ function registerIpcHandlers(): void {
   registerWindowGroupsIpc();
   registerUsageIpc();
   registerPromptTemplateIpc();
+  registerCukoIpc();
 }
 
 export { registerIpcHandlers };

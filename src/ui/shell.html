@@ -60692,9 +60692,9 @@ body {
   function getCoordSysInfoBySeries(seriesModel) {
     var coordSysName = seriesModel.get("coordinateSystem");
     var result = new SeriesModelCoordSysInfo(coordSysName);
-    var fetch = fetchers[coordSysName];
-    if (fetch) {
-      fetch(seriesModel, result, result.axisMap, result.categoryAxisMap);
+    var fetch2 = fetchers[coordSysName];
+    if (fetch2) {
+      fetch2(seriesModel, result, result.axisMap, result.categoryAxisMap);
       return result;
     }
   }
@@ -116196,7 +116196,87 @@ body {
     const [data, setData] = (0, import_react8.useState)(null);
     const [themes, setThemes] = (0, import_react8.useState)(THEME_BUILTINS);
     const [theme2, setTheme] = (0, import_react8.useState)("system");
-    const [active, setActive] = (0, import_react8.useState)("appearance");
+    const [active, setActive] = (0, import_react8.useState)(window.cukoAPI ? "cuko-api" : "appearance");
+    const [cukoConfig, setCukoConfig] = (0, import_react8.useState)({ url: "http://127.0.0.1:3000", token: "", model: "" });
+    const [cukoModels, setCukoModels] = (0, import_react8.useState)([]);
+    const [cukoLoading, setCukoLoading] = (0, import_react8.useState)(false);
+    const [cukoErr, setCukoErr] = (0, import_react8.useState)("");
+    const [cukoSavedTip, setCukoSavedTip] = (0, import_react8.useState)("");
+    (0, import_react8.useEffect)(() => {
+      if (window.cukoAPI) {
+        window.cukoAPI.getConfig().then((raw) => {
+          setCukoConfig({
+            url: raw.url || "http://127.0.0.1:3000",
+            token: raw.token || "",
+            model: raw.model || ""
+          });
+        }).catch(console.error);
+      }
+    }, []);
+    const saveCukoConfig = async () => {
+      if (window.cukoAPI) {
+        await window.cukoAPI.saveConfig(cukoConfig);
+        setCukoSavedTip("\u5DF2\u4FDD\u5B58");
+        setTimeout(() => setCukoSavedTip(""), 2e3);
+      }
+    };
+    const fetchCukoModels = async () => {
+      setCukoLoading(true);
+      setCukoErr("");
+      try {
+        const headers = { Accept: "application/json" };
+        if (cukoConfig.token) headers.Authorization = "Bearer " + cukoConfig.token;
+        const res = await fetch(cukoConfig.url.replace(/\/+$/, "") + "/v1/models", { headers });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const json = await res.json();
+        if (!json.data || !Array.isArray(json.data)) throw new Error("\u8FD4\u56DE\u683C\u5F0F\u4E0D\u6B63\u786E");
+        setCukoModels(json.data);
+        if (json.data.length > 0 && !cukoConfig.model) setCukoConfig((prev) => ({ ...prev, model: json.data[0].id }));
+      } catch (e2) {
+        setCukoErr(e2.message || "\u83B7\u53D6\u5931\u8D25");
+      } finally {
+        setCukoLoading(false);
+      }
+    };
+    const cukoApiSection = (0, import_react8.createElement)(
+      "div",
+      { className: "ck-card" },
+      (0, import_react8.createElement)(
+        SettingRow,
+        { label: "\u4E2D\u8F6C\u5730\u5740", desc: "Cuko API \u670D\u52A1\u5730\u5740" },
+        (0, import_react8.createElement)("input", { className: "ck-set-input", value: cukoConfig.url, onChange: (e2) => setCukoConfig({ ...cukoConfig, url: e2.target.value }) })
+      ),
+      (0, import_react8.createElement)(
+        SettingRow,
+        { label: "Token", desc: "\u53EF\u9009\uFF0C\u5982\u679C\u5728\u6865\u63A5\u8F6F\u4EF6\u4E2D\u914D\u7F6E\u4E86 Token \u5219\u5FC5\u586B" },
+        (0, import_react8.createElement)("input", { className: "ck-set-input", value: cukoConfig.token, onChange: (e2) => setCukoConfig({ ...cukoConfig, token: e2.target.value }) })
+      ),
+      (0, import_react8.createElement)(
+        SettingRow,
+        { label: "\u6A21\u578B", desc: "\u6307\u5B9A\u8981\u4F7F\u7528\u7684\u6A21\u578B" },
+        (0, import_react8.createElement)(
+          "div",
+          { style: { display: "flex", gap: 8, alignItems: "center" } },
+          cukoModels.length > 0 ? (0, import_react8.createElement)(Select, {
+            value: cukoConfig.model,
+            options: cukoModels.map((m2) => ({ value: m2.id, label: m2.name || m2.id })),
+            onChange: (v) => setCukoConfig({ ...cukoConfig, model: v })
+          }) : (0, import_react8.createElement)("input", { className: "ck-set-input", value: cukoConfig.model, placeholder: "\u624B\u52A8\u8F93\u5165\u6A21\u578B ID", onChange: (e2) => setCukoConfig({ ...cukoConfig, model: e2.target.value }) }),
+          (0, import_react8.createElement)(
+            "button",
+            { className: "ck-btn ck-btn-ghost", onClick: fetchCukoModels, disabled: cukoLoading },
+            cukoLoading ? "\u83B7\u53D6\u4E2D..." : "\u83B7\u53D6\u53EF\u7528\u6A21\u578B"
+          )
+        )
+      ),
+      cukoErr ? (0, import_react8.createElement)("div", { style: { color: "var(--ck-danger)", fontSize: 12, marginTop: 8 } }, cukoErr) : null,
+      (0, import_react8.createElement)(
+        "div",
+        { style: { marginTop: 16, display: "flex", alignItems: "center", gap: 12 } },
+        (0, import_react8.createElement)("button", { className: "ck-btn ck-btn-primary", onClick: saveCukoConfig }, "\u4FDD\u5B58 Cuko \u914D\u7F6E"),
+        cukoSavedTip ? (0, import_react8.createElement)("span", { style: { color: "var(--ck-primary)", fontSize: 12 } }, cukoSavedTip) : null
+      )
+    );
     const pluginSections = useSlot(SETTINGS_SLOT);
     const saveTimer = (0, import_react8.useRef)(null);
     const dirtyRef = (0, import_react8.useRef)(false);
@@ -116754,6 +116834,8 @@ body {
       )
     );
     const NAV = [
+      ["cuko-api", "Cuko API"],
+      // 针对 Cuko 独立窗口的模型配置
       ["appearance", "\u5916\u89C2"],
       ["system-prompt", "\u7CFB\u7EDF\u63D0\u793A\u8BCD"],
       // [261105-uw877b]
@@ -116782,7 +116864,8 @@ body {
       if (item) pageTitle = specLabel(item.spec, item.id);
     }
     let content = null;
-    if (loading) content = (0, import_react8.createElement)("div", { className: "ck-list-empty" }, "\u52A0\u8F7D\u4E2D\u2026");
+    if (loading && active !== "cuko-api") content = (0, import_react8.createElement)("div", { className: "ck-list-empty" }, "\u52A0\u8F7D\u4E2D\u2026");
+    else if (active === "cuko-api") content = cukoApiSection;
     else if (active === "appearance") content = appearance;
     else if (active === "system-prompt") content = systemPrompt;
     else if (active === "retry") content = (0, import_react8.createElement)("div", null, retry, continuePrompt);

@@ -31,6 +31,10 @@
     "wyp",
     ".cuckooCode",
     ".playwright-mcp",
-    "src/providers/hooks"
+    "src/providers/hooks",
+    "src/components",
+    "src/hooks",
+    "src/lib",
+    "src/ui/cuko"
   ]
 }
