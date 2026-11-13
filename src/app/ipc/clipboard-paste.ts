@@ -44,45 +44,17 @@ export interface PasteResult {
   error?: string;
 }
 
-/** 读取剪贴板全格式快照（text/html/rtf/image/bookmark） */
+/** 读取剪贴板快照（仅保留纯文本，避免 Electron 45 复杂格式写入报错） */
 export function readSnapshot(clipboard: ClipboardLike): ClipboardSnapshot {
   return {
     text: clipboard.readText(),
-    html: clipboard.readHTML ? clipboard.readHTML() : '',
-    rtf: clipboard.readRTF ? clipboard.readRTF() : '',
-    image: clipboard.readImage ? clipboard.readImage() : null,
-    bookmark: clipboard.readBookmark ? clipboard.readBookmark() : null,
-  };
+  } as ClipboardSnapshot;
 }
 
 /** 把快照写回剪贴板；全空则 clear() */
 export function restoreSnapshot(clipboard: ClipboardLike, snapshot: ClipboardSnapshot): void {
-  const item: any = {};
-  if (snapshot.text) item.text = snapshot.text;
-  if (snapshot.html) item.html = snapshot.html;
-  if (snapshot.rtf) item.rtf = snapshot.rtf;
-  if (snapshot.image && typeof snapshot.image.isEmpty === 'function' && !snapshot.image.isEmpty()) {
-    item.image = snapshot.image;
-  }
-  if (snapshot.bookmark && (snapshot.bookmark.url || snapshot.bookmark.title)) {
-    item.bookmark = snapshot.bookmark.url || snapshot.bookmark.title;
-  }
-  if (Object.keys(item).length) {
-    try {
-      clipboard.write(item);
-    } catch (err) {
-      // Electron 45 在对多格式（特别是 bookmark/image）写入时校验更严，
-      // 如果完整恢复失败，降级为只恢复文本或 HTML，保证不会把提示词留在剪贴板里。
-      try {
-        if (snapshot.text) {
-          clipboard.writeText(snapshot.text);
-        } else if (snapshot.html) {
-          clipboard.writeText(snapshot.html);
-        }
-      } catch (_) {
-        clipboard.clear();
-      }
-    }
+  if (snapshot.text) {
+    clipboard.writeText(snapshot.text);
   } else {
     clipboard.clear();
   }
