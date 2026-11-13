@@ -67,8 +67,25 @@ export function restoreSnapshot(clipboard: ClipboardLike, snapshot: ClipboardSna
   if (snapshot.bookmark && (snapshot.bookmark.url || snapshot.bookmark.title)) {
     item.bookmark = snapshot.bookmark.url || snapshot.bookmark.title;
   }
-  if (Object.keys(item).length) clipboard.write(item);
-  else clipboard.clear();
+  if (Object.keys(item).length) {
+    try {
+      clipboard.write(item);
+    } catch (err) {
+      // Electron 45 在对多格式（特别是 bookmark/image）写入时校验更严，
+      // 如果完整恢复失败，降级为只恢复文本或 HTML，保证不会把提示词留在剪贴板里。
+      try {
+        if (snapshot.text) {
+          clipboard.writeText(snapshot.text);
+        } else if (snapshot.html) {
+          clipboard.writeText(snapshot.html);
+        }
+      } catch (_) {
+        clipboard.clear();
+      }
+    }
+  } else {
+    clipboard.clear();
+  }
 }
 
 /**
