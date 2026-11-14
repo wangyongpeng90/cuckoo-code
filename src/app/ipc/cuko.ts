@@ -148,6 +148,17 @@ export function registerCukoIpc(): void {
     return { success: true };
   });
 
+  ipcMain.handle('cuko:select-directory', async (event: any) => {
+    const win = require('electron').BrowserWindow.fromWebContents(event.sender);
+    const result = require('electron').dialog.showOpenDialogSync(win, {
+      properties: ['openDirectory'],
+      title: '选择工作区目录',
+      buttonLabel: '选择',
+    });
+    if (!result || result.length === 0) return { success: false, canceled: true };
+    return { success: true, dir: result[0] };
+  });
+
   ipcMain.handle('cuko:delete-session', (_event: any, sessionId: string) => {
     const db = getDb();
     if (!db) return { success: false };

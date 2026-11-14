@@ -11,9 +11,10 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   setActive: (providerId: string, modelId: string) => ipcRenderer.invoke('cuko:set-active', providerId, modelId),
   
   listSessions: () => ipcRenderer.invoke('cuko:list-sessions'),
-  createSession: (sessionId: string, providerId?: string, modelId?: string) => ipcRenderer.invoke('cuko:create-session', sessionId, providerId, modelId),
+  createSession: (sessionId: string, providerId?: string, modelId?: string, projectDir?: string) => ipcRenderer.invoke('cuko:create-session', sessionId, providerId, modelId, projectDir),
   renameSession: (sessionId: string, title: string) => ipcRenderer.invoke('cuko:rename-session', sessionId, title),
   deleteSession: (sessionId: string) => ipcRenderer.invoke('cuko:delete-session', sessionId),
+  selectDirectory: () => ipcRenderer.invoke('cuko:select-directory'),
   updateProviderId: (sessionId: string, providerId: string) => ipcRenderer.invoke('cuko:update-provider-id', sessionId, providerId),
   updateSessionModel: (sessionId: string, providerId: string, modelId: string) => ipcRenderer.invoke('cuko:update-session-model', sessionId, providerId, modelId),
   
@@ -30,6 +31,9 @@ const shellAPI = {
   resetSharedSettings: (keys: string[]) => ipcRenderer.invoke('reset-shared-settings', { keys }),
   getLogInfo: () => ipcRenderer.invoke('get-log-info'),
   themeGet: () => ipcRenderer.invoke('theme-get'),
+  onThemeChanged: (cb: (snapshot: any) => void) => {
+    ipcRenderer.on('theme-changed', (_e: any, snap: any) => cb(snap));
+  },
   themeSet: (id: string) => ipcRenderer.invoke('theme-set', { id }),
   listPluginSlots: () => ipcRenderer.invoke('plugin-slot-list'),
   onPluginSlotRegister: (cb: (m: any) => void) => { ipcRenderer.on('shell-slot-register', (_e: any, m: any) => cb(m)); },

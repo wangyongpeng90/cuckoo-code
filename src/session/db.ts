@@ -167,6 +167,17 @@ function initDatabase(userDataDir: string): DatabaseSync {
   db.exec(CUKO_PROVIDERS_DDL);
   db.exec(CUKO_MODELS_DDL);
 
+  // 补齐 cuko_sessions 可能缺失的新列（无条件执行，幂等）
+  try {
+    const cols = db.prepare('PRAGMA table_info(cuko_sessions)').all() as any[];
+    const colNames = cols.map((c: any) => c.name);
+    if (!colNames.includes('provider_id')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN provider_id TEXT');
+    if (!colNames.includes('model_id')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN model_id TEXT');
+    if (!colNames.includes('project_dir')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN project_dir TEXT');
+  } catch (e) {
+    console.error('[db] 补充 cuko_sessions 列失败:', e);
+  }
+
   return db;
 }
 

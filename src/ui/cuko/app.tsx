@@ -18,15 +18,15 @@ interface Config {
 }
 
 interface CukoModel {
-  model_id: string;
+  id: string;
   name: string;
 }
 
 interface CukoProvider {
   id: string;
   name: string;
-  base_url: string;
-  api_key?: string;
+  baseUrl: string;
+  apiKey?: string;
   models: CukoModel[];
 }
 
@@ -39,8 +39,8 @@ declare global {
       listProviders: () => Promise<CukoProvider[]>;
       getActive: () => Promise<{ providerId?: string, modelId?: string }>;
       setActive: (providerId: string, modelId: string) => Promise<{ success: boolean }>;
-      listSessions: () => Promise<Array<{ id: string; title: string; provider_id: string; model_id: string; provider_session_id?: string; updated_at: string }>>;
-      createSession: (sessionId: string, providerId?: string, modelId?: string) => Promise<{ success: boolean }>;
+      listSessions: () => Promise<Array<{ id: string; title: string; provider_id: string; model_id: string; project_dir?: string; provider_session_id?: string; updated_at: string }>>;
+      createSession: (sessionId: string, providerId?: string, modelId?: string, projectDir?: string) => Promise<{ success: boolean }>;
       renameSession: (sessionId: string, title: string) => Promise<{ success: boolean }>;
       deleteSession: (sessionId: string) => Promise<{ success: boolean }>;
       updateProviderId: (sessionId: string, providerId: string) => Promise<{ success: boolean }>;
@@ -86,7 +86,7 @@ function ModelSelector({ providers, config, setConfig, disabled }: { providers: 
   }, []);
 
   const currentProvider = providers.find(p => p.id === config.providerId);
-  const currentModel = currentProvider?.models.find(m => m.model_id === config.modelId);
+  const currentModel = currentProvider?.models.find(m => m.id === config.modelId);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -96,7 +96,7 @@ function ModelSelector({ providers, config, setConfig, disabled }: { providers: 
         onClick={() => setOpen(!open)}
         className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent hover:text-foreground'}`}
       >
-        <span>{currentModel ? (currentModel.name || currentModel.model_id) : '选择模型'}</span>
+        <span>{currentModel ? (currentModel.name || currentModel.id) : '选择模型'}</span>
         <span className="text-[10px] opacity-70">Default</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${open ? 'rotate-180' : ''}`}><path d="m18 15-6-6-6 6"/></svg>
       </button>
@@ -106,7 +106,7 @@ function ModelSelector({ providers, config, setConfig, disabled }: { providers: 
           <div className="border-b px-3 py-2.5 text-xs flex flex-col gap-2 bg-muted/30">
             <div className="flex items-center justify-between">
               <span className="font-medium text-foreground">模型</span>
-              <span className="text-muted-foreground">{currentModel?.name || currentModel?.model_id || '未选择'}</span>
+              <span className="text-muted-foreground">{currentModel?.name || currentModel?.id || '未选择'}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="font-medium text-foreground">Provider</span>
@@ -126,7 +126,7 @@ function ModelSelector({ providers, config, setConfig, disabled }: { providers: 
 
           <div className="max-h-60 overflow-y-auto p-2">
             {providers.map(provider => {
-              const filtered = provider.models.filter(m => (m.name || m.model_id).toLowerCase().includes(search.toLowerCase()));
+              const filtered = provider.models.filter(m => (m.name || m.id).toLowerCase().includes(search.toLowerCase()));
               if (filtered.length === 0) return null;
               
               return (
@@ -136,18 +136,18 @@ function ModelSelector({ providers, config, setConfig, disabled }: { providers: 
                   </div>
                   <div className="flex flex-col gap-0.5">
                     {filtered.map(m => {
-                      const isSelected = config.providerId === provider.id && config.modelId === m.model_id;
+                      const isSelected = config.providerId === provider.id && config.modelId === m.id;
                       return (
                         <button
-                          key={m.model_id}
+                          key={m.id}
                           type="button"
                           onClick={() => {
-                            setConfig({ providerId: provider.id, modelId: m.model_id });
+                            setConfig({ providerId: provider.id, modelId: m.id });
                             setOpen(false);
                           }}
                           className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground transition-colors group"
                         >
-                          <span className="truncate">{m.name || m.model_id}</span>
+                          <span className="truncate">{m.name || m.id}</span>
                           {isSelected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary"><path d="M20 6 9 17l-5-5"/></svg>}
                         </button>
                       );
@@ -156,6 +156,80 @@ function ModelSelector({ providers, config, setConfig, disabled }: { providers: 
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ 工作区选择器组件 ============
+interface Workspace { path: string; name: string; }
+
+function WorkspaceSelector({ workspaces, activeWorkspace, onSelect, onAdd }: {
+  workspaces: Workspace[];
+  activeWorkspace: Workspace | null;
+  onSelect: (ws: Workspace) => void;
+  onAdd: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const label = activeWorkspace ? activeWorkspace.name : '选择工作区';
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+        <span className="max-w-[120px] truncate">{label}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${open ? 'rotate-180' : ''}`}><path d="m18 15-6-6-6 6"/></svg>
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border bg-popover text-popover-foreground shadow-lg outline-none z-50 flex flex-col overflow-hidden">
+          <div className="max-h-60 overflow-y-auto p-1.5">
+            {workspaces.length === 0 && (
+              <div className="px-2 py-3 text-xs text-muted-foreground text-center">暂无工作区</div>
+            )}
+            {workspaces.map(ws => {
+              const isSelected = activeWorkspace?.path === ws.path;
+              return (
+                <button
+                  key={ws.path}
+                  type="button"
+                  onClick={() => { onSelect(ws); setOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-xs text-left hover:bg-accent hover:text-accent-foreground transition-colors group"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground shrink-0"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                  <span className="flex-1 truncate" title={ws.path}>{ws.name}</span>
+                  {isSelected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0"><path d="M20 6 9 17l-5-5"/></svg>}
+                </button>
+              );
+            })}
+          </div>
+          <div className="border-t p-1.5">
+            <button
+              type="button"
+              onClick={() => { onAdd(); setOpen(false); }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              <span>添加工作区...</span>
+            </button>
           </div>
         </div>
       )}
@@ -178,6 +252,44 @@ function ChatApp() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  // 工作区状态
+  const [workspaces, setWorkspaces] = useState<Array<{ path: string; name: string }>>([]);
+  const [activeWorkspace, setActiveWorkspace] = useState<{ path: string; name: string } | null>(null);
+
+  // 从会话列表聚合出工作区（按 project_dir 去重）
+  const rebuildWorkspaces = (sessions: any[]) => {
+    const seen = new Map<string, string>();
+    for (const s of sessions) {
+      if (s.project_dir && !seen.has(s.project_dir)) {
+        const parts = String(s.project_dir).replace(/[\\/]+$/, '').split(/[\\/]/);
+        seen.set(s.project_dir, parts[parts.length - 1] || s.project_dir);
+      }
+    }
+    const list = Array.from(seen.entries()).map(([path, name]) => ({ path, name }));
+    setWorkspaces(list);
+    // 如果当前 activeWorkspace 不在列表里了，重置为第一个
+    if (activeWorkspace && !list.find(w => w.path === activeWorkspace.path)) {
+      setActiveWorkspace(list.length > 0 ? list[0] : null);
+    } else if (!activeWorkspace && list.length > 0) {
+      setActiveWorkspace(list[0]);
+    }
+  };
+
+  // 弹出原生选目录，添加工作区
+  const handleAddWorkspace = async () => {
+    try {
+      const res = await (window.cukoAPI as any).selectDirectory();
+      if (!res.success || !res.dir) return;
+      const parts = String(res.dir).replace(/[\\/]+$/, '').split(/[\\/]/);
+      const name = parts[parts.length - 1] || res.dir;
+      const ws = { path: res.dir, name };
+      setWorkspaces(prev => prev.some(w => w.path === ws.path) ? prev : [...prev, ws]);
+      setActiveWorkspace(ws);
+    } catch (e) {
+      console.error('选择目录失败', e);
+    }
+  };
 
   // 更新模型选择并保存为全局默认，同时更新当前空会话的绑定
   const handleConfigUpdate = async (newConfig: Config) => {
@@ -211,7 +323,7 @@ function ChatApp() {
       if (active && active.providerId && active.modelId) {
         setConfig({ providerId: active.providerId, modelId: active.modelId });
       } else if (list.length > 0 && list[0].models.length > 0) {
-        const defaultConfig = { providerId: list[0].id, modelId: list[0].models[0].model_id };
+        const defaultConfig = { providerId: list[0].id, modelId: list[0].models[0].id };
         setConfig(defaultConfig);
         await window.cukoAPI.setActive(defaultConfig.providerId, defaultConfig.modelId);
       }
@@ -225,6 +337,7 @@ function ChatApp() {
   const refreshThreads = async () => {
     const list = await window.cukoAPI.listSessions();
     setThreads(list);
+    rebuildWorkspaces(list);
     if (list.length > 0 && !currentThreadId) {
       switchThread(list[0].id);
     } else if (list.length === 0) {
@@ -261,7 +374,7 @@ function ChatApp() {
   // 新建会话
   const switchNewThread = async () => {
     const newId = crypto.randomUUID();
-    await window.cukoAPI.createSession(newId, config.providerId || undefined, config.modelId || undefined);
+    await (window.cukoAPI as any).createSession(newId, config.providerId || undefined, config.modelId || undefined, activeWorkspace?.path || undefined);
     setCurrentThreadId(newId);
     setMessages([]);
     setProviderSessionId('');
@@ -293,7 +406,7 @@ function ChatApp() {
     if (!activeThreadId) {
       activeThreadId = crypto.randomUUID();
       try {
-        await window.cukoAPI.createSession(activeThreadId, config.providerId, config.modelId);
+        await (window.cukoAPI as any).createSession(activeThreadId, config.providerId, config.modelId, activeWorkspace?.path || undefined);
         setCurrentThreadId(activeThreadId);
         refreshThreads();
       } catch (e: any) {
@@ -313,8 +426,8 @@ function ChatApp() {
       return;
     }
 
-    const activeUrl = provider.base_url;
-    const activeToken = provider.api_key || '';
+    const activeUrl = provider.baseUrl;
+    const activeToken = provider.apiKey || '';
     const activeModel = config.modelId;
 
     const userId = crypto.randomUUID();
@@ -518,7 +631,17 @@ function ChatApp() {
         </div>
         <div className="relative min-h-0 min-w-0 overflow-hidden">
           <Thread components={{
-            ComposerExtra: () => <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={isModelLocked} />
+            ComposerExtra: () => (
+              <div className="flex items-center gap-1">
+                <WorkspaceSelector
+                  workspaces={workspaces}
+                  activeWorkspace={activeWorkspace}
+                  onSelect={(ws) => setActiveWorkspace(ws)}
+                  onAdd={handleAddWorkspace}
+                />
+                <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={isModelLocked} />
+              </div>
+            )
           }} />
         </div>
       </div>
