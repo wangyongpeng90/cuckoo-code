@@ -3,8 +3,6 @@ import { Select } from '../components/select.js';
 
 export function CukoSettings() {
   const [cukoProviders, setCukoProviders] = useState<any[]>([]);
-  const [activeProviderId, setActiveProviderId] = useState('');
-  const [activeModelId, setActiveModelId] = useState('');
   const [cukoEditing, setCukoEditing] = useState(false);
   const [cukoLoading, setCukoLoading] = useState(false);
   const [cukoErr, setCukoErr] = useState('');
@@ -25,11 +23,6 @@ export function CukoSettings() {
     try {
       const list = await (window as any).cukoAPI.listProviders();
       setCukoProviders(list);
-      const active = await (window as any).cukoAPI.getActive();
-      if (active && active.providerId) {
-        setActiveProviderId(active.providerId);
-        setActiveModelId(active.modelId || '');
-      }
     } catch (e) { console.error(e); }
   };
 
@@ -79,13 +72,6 @@ export function CukoSettings() {
     } catch (e) { console.error(e); }
   };
 
-  const handleSetActive = async (providerId: string, modelId: string) => {
-    await (window as any).cukoAPI.setActive(providerId, modelId);
-    setActiveProviderId(providerId);
-    setActiveModelId(modelId);
-    showTip('已切换当前模型');
-  };
-
   const openEdit = (provider?: any) => {
     if (provider) {
       setEditProvider({ ...provider, models: provider.models || [] });
@@ -118,17 +104,15 @@ export function CukoSettings() {
           createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
             createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
               createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-                createElement('span', { style: { fontSize: '14px', fontWeight: 500, color: 'var(--ck-text)' } }, p.name),
-                activeProviderId === p.id ? createElement('span', { style: { color: 'var(--ck-primary)', fontSize: '12px' } }, '● 当前使用中') : null
+                createElement('span', { style: { fontSize: '14px', fontWeight: 500, color: 'var(--ck-text)' } }, p.name)
               ),
-              createElement('div', { style: { fontSize: '12px', color: 'var(--ck-text-2)' } }, p.base_url)
+              createElement('div', { style: { fontSize: '12px', color: 'var(--ck-text-2)' } }, p.baseUrl)
             ),
             createElement('div', { style: { display: 'flex', gap: 8 } },
               createElement('button', { className: 'ck-btn ck-btn-ghost', style: { height: '32px', padding: '0 16px', fontSize: '13px' }, onClick: () => openEdit(p) }, '编辑'),
               createElement('button', { className: 'ck-btn ck-btn-ghost', style: { height: '32px', padding: '0 16px', fontSize: '13px', color: 'var(--ck-danger)' }, onClick: () => deleteProvider(p.id) }, '删除')
             )
-          ),
-
+          )
         )
       ),
       createElement('div', {
@@ -181,24 +165,15 @@ export function CukoSettings() {
         cukoErr ? createElement('div', { style: { color: 'var(--ck-danger)', fontSize: 12, marginBottom: 8 } }, cukoErr) : null,
         createElement('div', { style: { border: '1px dashed var(--ck-border)', borderRadius: '8px', padding: '12px' } },
           (!editProvider.models || editProvider.models.length === 0) ? createElement('div', { style: { color: 'var(--ck-text-2)', fontSize: '12px', textAlign: 'center' as const } }, '暂无模型，请点击右上角获取') :
-          editProvider.models.map((m: any) => {
-            const isActive = activeProviderId === editProvider.id && activeModelId === m.id;
-            return createElement('div', {
+          editProvider.models.map((m: any) =>
+            createElement('div', {
               key: m.id,
-              style: { 
-                display: 'flex', alignItems: 'center', gap: '8px', 
-                background: isActive ? 'var(--ck-bg-3)' : 'var(--ck-bg)', 
-                border: `1px solid ${isActive ? 'var(--ck-primary)' : 'var(--ck-border)'}`, 
-                borderRadius: '8px', padding: '8px 12px', marginBottom: '8px',
-                cursor: 'pointer'
-              },
-              onClick: () => handleSetActive(editProvider.id, m.id)
+              style: { display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--ck-bg)', border: '1px solid var(--ck-border)', borderRadius: '8px', padding: '8px 12px', marginBottom: '8px' }
             },
               createElement('div', { style: { flex: 1, fontSize: '13px', color: 'var(--ck-text-2)' } }, m.id),
-              createElement('div', { style: { flex: 1, fontSize: '13px', color: isActive ? 'var(--ck-primary)' : 'var(--ck-text)' } }, m.name || m.id),
-              isActive ? createElement('span', { style: { fontSize: '11px', color: 'var(--ck-primary)' } }, '使用中') : null
-            );
-          })
+              createElement('div', { style: { flex: 1, fontSize: '13px', color: 'var(--ck-text)' } }, m.name || m.id)
+            )
+          )
         )
       ),
 

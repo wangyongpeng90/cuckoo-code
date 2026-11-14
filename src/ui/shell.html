@@ -30246,8 +30246,6 @@ body {
   var import_react8 = __toESM(require_react(), 1);
   function CukoSettings() {
     const [cukoProviders, setCukoProviders] = (0, import_react8.useState)([]);
-    const [activeProviderId, setActiveProviderId] = (0, import_react8.useState)("");
-    const [activeModelId, setActiveModelId] = (0, import_react8.useState)("");
     const [cukoEditing, setCukoEditing] = (0, import_react8.useState)(false);
     const [cukoLoading, setCukoLoading] = (0, import_react8.useState)(false);
     const [cukoErr, setCukoErr] = (0, import_react8.useState)("");
@@ -30269,11 +30267,6 @@ body {
       try {
         const list = await window.cukoAPI.listProviders();
         setCukoProviders(list);
-        const active = await window.cukoAPI.getActive();
-        if (active && active.providerId) {
-          setActiveProviderId(active.providerId);
-          setActiveModelId(active.modelId || "");
-        }
       } catch (e2) {
         console.error(e2);
       }
@@ -30322,12 +30315,6 @@ body {
         console.error(e2);
       }
     };
-    const handleSetActive = async (providerId, modelId) => {
-      await window.cukoAPI.setActive(providerId, modelId);
-      setActiveProviderId(providerId);
-      setActiveModelId(modelId);
-      showTip("\u5DF2\u5207\u6362\u5F53\u524D\u6A21\u578B");
-    };
     const openEdit = (provider) => {
       if (provider) {
         setEditProvider({ ...provider, models: provider.models || [] });
@@ -30372,10 +30359,9 @@ body {
                 (0, import_react8.createElement)(
                   "div",
                   { style: { display: "flex", alignItems: "center", gap: 8 } },
-                  (0, import_react8.createElement)("span", { style: { fontSize: "14px", fontWeight: 500, color: "var(--ck-text)" } }, p.name),
-                  activeProviderId === p.id ? (0, import_react8.createElement)("span", { style: { color: "var(--ck-primary)", fontSize: "12px" } }, "\u25CF \u5F53\u524D\u4F7F\u7528\u4E2D") : null
+                  (0, import_react8.createElement)("span", { style: { fontSize: "14px", fontWeight: 500, color: "var(--ck-text)" } }, p.name)
                 ),
-                (0, import_react8.createElement)("div", { style: { fontSize: "12px", color: "var(--ck-text-2)" } }, p.base_url)
+                (0, import_react8.createElement)("div", { style: { fontSize: "12px", color: "var(--ck-text-2)" } }, p.baseUrl)
               ),
               (0, import_react8.createElement)(
                 "div",
@@ -30454,30 +30440,17 @@ body {
           (0, import_react8.createElement)(
             "div",
             { style: { border: "1px dashed var(--ck-border)", borderRadius: "8px", padding: "12px" } },
-            !editProvider.models || editProvider.models.length === 0 ? (0, import_react8.createElement)("div", { style: { color: "var(--ck-text-2)", fontSize: "12px", textAlign: "center" } }, "\u6682\u65E0\u6A21\u578B\uFF0C\u8BF7\u70B9\u51FB\u53F3\u4E0A\u89D2\u83B7\u53D6") : editProvider.models.map((m2) => {
-              const isActive = activeProviderId === editProvider.id && activeModelId === m2.id;
-              return (0, import_react8.createElement)(
+            !editProvider.models || editProvider.models.length === 0 ? (0, import_react8.createElement)("div", { style: { color: "var(--ck-text-2)", fontSize: "12px", textAlign: "center" } }, "\u6682\u65E0\u6A21\u578B\uFF0C\u8BF7\u70B9\u51FB\u53F3\u4E0A\u89D2\u83B7\u53D6") : editProvider.models.map(
+              (m2) => (0, import_react8.createElement)(
                 "div",
                 {
                   key: m2.id,
-                  style: {
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    background: isActive ? "var(--ck-bg-3)" : "var(--ck-bg)",
-                    border: `1px solid ${isActive ? "var(--ck-primary)" : "var(--ck-border)"}`,
-                    borderRadius: "8px",
-                    padding: "8px 12px",
-                    marginBottom: "8px",
-                    cursor: "pointer"
-                  },
-                  onClick: () => handleSetActive(editProvider.id, m2.id)
+                  style: { display: "flex", alignItems: "center", gap: "8px", background: "var(--ck-bg)", border: "1px solid var(--ck-border)", borderRadius: "8px", padding: "8px 12px", marginBottom: "8px" }
                 },
                 (0, import_react8.createElement)("div", { style: { flex: 1, fontSize: "13px", color: "var(--ck-text-2)" } }, m2.id),
-                (0, import_react8.createElement)("div", { style: { flex: 1, fontSize: "13px", color: isActive ? "var(--ck-primary)" : "var(--ck-text)" } }, m2.name || m2.id),
-                isActive ? (0, import_react8.createElement)("span", { style: { fontSize: "11px", color: "var(--ck-primary)" } }, "\u4F7F\u7528\u4E2D") : null
-              );
-            })
+                (0, import_react8.createElement)("div", { style: { flex: 1, fontSize: "13px", color: "var(--ck-text)" } }, m2.name || m2.id)
+              )
+            )
           )
         ),
         (0, import_react8.createElement)(
