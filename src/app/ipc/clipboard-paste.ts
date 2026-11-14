@@ -44,31 +44,20 @@ export interface PasteResult {
   error?: string;
 }
 
-/** 读取剪贴板全格式快照（text/html/rtf/image/bookmark） */
+/** 读取剪贴板快照（仅保留纯文本，避免 Electron 45 复杂格式写入报错） */
 export function readSnapshot(clipboard: ClipboardLike): ClipboardSnapshot {
   return {
     text: clipboard.readText(),
-    html: clipboard.readHTML ? clipboard.readHTML() : '',
-    rtf: clipboard.readRTF ? clipboard.readRTF() : '',
-    image: clipboard.readImage ? clipboard.readImage() : null,
-    bookmark: clipboard.readBookmark ? clipboard.readBookmark() : null,
-  };
+  } as ClipboardSnapshot;
 }
 
 /** 把快照写回剪贴板；全空则 clear() */
 export function restoreSnapshot(clipboard: ClipboardLike, snapshot: ClipboardSnapshot): void {
-  const item: any = {};
-  if (snapshot.text) item.text = snapshot.text;
-  if (snapshot.html) item.html = snapshot.html;
-  if (snapshot.rtf) item.rtf = snapshot.rtf;
-  if (snapshot.image && typeof snapshot.image.isEmpty === 'function' && !snapshot.image.isEmpty()) {
-    item.image = snapshot.image;
+  if (snapshot.text) {
+    clipboard.writeText(snapshot.text);
+  } else {
+    clipboard.clear();
   }
-  if (snapshot.bookmark && (snapshot.bookmark.url || snapshot.bookmark.title)) {
-    item.bookmark = snapshot.bookmark.url || snapshot.bookmark.title;
-  }
-  if (Object.keys(item).length) clipboard.write(item);
-  else clipboard.clear();
 }
 
 /**
@@ -83,7 +72,7 @@ export async function pasteText(
   text: string,
   options: PasteOptions = {}
 ): Promise<PasteResult> {
-  const restoreDelayMs = options.restoreDelayMs ?? 16;
+  const restoreDelayMs = options.restoreDelayMs ?? 100;
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const log = options.log ?? {
     info: (msg: string) => console.log(msg),
@@ -106,13 +95,10 @@ export async function pasteText(
   } finally {
     if (wrote) {
       try {
-        // Windows 系统可能会在末尾加不可见字符（如 \0），使用 trim 过滤后比对
-        if (clipboard.readText().trim() === text.trim()) {
-          restoreSnapshot(clipboard, backup);
-          log.info('[Cuckoo Code] 剪贴板借用占用 ' + (Date.now() - startedAt) + 'ms（已恢复原内容）');
-        } else {
-          log.info('[Cuckoo Code] 剪贴板已被用户更新，跳过恢复');
-        }
+        // 依靠全局串行锁保证在此期间没有其他 Cuckoo 窗口操作剪贴板。
+        // 只要写入过，就无条件恢复原内容，避免因跨平台编码差异（如换行符）导致污染剪贴板。
+        restoreSnapshot(clipboard, backup);
+        log.info('[Cuckoo Code] 剪贴板借用占用 ' + (Date.now() - startedAt) + 'ms（已无条件恢复原内容）');
       } catch (err: any) {
         log.error('[Cuckoo Code] 恢复剪贴板失败: ' + ((err && err.message) || err));
       }
