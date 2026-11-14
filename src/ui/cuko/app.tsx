@@ -193,6 +193,13 @@ function ChatApp() {
     }
   };
 
+  // 设置面板关闭时重新加载 Provider 列表
+  useEffect(() => {
+    if (!settingsOpen && window.cukoAPI) {
+      window.cukoAPI.listProviders().then((list: any[]) => setProviders(list)).catch(() => {});
+    }
+  }, [settingsOpen]);
+
   // 初始化
   useEffect(() => {
     async function init() {
