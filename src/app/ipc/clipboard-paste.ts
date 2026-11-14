@@ -106,7 +106,8 @@ export async function pasteText(
   } finally {
     if (wrote) {
       try {
-        if (clipboard.readText() === text) {
+        // Windows 系统可能会在末尾加不可见字符（如 \0），使用 trim 过滤后比对
+        if (clipboard.readText().trim() === text.trim()) {
           restoreSnapshot(clipboard, backup);
           log.info('[Cuckoo Code] 剪贴板借用占用 ' + (Date.now() - startedAt) + 'ms（已恢复原内容）');
         } else {
