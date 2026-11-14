@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 
 // 当前数据库结构版本（每次改表结构 +1）
-const CURRENT_DB_VERSION = 4;
+const CURRENT_DB_VERSION = 5;
 
 // [261031-x7k9p2] AI 用量统计日志表
 const AI_USAGE_LOGS_DDL = `
@@ -25,7 +25,39 @@ const AI_USAGE_LOGS_DDL = `
 // 决策 9.5：持久化注册表。详见 docs/dsh-compat-decisions.md 9.5
 // 注：workspace-registry.ts 里也有同一 DDL 的兜底副本（供测试用 :memory: 场景）
 
-// [261109-cuko-api] Cuko API 配置表
+// [261109-cuko-api] Cuko API 杂项配置表
+const CUKO_CONFIG_DDL = `
+  CREATE TABLE IF NOT EXISTS cuko_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+`;
+
+// [261109-cuko-api] Cuko Provider 表
+const CUKO_PROVIDERS_DDL = `
+  CREATE TABLE IF NOT EXISTS cuko_providers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    base_url TEXT NOT NULL,
+    api_key TEXT,
+    protocol TEXT DEFAULT 'cuko',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+`;
+
+// [261109-cuko-api] Cuko Models 表
+const CUKO_MODELS_DDL = `
+  CREATE TABLE IF NOT EXISTS cuko_models (
+    provider_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (provider_id, model_id),
+    FOREIGN KEY(provider_id) REFERENCES cuko_providers(id) ON DELETE CASCADE
+  );
+`;
 
 // [261109-cuko-api] Cuko 会话表
 const CUKO_SESSIONS_DDL = `
@@ -33,6 +65,8 @@ const CUKO_SESSIONS_DDL = `
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     provider_session_id TEXT,
+    provider_id TEXT,
+    model_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -51,13 +85,6 @@ const CUKO_MESSAGES_DDL = `
     FOREIGN KEY(session_id) REFERENCES cuko_sessions(id) ON DELETE CASCADE
   );
   CREATE INDEX IF NOT EXISTS idx_cuko_messages_session ON cuko_messages(session_id, created_at);
-`;
-
-const CUKO_CONFIG_DDL = `
-  CREATE TABLE IF NOT EXISTS cuko_config (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
 `;
 
 const WORKSPACES_DDL = `
@@ -113,10 +140,13 @@ function initDatabase(userDataDir: string): DatabaseSync {
         db.exec(WORKSPACES_DDL);
         db.exec(AI_USAGE_LOGS_DDL);
       } else if (nextVersion === 4) {
-        // 版本 4 新增 Cuko API 相关表
         db.exec(CUKO_CONFIG_DDL);
         db.exec(CUKO_SESSIONS_DDL);
         db.exec(CUKO_MESSAGES_DDL);
+      } else if (nextVersion === 5) {
+        // 版本 5 重构为 Provider / Model 分离结构
+        db.exec(CUKO_PROVIDERS_DDL);
+        db.exec(CUKO_MODELS_DDL);
       }
       
       db.exec(`PRAGMA user_version = ${nextVersion};`);
@@ -134,6 +164,8 @@ function initDatabase(userDataDir: string): DatabaseSync {
   db.exec(CUKO_CONFIG_DDL);
   db.exec(CUKO_SESSIONS_DDL);
   db.exec(CUKO_MESSAGES_DDL);
+  db.exec(CUKO_PROVIDERS_DDL);
+  db.exec(CUKO_MODELS_DDL);
 
   return db;
 }

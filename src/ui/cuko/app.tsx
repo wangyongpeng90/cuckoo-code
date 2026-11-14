@@ -1,18 +1,3 @@
-
-// 全局错误捕获，防止白屏
-window.addEventListener('error', (e) => {
-  const root = document.getElementById('root');
-  if (root) root.innerHTML = `<div style="color:red; padding: 20px; font-family: monospace; white-space: pre-wrap;"><h2>运行时崩溃</h2>${e.message}
-
-${e.error?.stack || ''}</div>`;
-});
-window.addEventListener('unhandledrejection', (e) => {
-  const root = document.getElementById('root');
-  if (root) root.innerHTML = `<div style="color:red; padding: 20px; font-family: monospace; white-space: pre-wrap;"><h2>Promise 异常</h2>${e.reason?.message || e.reason}
-
-${e.reason?.stack || ''}</div>`;
-});
-
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
@@ -27,19 +12,35 @@ import { ThreadList } from '@/components/assistant-ui/elements/thread-list.aui';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
 
 // ============ 类型定义 ============
-interface Config { url: string; token: string; model: string; }
-const DEFAULT_CONFIG: Config = { url: 'http://127.0.0.1:3000', token: '', model: '' };
-interface CukoModel { id: string; name: string; }
+interface Config {
+  providerId: string;
+  modelId: string;
+}
+
+interface CukoModel {
+  model_id: string;
+  name: string;
+}
+
+interface CukoProvider {
+  id: string;
+  name: string;
+  base_url: string;
+  api_key?: string;
+  models: CukoModel[];
+}
+
 interface Usage { input_tokens: number; output_tokens: number; total_tokens: number; }
 type Msg = ThreadMessageLike & { think?: string; usage?: Usage; };
 
 declare global {
   interface Window {
     cukoAPI: {
-      getConfig: () => Promise<Record<string, string>>;
-      saveConfig: (config: Record<string, string>) => Promise<{ success: boolean; error?: string }>;
-      listSessions: () => Promise<Array<{ id: string; title: string; provider_session_id?: string; updated_at: string }>>;
-      createSession: (sessionId: string) => Promise<{ success: boolean }>;
+      listProviders: () => Promise<CukoProvider[]>;
+      getActive: () => Promise<{ providerId?: string, modelId?: string }>;
+      setActive: (providerId: string, modelId: string) => Promise<{ success: boolean }>;
+      listSessions: () => Promise<Array<{ id: string; title: string; provider_id: string; model_id: string; provider_session_id?: string; updated_at: string }>>;
+      createSession: (sessionId: string, providerId?: string, modelId?: string) => Promise<{ success: boolean }>;
       renameSession: (sessionId: string, title: string) => Promise<{ success: boolean }>;
       deleteSession: (sessionId: string) => Promise<{ success: boolean }>;
       updateProviderId: (sessionId: string, providerId: string) => Promise<{ success: boolean }>;
@@ -56,7 +57,7 @@ function extractText(content: AppendMessage['content']): string {
 
 const ERROR_MESSAGES: Record<string, string> = {
   authentication_required: '需要登录，请先在浏览器中打开并登录对应 AI 服务。',
-  provider_unavailable: 'Provider 不可用，请检查桥接软件和浏览器扩展是否正常运行。',
+  provider_unavailable: 'Provider 不可用，请检查服务端和浏览器扩展是否正常运行。',
   rate_limit_exceeded: '请求过于频繁，请稍后再试。',
   invalid_request: '请求参数不合法。',
   request_timeout: '请求超时，请重试。',
@@ -67,14 +68,109 @@ function friendlyError(code: string, message: string): string {
   return friendly ? friendly + (message ? '（' + message + '）' : '') : (message || code);
 }
 
-// ============ 设置弹窗 ============
+// ============ 模型选择器组件 ============
+function ModelSelector({ providers, config, setConfig, disabled }: { providers: CukoProvider[]; config: Config; setConfig: (c: Config) => void; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const currentProvider = providers.find(p => p.id === config.providerId);
+  const currentModel = currentProvider?.models.find(m => m.model_id === config.modelId);
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen(!open)}
+        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent hover:text-foreground'}`}
+      >
+        <span>{currentModel ? (currentModel.name || currentModel.model_id) : '选择模型'}</span>
+        <span className="text-[10px] opacity-70">Default</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${open ? 'rotate-180' : ''}`}><path d="m18 15-6-6-6 6"/></svg>
+      </button>
+
+      {open && !disabled && (
+        <div className="absolute bottom-full left-0 mb-2 w-72 rounded-xl border bg-popover text-popover-foreground shadow-lg outline-none z-50 flex flex-col overflow-hidden">
+          <div className="border-b px-3 py-2.5 text-xs flex flex-col gap-2 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-foreground">模型</span>
+              <span className="text-muted-foreground">{currentModel?.name || currentModel?.model_id || '未选择'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="font-medium text-foreground">Provider</span>
+              <span className="text-muted-foreground">{currentProvider?.name || '未选择'}</span>
+            </div>
+          </div>
+          
+          <div className="p-2 border-b">
+            <input
+              type="text"
+              placeholder="搜索模型..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="w-full rounded-md bg-accent/50 px-2.5 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:bg-accent transition-colors"
+            />
+          </div>
+
+          <div className="max-h-60 overflow-y-auto p-2">
+            {providers.map(provider => {
+              const filtered = provider.models.filter(m => (m.name || m.model_id).toLowerCase().includes(search.toLowerCase()));
+              if (filtered.length === 0) return null;
+              
+              return (
+                <div key={provider.id} className="mb-2 last:mb-0">
+                  <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                    {provider.name}
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    {filtered.map(m => {
+                      const isSelected = config.providerId === provider.id && config.modelId === m.model_id;
+                      return (
+                        <button
+                          key={m.model_id}
+                          type="button"
+                          onClick={() => {
+                            setConfig({ providerId: provider.id, modelId: m.model_id });
+                            setOpen(false);
+                          }}
+                          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground transition-colors group"
+                        >
+                          <span className="truncate">{m.name || m.model_id}</span>
+                          {isSelected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary"><path d="M20 6 9 17l-5-5"/></svg>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ 主应用 ============
 function ChatApp() {
-  const [config, setConfig] = useState<Config>(DEFAULT_CONFIG);
+  const [providers, setProviders] = useState<CukoProvider[]>([]);
+  const [config, setConfig] = useState<Config>({ providerId: '', modelId: '' });
   const [settingsOpen, setSettingsOpen] = useState(false);
   
   // 会话状态
-  const [threads, setThreads] = useState<Array<{ id: string; title: string; provider_session_id?: string; updated_at: string }>>([]);
+  const [threads, setThreads] = useState<Array<{ id: string; title: string; provider_id: string; model_id: string; provider_session_id?: string; updated_at: string }>>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string>('');
   const [providerSessionId, setProviderSessionId] = useState<string>('');
   
@@ -83,13 +179,39 @@ function ChatApp() {
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
-  // 初始化：加载配置、会话列表
-  useEffect(() => {
-    window.cukoAPI.getConfig().then((raw) => {
-      setConfig({ url: raw.url || DEFAULT_CONFIG.url, token: raw.token || '', model: raw.model || '' });
-    }).catch(() => {});
+  // 更新模型选择并保存为全局默认，同时更新当前空会话的绑定
+  const handleConfigUpdate = async (newConfig: Config) => {
+    setConfig(newConfig);
+    if (window.cukoAPI) {
+      await window.cukoAPI.setActive(newConfig.providerId, newConfig.modelId);
+      // 如果当前会话是空的，顺便把它的绑定也更新了
+      if (currentThreadId && messages.length === 0) {
+        // 因为 updateSessionModel 在 preload 暴露了，直接用
+        await (window.cukoAPI as any).updateSessionModel(currentThreadId, newConfig.providerId, newConfig.modelId);
+        refreshThreads();
+      }
+    }
+  };
 
-    refreshThreads();
+  // 初始化
+  useEffect(() => {
+    async function init() {
+      if (!window.cukoAPI) return;
+      const list = await window.cukoAPI.listProviders();
+      setProviders(list);
+
+      const active = await window.cukoAPI.getActive();
+      if (active && active.providerId && active.modelId) {
+        setConfig({ providerId: active.providerId, modelId: active.modelId });
+      } else if (list.length > 0 && list[0].models.length > 0) {
+        const defaultConfig = { providerId: list[0].id, modelId: list[0].models[0].model_id };
+        setConfig(defaultConfig);
+        await window.cukoAPI.setActive(defaultConfig.providerId, defaultConfig.modelId);
+      }
+      
+      refreshThreads();
+    }
+    init();
   }, []);
 
   // 刷新会话列表
@@ -108,36 +230,31 @@ function ChatApp() {
     setCurrentThreadId(id);
     const dbMsgs = await window.cukoAPI.getMessages(id);
     const loadedMsgs: Msg[] = dbMsgs.map(m => {
-      const base: Msg = {
+      return {
         id: m.id,
         role: m.role as any,
         content: m.content,
         think: m.think || undefined,
         usage: m.usage_json ? JSON.parse(m.usage_json) : undefined,
+        ...(m.role === 'assistant' ? { status: { type: 'complete' as const, reason: 'stop' } } : {}),
       };
-      // status 仅允许用于 assistant 消息
-      if (m.role === 'assistant') {
-        
-      }
-      return base;
     });
     setMessages(loadedMsgs);
     
-    const session = threads.find(t => t.id === id);
-    // 如果找不到，可能是刚创建的，查一下
+    // 读取该会话绑定的模型
+    const session = threads.find(t => t.id === id) || (await window.cukoAPI.listSessions()).find(x => x.id === id);
     if (session) {
       setProviderSessionId(session.provider_session_id || '');
-    } else {
-      const list = await window.cukoAPI.listSessions();
-      const s = list.find(x => x.id === id);
-      setProviderSessionId(s?.provider_session_id || '');
+      if (session.provider_id && session.model_id) {
+        setConfig({ providerId: session.provider_id, modelId: session.model_id });
+      }
     }
   };
 
   // 新建会话
   const switchNewThread = async () => {
     const newId = crypto.randomUUID();
-    await window.cukoAPI.createSession(newId);
+    await window.cukoAPI.createSession(newId, config.providerId || undefined, config.modelId || undefined);
     setCurrentThreadId(newId);
     setMessages([]);
     setProviderSessionId('');
@@ -160,12 +277,6 @@ function ChatApp() {
     await refreshThreads();
   };
 
-  const saveConfig = async (next: Config) => {
-    await window.cukoAPI.saveConfig({ url: next.url, token: next.token, model: next.model });
-    setConfig(next);
-    setSettingsOpen(false);
-  };
-
   // 发送消息
   const onNew = useCallback(async (append: AppendMessage) => {
     const text = extractText(append.content);
@@ -173,10 +284,9 @@ function ChatApp() {
 
     let activeThreadId = currentThreadId;
     if (!activeThreadId) {
-      // 如果没有当前会话，自动建一个
       activeThreadId = crypto.randomUUID();
       try {
-        await window.cukoAPI.createSession(activeThreadId);
+        await window.cukoAPI.createSession(activeThreadId, config.providerId, config.modelId);
         setCurrentThreadId(activeThreadId);
         refreshThreads();
       } catch (e: any) {
@@ -185,14 +295,20 @@ function ChatApp() {
       }
     }
 
-    if (!config.url || !config.model) {
+    // 获取当前选中的 Provider 和 Model
+    const provider = providers.find(p => p.id === config.providerId);
+    if (!provider || !config.modelId) {
       setMessages((prev) => [
         ...prev,
         { role: 'user', content: text, id: crypto.randomUUID() },
-        { role: 'assistant', content: '⚠️ 尚未配置中转地址或模型，请先在左侧设置中填写。', id: crypto.randomUUID() },
+        { role: 'assistant', content: '⚠️ 尚未选择模型，请先配置。', id: crypto.randomUUID() },
       ]);
       return;
     }
+
+    const activeUrl = provider.base_url;
+    const activeToken = provider.api_key || '';
+    const activeModel = config.modelId;
 
     const userId = crypto.randomUUID();
     const userMsg: Msg = { role: 'user', content: text, id: userId };
@@ -227,17 +343,17 @@ function ChatApp() {
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
-      if (config.token) headers.Authorization = 'Bearer ' + config.token;
+      if (activeToken) headers.Authorization = 'Bearer ' + activeToken;
 
       const body: Record<string, any> = {
         cuckSessionId: activeThreadId,
         requestId,
-        model: config.model,
+        model: activeModel,
         input: [{ type: 'text', text }],
       };
       if (providerSessionId) body.providerSessionId = providerSessionId;
 
-      const response = await fetch(config.url.replace(/\/+$/, '') + '/v1/responses', {
+      const response = await fetch(activeUrl.replace(/\/+$/, '') + '/v1/responses', {
         method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
       });
 
@@ -348,7 +464,7 @@ function ChatApp() {
       });
       refreshThreads();
     }
-  }, [config, currentThreadId, providerSessionId, threads]);
+  }, [config, currentThreadId, providerSessionId, threads, providers]);
 
   const onCancel = useCallback(async () => {
     abortRef.current?.abort();
@@ -377,6 +493,9 @@ function ChatApp() {
     },
   });
 
+  // 只要会话里有消息，就禁止切换模型
+  const isModelLocked = messages.length > 0 || isRunning;
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="grid h-dvh max-h-dvh grid-cols-[260px_1fr] bg-background text-foreground dark overflow-hidden">
@@ -391,7 +510,9 @@ function ChatApp() {
           </div>
         </div>
         <div className="relative min-h-0 min-w-0 overflow-hidden">
-          <Thread />
+          <Thread components={{
+            ComposerExtra: () => <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={isModelLocked} />
+          }} />
         </div>
       </div>
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}

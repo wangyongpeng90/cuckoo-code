@@ -103,6 +103,9 @@ npm run build:win:local   # 本地打 Windows 包
   操作 AI 页面用 `ctx.view.webContents`，**不是** `ctx.win.webContents`。
 - **Electron 惯用法**：主进程模块用 `createRequire(import.meta.url)` 动态 require，**不可**静态 import 'electron'。
 - **需求流程**：新功能/行为变更/多文件 → 建需求档案（`docs/requirements/<id>-<slug>.md`）+ 分支（`<type>/<id>-<slug>`）。
+  - `<id>` = `<日期YYMMDD>-<随机6位小写字母数字>`，如 `261109-8ms69z`。
+  - `<slug>` = 简短英文标识，如 `cuko-api`、`tool-api-consolidate`。
+  - 完整示例：`feat/261109-8ms69z-cuko-api`。
   小改动（单文件单行/纯文案）→ 免档案，直接改。
   改需求文档后 INDEX 自动更新（pre-commit 钩子）；也可手动 `npm run docs:index`。
 - **测试哲学**：只写**真实集成测试**，不写深 mock 测试；优先覆盖**失败路径**。

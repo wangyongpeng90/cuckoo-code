@@ -77,6 +77,8 @@ function registerSettingsIpc(): void {
 
   // 恢复默认
   ipcMain.handle('reset-settings', async (event: any) => {
+    const ctx = windowState.getContextByWebContents(event.sender);
+    if (!ctx) return { success: true, data: {} }; // Cuko 独立窗口，恢复默认直接返回空
     const r = await requestFromAiPage(event, 'cuckoo-reset-settings');
     return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
   });

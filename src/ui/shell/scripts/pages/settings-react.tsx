@@ -14,6 +14,7 @@ import { SlotErrorBoundary } from '../components/slot-error-boundary.js';
 import { useHideAiView } from '../use-hide-ai-view.js';
 import { Select } from '../components/select.js';
 import { SettingRow } from '../components/setting-row.js';
+import { CukoSettings } from './settings-cuko.js';
 import { DEFAULT_JS_RESULT_PHRASES, DEFAULT_JS_RESULT_ITEM_TEMPLATES } from '../../../../overlay/js-result-phrases.js';
 import { DEFAULT_CONTINUE_PROMPTS } from '../../../../infra/continue-prompt-pool.js';
 import {
@@ -192,75 +193,6 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const [themes, setThemes] = useState<[string, string][]>(THEME_BUILTINS);
   const [theme, setTheme] = useState('system');
   const [active, setActive] = useState((window as any).cukoAPI ? 'cuko-api' : 'appearance');
-
-  // Cuko API 专属状态
-  const [cukoConfig, setCukoConfig] = useState({ url: 'http://127.0.0.1:3000', token: '', model: '' });
-  const [cukoModels, setCukoModels] = useState<any[]>([]);
-  const [cukoLoading, setCukoLoading] = useState(false);
-  const [cukoErr, setCukoErr] = useState('');
-  const [cukoSavedTip, setCukoSavedTip] = useState('');
-
-  useEffect(() => {
-    if ((window as any).cukoAPI) {
-      (window as any).cukoAPI.getConfig().then((raw: any) => {
-        setCukoConfig({
-          url: raw.url || 'http://127.0.0.1:3000',
-          token: raw.token || '',
-          model: raw.model || ''
-        });
-      }).catch(console.error);
-    }
-  }, []);
-
-  const saveCukoConfig = async () => {
-    if ((window as any).cukoAPI) {
-      await (window as any).cukoAPI.saveConfig(cukoConfig);
-      setCukoSavedTip('已保存');
-      setTimeout(() => setCukoSavedTip(''), 2000);
-    }
-  };
-
-  const fetchCukoModels = async () => {
-    setCukoLoading(true); setCukoErr('');
-    try {
-      const headers: Record<string, string> = { Accept: 'application/json' };
-      if (cukoConfig.token) headers.Authorization = 'Bearer ' + cukoConfig.token;
-      const res = await fetch(cukoConfig.url.replace(/\/+$/, '') + '/v1/models', { headers });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const json = await res.json();
-      if (!json.data || !Array.isArray(json.data)) throw new Error('返回格式不正确');
-      setCukoModels(json.data);
-      if (json.data.length > 0 && !cukoConfig.model) setCukoConfig(prev => ({ ...prev, model: json.data[0].id }));
-    } catch (e: any) {
-      setCukoErr(e.message || '获取失败');
-    } finally { setCukoLoading(false); }
-  };
-
-  const cukoApiSection = createElement('div', { className: 'ck-card' },
-    createElement(SettingRow, { label: '中转地址', desc: 'Cuko API 服务地址' },
-      createElement('input', { className: 'ck-set-input', value: cukoConfig.url, onChange: (e: any) => setCukoConfig({ ...cukoConfig, url: e.target.value }) })
-    ),
-    createElement(SettingRow, { label: 'Token', desc: '可选，如果在桥接软件中配置了 Token 则必填' },
-      createElement('input', { className: 'ck-set-input', value: cukoConfig.token, onChange: (e: any) => setCukoConfig({ ...cukoConfig, token: e.target.value }) })
-    ),
-    createElement(SettingRow, { label: '模型', desc: '指定要使用的模型' },
-      createElement('div', { style: { display: 'flex', gap: 8, alignItems: 'center' } },
-        cukoModels.length > 0 ? createElement(Select, {
-          value: cukoConfig.model,
-          options: cukoModels.map(m => ({ value: m.id, label: m.name || m.id })),
-          onChange: (v: string) => setCukoConfig({ ...cukoConfig, model: v })
-        }) : createElement('input', { className: 'ck-set-input', value: cukoConfig.model, placeholder: '手动输入模型 ID', onChange: (e: any) => setCukoConfig({ ...cukoConfig, model: e.target.value }) }),
-        createElement('button', { className: 'ck-btn ck-btn-ghost', onClick: fetchCukoModels, disabled: cukoLoading },
-          cukoLoading ? '获取中...' : '获取可用模型'
-        )
-      )
-    ),
-    cukoErr ? createElement('div', { style: { color: 'var(--ck-danger)', fontSize: 12, marginTop: 8 } }, cukoErr) : null,
-    createElement('div', { style: { marginTop: 16, display: 'flex', alignItems: 'center', gap: 12 } },
-      createElement('button', { className: 'ck-btn ck-btn-primary', onClick: saveCukoConfig }, '保存 Cuko 配置'),
-      cukoSavedTip ? createElement('span', { style: { color: 'var(--ck-primary)', fontSize: 12 } }, cukoSavedTip) : null
-    )
-  );
 
   const pluginSections = useSlot(SETTINGS_SLOT);
 
@@ -732,7 +664,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
 
   let content: any = null;
   if (loading && active !== 'cuko-api') content = createElement('div', { className: 'ck-list-empty' }, '加载中…');
-  else if (active === 'cuko-api') content = cukoApiSection;
+  else if (active === 'cuko-api') content = createElement(CukoSettings);
   else if (active === 'appearance') content = appearance;
   else if (active === 'system-prompt') content = systemPrompt;
   else if (active === 'retry') content = createElement('div', null, retry, continuePrompt);
