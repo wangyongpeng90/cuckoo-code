@@ -4,6 +4,8 @@
  */
 import { createRequire } from 'node:module';
 import { buildPrompt } from '../../session/prompt-builder.js';
+import { jsRunner } from '../../tools/index.js';
+import { pickJsResultPhrase } from '../../overlay/js-result-phrases.js';
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
 
@@ -167,6 +169,30 @@ export function registerCukoIpc(): void {
     const now = new Date().toISOString();
     db.prepare('UPDATE cuko_sessions SET title = ?, updated_at = ? WHERE id = ?').run(title, now, sessionId);
     return { success: true };
+  });
+
+  // 执行 cuckoo 代码块（复用主项目 JsRunner，projectDir 由调用方传入）
+  ipcMain.handle('cuko:execute-js', async (event: any, code: string, projectDir: string) => {
+    if (!code || typeof code !== 'string') {
+      return { success: false, error: '无效的 JS 代码' };
+    }
+    try {
+      const win = require('electron').BrowserWindow.fromWebContents(event.sender);
+      const windowId = win && !win.isDestroyed() ? win.id : null;
+      const result = await jsRunner.run(code, projectDir || null, windowId, {});
+      return result;
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // 从工具结果回复语池随机取一条
+  ipcMain.handle('cuko:pick-result-phrase', (_event: any, n: number) => {
+    try {
+      return { success: true, phrase: pickJsResultPhrase(n || 1) };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
   });
 
   // 组装完整系统提示词并按一级标题切分成段

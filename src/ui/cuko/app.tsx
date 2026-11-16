@@ -51,6 +51,8 @@ declare global {
       setActiveWorkspace: (path: string) => Promise<{ success: boolean; error?: string }>;
       selectDirectory: () => Promise<{ success: boolean; dir?: string; canceled?: boolean }>;
       buildSystemPrompt: (projectDir: string) => Promise<{ success: boolean; segments?: string[]; error?: string }>;
+      executeJs: (code: string, projectDir: string) => Promise<{ success: boolean; output?: string; error?: string }>;
+      pickResultPhrase: (n: number) => Promise<{ success: boolean; phrase?: string; error?: string }>;
       getMessages: (sessionId: string) => Promise<Array<{ id: string; role: string; content: string; think: string; usage_json: string }>>;
       saveMessage: (msg: any) => Promise<{ success: boolean }>;
     };
@@ -60,6 +62,35 @@ declare global {
 function extractText(content: AppendMessage['content']): string {
   const parts = Array.isArray(content) ? content : [];
   return parts.filter((p: any) => p && p.type === 'text' && typeof p.text === 'string').map((p: any) => p.text).join('\n');
+}
+
+/** 从 AI 回复中提取 ```cuckoo 代码块 */
+function extractCuckooBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  if (!text) return blocks;
+  const lines = text.split('\n');
+  let inBlock = false;
+  let lang = '';
+  let buf: string[] = [];
+  for (const line of lines) {
+    const t = line.trim();
+    if (t.startsWith('```')) {
+      if (!inBlock) {
+        inBlock = true;
+        lang = t.slice(3).trim().toLowerCase();
+        buf = [];
+      } else {
+        inBlock = false;
+        const code = buf.join('\n').trim();
+        if (code && lang === 'cuckoo') blocks.push(code);
+        buf = [];
+        lang = '';
+      }
+      continue;
+    }
+    if (inBlock) buf.push(line);
+  }
+  return blocks;
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -419,7 +450,6 @@ function ChatApp() {
       }
     }
 
-    // 获取当前选中的 Provider 和 Model
     const provider = providers.find(p => p.id === config.providerId);
     if (!provider || !config.modelId) {
       setMessages((prev) => [
@@ -436,13 +466,8 @@ function ChatApp() {
 
     const userId = crypto.randomUUID();
     const userMsg: Msg = { role: 'user', content: text, id: userId };
-    const assistantId = crypto.randomUUID();
-    const assistantMsg: Msg = { role: 'assistant', content: '', id: assistantId, status: { type: 'running' } };
-    
-    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setMessages((prev) => [...prev, userMsg]);
     setIsRunning(true);
-
-    // 落库 user 消息
     window.cukoAPI.saveMessage({ id: userId, sessionId: activeThreadId, role: 'user', content: text });
 
     // 如果当前标题是 New Chat，顺便改个名
@@ -453,155 +478,201 @@ function ChatApp() {
       refreshThreads();
     }
 
-    const requestId = crypto.randomUUID();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const patchAssistant = (patch: Partial<Msg>) => {
-      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)));
-    };
+    // 构建首轮 input（系统提示词分段 + 用户消息）
+    const inputParts: Array<{ type: 'text'; text: string }> = [];
+    if (!providerSessionId && activeWorkspace?.path) {
+      try {
+        const sysRes = await (window.cukoAPI as any).buildSystemPrompt(activeWorkspace.path);
+        if (sysRes && sysRes.success && Array.isArray(sysRes.segments)) {
+          for (const seg of sysRes.segments) {
+            if (seg && seg.trim()) inputParts.push({ type: 'text', text: seg });
+          }
+        }
+      } catch (e) {
+        console.error('组装系统提示词失败', e);
+      }
+    }
+    inputParts.push({ type: 'text', text });
 
-    let finalContent = '';
-    let finalThink = '';
-    let finalUsage: Usage | undefined;
+    let currentInput = inputParts;
+    const MAX_LOOPS = 10;
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
-      if (activeToken) headers.Authorization = 'Bearer ' + activeToken;
+      for (let loop = 0; loop < MAX_LOOPS; loop++) {
+        // 每轮创建独立 assistant 消息
+        const assistantId = crypto.randomUUID();
+        const assistantMsg: Msg = { role: 'assistant', content: '', id: assistantId, status: { type: 'running' } };
+        setMessages((prev) => [...prev, assistantMsg]);
 
-      // 新对话首次发送：把系统提示词按一级标题分段，依次塞进 input 数组
-      const inputParts: Array<{ type: 'text'; text: string }> = [];
-      if (!providerSessionId && activeWorkspace?.path) {
+        const patchAssistant = (patch: Partial<Msg>) => {
+          setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)));
+        };
+
+        const requestId = crypto.randomUUID();
+        const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
+        if (activeToken) headers.Authorization = 'Bearer ' + activeToken;
+
+        const body: Record<string, any> = {
+          cuckSessionId: activeThreadId,
+          requestId,
+          model: activeModel,
+          input: currentInput,
+        };
+        if (providerSessionId) body.providerSessionId = providerSessionId;
+
+        let roundContent = '';
+        let roundThink = '';
+        let roundUsage: Usage | undefined;
+        let sawDone = false;
+
         try {
-          const sysRes = await (window.cukoAPI as any).buildSystemPrompt(activeWorkspace.path);
-          if (sysRes && sysRes.success && Array.isArray(sysRes.segments)) {
-            for (const seg of sysRes.segments) {
-              if (seg && seg.trim()) inputParts.push({ type: 'text', text: seg });
+          const response = await fetch(activeUrl.replace(/\/+$/, '') + '/v1/responses', {
+            method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
+          });
+
+          if (!response.ok || !response.body) {
+            let errText = 'HTTP ' + response.status;
+            try { const t = await response.text(); if (t) errText += ': ' + t; } catch {}
+            throw new Error(errText);
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          const handleEvent = (eventName: string, data: string) => {
+            if (sawDone) return;
+            if (eventName === 'message') {
+              try {
+                const payload = JSON.parse(data);
+                if (payload.providerSessionId && payload.providerSessionId !== providerSessionId) {
+                  setProviderSessionId(payload.providerSessionId);
+                  window.cukoAPI.updateProviderId(activeThreadId, payload.providerSessionId);
+                }
+                let delta = '';
+                if (Array.isArray(payload.output)) {
+                  delta = payload.output.map((x: any) => typeof x === 'string' ? x : (x?.text || '')).join('');
+                } else if (typeof payload.output === 'string') {
+                  delta = payload.output;
+                }
+                const thinkDelta = typeof payload.think === 'string' ? payload.think : '';
+                if (delta) roundContent += delta;
+                if (thinkDelta) roundThink += thinkDelta;
+                if (delta || thinkDelta) {
+                  setMessages((prev) => prev.map((m) => {
+                    if (m.id !== assistantId) return m;
+                    return {
+                      ...m,
+                      content: (m.content as string) + delta,
+                      think: thinkDelta ? (m.think || '') + thinkDelta : m.think,
+                    };
+                  }));
+                }
+              } catch { /* ignore */ }
+            } else if (eventName === 'done') {
+              sawDone = true;
+              try {
+                const payload = JSON.parse(data);
+                roundUsage = payload.usage;
+                patchAssistant({ usage: roundUsage, status: { type: 'complete', reason: 'stop' } });
+              } catch {
+                patchAssistant({ status: { type: 'complete', reason: 'stop' } });
+              }
+            } else if (eventName === 'error') {
+              sawDone = true;
+              try {
+                const payload = JSON.parse(data);
+                const msg = friendlyError(payload.code || 'internal_error', payload.message || '');
+                roundContent += '\n\n⚠️ ' + msg;
+                patchAssistant({ content: roundContent, status: { type: 'incomplete', reason: 'error' } });
+              } catch {
+                roundContent += '\n\n⚠️ ' + data;
+                patchAssistant({ content: roundContent, status: { type: 'incomplete', reason: 'error' } });
+              }
+            }
+          };
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            let idx;
+            while ((idx = buffer.indexOf('\n\n')) >= 0) {
+              const raw = buffer.slice(0, idx);
+              buffer = buffer.slice(idx + 2);
+              let eventName = 'message';
+              const dataLines: string[] = [];
+              for (const line of raw.split('\n')) {
+                if (line.startsWith('event:')) eventName = line.slice(6).trim();
+                else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
+              }
+              if (dataLines.length) handleEvent(eventName, dataLines.join('\n'));
             }
           }
-        } catch (e) {
-          console.error('组装系统提示词失败', e);
+
+          if (!sawDone) patchAssistant({ status: { type: 'complete', reason: 'stop' } });
+        } catch (err: any) {
+          if (err?.name === 'AbortError') {
+            roundContent += '\n\n（已停止）';
+            patchAssistant({ content: roundContent, status: { type: 'incomplete', reason: 'cancelled' } });
+          } else {
+            roundContent += '\n\n⚠️ ' + (err?.message || '请求失败');
+            patchAssistant({ content: roundContent, status: { type: 'incomplete', reason: 'error' } });
+          }
         }
-      }
-      inputParts.push({ type: 'text', text });
 
-      const body: Record<string, any> = {
-        cuckSessionId: activeThreadId,
-        requestId,
-        model: activeModel,
-        input: inputParts,
-      };
-      if (providerSessionId) body.providerSessionId = providerSessionId;
+        // 落库本轮 assistant 消息
+        window.cukoAPI.saveMessage({
+          id: assistantId,
+          sessionId: activeThreadId,
+          role: 'assistant',
+          content: roundContent,
+          think: roundThink,
+          usage: roundUsage,
+        });
 
-      const response = await fetch(activeUrl.replace(/\/+$/, '') + '/v1/responses', {
-        method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
-      });
+        // 检测 cuckoo 代码块
+        const blocks = extractCuckooBlocks(roundContent);
+        if (blocks.length === 0) break;
+        if (loop === MAX_LOOPS - 1) {
+          console.log('[Cuko] 已达最大循环次数，停止执行工具');
+          break;
+        }
 
-      if (!response.ok || !response.body) {
-        let errText = 'HTTP ' + response.status;
-        try { const t = await response.text(); if (t) errText += ': ' + t; } catch {}
-        throw new Error(errText);
-      }
+        console.log('[Cuko] 检测到 ' + blocks.length + ' 个 cuckoo 代码块，开始执行');
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let sawDone = false;
-
-      const handleEvent = (eventName: string, data: string) => {
-        if (sawDone) return;
-        if (eventName === 'message') {
+        // 逐个执行代码块
+        const results: Array<{ success: boolean; output?: string; error?: string }> = [];
+        for (const code of blocks) {
           try {
-            const payload = JSON.parse(data);
-            if (payload.providerSessionId && payload.providerSessionId !== providerSessionId) {
-              setProviderSessionId(payload.providerSessionId);
-              window.cukoAPI.updateProviderId(activeThreadId, payload.providerSessionId);
-            }
-
-            let delta = '';
-            if (Array.isArray(payload.output)) {
-              delta = payload.output.map((x: any) => typeof x === 'string' ? x : (x?.text || '')).join('');
-            } else if (typeof payload.output === 'string') {
-              delta = payload.output;
-            }
-            const thinkDelta = typeof payload.think === 'string' ? payload.think : '';
-
-            if (delta) finalContent += delta;
-            if (thinkDelta) finalThink += thinkDelta;
-
-            if (delta || thinkDelta) {
-              setMessages((prev) => prev.map((m) => {
-                if (m.id !== assistantId) return m;
-                return {
-                  ...m,
-                  content: (m.content as string) + delta,
-                  think: thinkDelta ? (m.think || '') + thinkDelta : m.think,
-                };
-              }));
-            }
-          } catch { /* ignore */ }
-        } else if (eventName === 'done') {
-          sawDone = true;
-          try {
-            const payload = JSON.parse(data);
-            finalUsage = payload.usage;
-            patchAssistant({ usage: finalUsage, status: { type: 'complete', reason: 'stop' } });
-          } catch {
-            patchAssistant({ status: { type: 'complete', reason: 'stop' } });
-          }
-        } else if (eventName === 'error') {
-          sawDone = true;
-          try {
-            const payload = JSON.parse(data);
-            const msg = friendlyError(payload.code || 'internal_error', payload.message || '');
-            finalContent += '\n\n⚠️ ' + msg;
-            patchAssistant({ content: finalContent, status: { type: 'incomplete', reason: 'error' } });
-          } catch {
-            finalContent += '\n\n⚠️ ' + data;
-            patchAssistant({ content: finalContent, status: { type: 'incomplete', reason: 'error' } });
+            const r = await (window.cukoAPI as any).executeJs(code, activeWorkspace?.path || '');
+            results.push(r);
+          } catch (e: any) {
+            results.push({ success: false, error: e.message || '执行失败' });
           }
         }
-      };
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        let idx;
-        while ((idx = buffer.indexOf('\n\n')) >= 0) {
-          const raw = buffer.slice(0, idx);
-          buffer = buffer.slice(idx + 2);
-          let eventName = 'message';
-          const dataLines: string[] = [];
-          for (const line of raw.split('\n')) {
-            if (line.startsWith('event:')) eventName = line.slice(6).trim();
-            else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
-          }
-          if (dataLines.length) handleEvent(eventName, dataLines.join('\n'));
-        }
-      }
+        // 拼下一轮 input：第一元素是回复语，后续每元素一个脚本结果
+        let phrase = `执行了 ${results.length} 个脚本`;
+        try {
+          const phraseRes = await (window.cukoAPI as any).pickResultPhrase(results.length);
+          if (phraseRes && phraseRes.success && phraseRes.phrase) phrase = phraseRes.phrase;
+        } catch { /* ignore */ }
 
-      if (!sawDone) patchAssistant({ status: { type: 'complete', reason: 'stop' } });
-    } catch (err: any) {
-      if (err?.name === 'AbortError') {
-        finalContent += '\n\n（已停止）';
-        patchAssistant({ content: finalContent, status: { type: 'incomplete', reason: 'cancelled' } });
-      } else {
-        finalContent += '\n\n⚠️ ' + (err?.message || '请求失败');
-        patchAssistant({ content: finalContent, status: { type: 'incomplete', reason: 'error' } });
+        currentInput = [
+          { type: 'text' as const, text: phrase },
+          ...results.map((r) => ({
+            type: 'text' as const,
+            text: r.success ? (r.output || '(脚本执行完成，无输出)') : '错误原因: ' + (r.error || '未知错误'),
+          })),
+        ];
       }
     } finally {
       setIsRunning(false);
       abortRef.current = null;
-      // 落库 assistant 消息
-      window.cukoAPI.saveMessage({
-        id: assistantId,
-        sessionId: activeThreadId,
-        role: 'assistant',
-        content: finalContent,
-        think: finalThink,
-        usage: finalUsage,
-      });
       refreshThreads();
     }
   }, [config, currentThreadId, providerSessionId, threads, providers, activeWorkspace]);

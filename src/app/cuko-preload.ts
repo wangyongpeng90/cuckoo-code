@@ -20,6 +20,8 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   setActiveWorkspace: (path: string) => ipcRenderer.invoke('cuko:set-active-workspace', path),
   selectDirectory: () => ipcRenderer.invoke('cuko:select-directory'),
   buildSystemPrompt: (projectDir: string) => ipcRenderer.invoke('cuko:build-system-prompt', projectDir),
+  executeJs: (code: string, projectDir: string) => ipcRenderer.invoke('cuko:execute-js', code, projectDir),
+  pickResultPhrase: (n: number) => ipcRenderer.invoke('cuko:pick-result-phrase', n),
   updateProviderId: (sessionId: string, providerId: string) => ipcRenderer.invoke('cuko:update-provider-id', sessionId, providerId),
   updateSessionModel: (sessionId: string, providerId: string, modelId: string) => ipcRenderer.invoke('cuko:update-session-model', sessionId, providerId, modelId),
   
