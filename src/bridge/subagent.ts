@@ -7,7 +7,7 @@
  */
 import { createRequire } from 'node:module';
 import { extractJsToolBlocks } from './parser/js-detector.js';
-import { onInterceptedResponse } from './intercept/observer.js';
+import { onInterceptedResponse, onStream } from './intercept/observer.js';
 
 const require = createRequire(import.meta.url);
 const { ipcRenderer } = require('electron');
@@ -19,6 +19,8 @@ export interface SubagentConfig {
   tools: string[] | null;
   maxTurns: number | null;
   projectDir: string | null;
+  /** 网关模式：task 是纯用户消息（不加"任务"框架），让 AI 自由用工具 */
+  isGateway?: boolean;
 }
 
 /** 从 process.argv 解析子代理配置（无则 null） */
@@ -38,6 +40,8 @@ export function readSubagentConfig(): SubagentConfig | null {
 
 /** 拼子代理的"代理提示 + 任务"（作为 extraPrompt 追加到完整系统提示词末尾） */
 function buildSubagentPrompt(cfg: SubagentConfig): string {
+  // 网关模式：纯用户消息（像正常对话），不加"任务"框架，让 AI 自由用工具
+  if (cfg.isGateway) return cfg.task || '';
   const parts: string[] = [];
   if (cfg.systemPrompt) parts.push(cfg.systemPrompt);
   parts.push('');
@@ -58,6 +62,29 @@ export function initSubagentIfNeeded(): SubagentConfig | null {
 
   console.log('[Cuckoo Code][子代理] 激活：' + cfg.agentName);
 
+  // ===== 进度上报（节流）：逐字增量 → 主进程 → 父窗口 UI =====
+  let lastPushAt = 0;
+  let lastPreview = '';
+  function pushProgress(patch: any): void {
+    try { ipcRenderer.send('subagent-progress', patch); } catch (_) { /* ignore */ }
+  }
+  onStream((ev: any) => {
+    try {
+      const t = (ev && ev.text) || '';
+      const th = (ev && ev.think) || '';
+      if (!t && !th) return;
+      const now = Date.now();
+      // 节流：最多每 400ms 推一次，且正文有变化
+      if (now - lastPushAt < 400) return;
+      const preview = t.slice(-200);
+      if (preview === lastPreview && !th) return;
+      lastPushAt = now;
+      lastPreview = preview;
+      // text 带完整正文 + think 带完整思考（供网关流式）；preview 截断（供父窗口 UI）
+      pushProgress({ status: 'running', preview: preview, text: t, think: th });
+    } catch (_) { /* ignore */ }
+  });
+
   // 监听回复：无工具调用 = 完成；含工具 = 一轮（受 maxTurns 限制）
   let turnCount = 0;
   onInterceptedResponse((text: string) => {
@@ -66,11 +93,14 @@ export function initSubagentIfNeeded(): SubagentConfig | null {
     const blocks = extractJsToolBlocks(raw);
     if (blocks.length === 0) {
       console.log('[Cuckoo Code][子代理] 收到最终回复，长度=' + raw.length + '，上报主进程');
+      // 推一次 done（网关用它收尾）
+      pushProgress({ status: 'done', text: raw, done: true });
       ipcRenderer.invoke('subagent-response', { text: raw, done: true }).catch(() => {});
       return;
     }
     // 含工具调用 = 一轮
     turnCount++;
+    pushProgress({ turn: turnCount, status: 'running', preview: raw.slice(-200) });
     if (cfg.maxTurns && turnCount >= cfg.maxTurns) {
       console.log('[Cuckoo Code][子代理] 达到 maxTurns=' + cfg.maxTurns + '，停止并上报部分结果');
       ipcRenderer.invoke('subagent-response', { text: raw, partial: true, turns: turnCount }).catch(() => {});
