@@ -41,12 +41,28 @@ const useShallowStable = <T extends Record<string, unknown> | undefined>(
 };
 
 const CuckooSyntaxHighlighter: FC<SyntaxHighlighterProps> = ({ language, code, components: { Pre, Code } }) => {
+  const { isCopied, copyToClipboard } = useCopyToClipboard();
+  const onCopy = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!code || isCopied) return;
+    copyToClipboard(code);
+  };
+
   return (
     <details className="aui-cuckoo-details border-border/50 bg-muted/30 group mt-3 rounded-xl border">
       <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center justify-between px-3.5 py-1.5 text-xs font-medium transition-colors select-none">
-        <span className="lowercase">{language} 脚本</span>
-        <span className="text-[10px] opacity-60 group-open:hidden">点击展开</span>
-        <span className="hidden text-[10px] opacity-60 group-open:inline">点击折叠</span>
+        <span className="lowercase font-semibold">{language} 脚本</span>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] opacity-60 group-open:hidden">点击展开</span>
+          <span className="hidden text-[10px] opacity-60 group-open:inline">点击折叠</span>
+          <div className="flex items-center justify-center border-l border-border/50 pl-2">
+            <TooltipIconButton tooltip="Copy" onClick={onCopy} className="h-6 w-6 hover:bg-accent/50 text-muted-foreground hover:text-foreground">
+              {!isCopied && <CopyIcon className="h-3.5 w-3.5" />}
+              {isCopied && <CheckIcon className="h-3.5 w-3.5 text-green-500 animate-in zoom-in-50 fade-in" />}
+            </TooltipIconButton>
+          </div>
+        </div>
       </summary>
       <div className="border-border/50 border-t">
         <Pre className="aui-md-pre overflow-x-auto rounded-none p-3.5 text-[13px] leading-relaxed">
@@ -58,7 +74,10 @@ const CuckooSyntaxHighlighter: FC<SyntaxHighlighterProps> = ({ language, code, c
 };
 
 const defaultComponentsByLanguage: MarkdownTextPrimitiveProps["componentsByLanguage"] = {
-  cuckoo: { SyntaxHighlighter: CuckooSyntaxHighlighter },
+  cuckoo: { 
+    SyntaxHighlighter: CuckooSyntaxHighlighter,
+    CodeHeader: () => null,
+  },
 };
 
 const MarkdownTextImpl: FC<MarkdownTextProps> = ({
