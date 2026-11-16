@@ -661,10 +661,10 @@ function ChatApp() {
     inputParts.push({ type: 'text', text });
 
     let currentInput = inputParts;
-    const MAX_LOOPS = 10;
 
     try {
-      for (let loop = 0; loop < MAX_LOOPS; loop++) {
+      // 无上限轮数：只要 AI 继续输出 cuckoo 代码块就持续执行工具
+      for (;;) {
         // 每轮创建独立 assistant 消息
         const assistantId = crypto.randomUUID();
         const assistantMsg: Msg = { role: 'assistant', content: '', id: assistantId, status: { type: 'running' } };
@@ -810,10 +810,6 @@ function ChatApp() {
         // 检测 cuckoo 代码块
         const blocks = extractCuckooBlocks(roundContent);
         if (blocks.length === 0) break;
-        if (loop === MAX_LOOPS - 1) {
-          console.log('[Cuko] 已达最大循环次数，停止执行工具');
-          break;
-        }
 
         console.log('[Cuko] 检测到 ' + blocks.length + ' 个 cuckoo 代码块，开始执行');
 
