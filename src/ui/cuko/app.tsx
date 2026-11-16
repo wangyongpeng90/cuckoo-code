@@ -325,21 +325,10 @@ function WorkspaceSelector({ workspaces, activeWorkspace, onSelect, onAdd }: {
 const CukoReasoning: ReasoningMessagePartComponent = () => {
   const isStreaming = useAuiState((s) => s.message.status?.type === 'running');
   
-  if (isStreaming) {
-    return (
-      <div className="my-2 flex items-center gap-2 text-sm text-muted-foreground">
-        <span className="shrink-0 font-medium">思考中:</span>
-        <div className="line-clamp-1 flex-1 opacity-80">
-          <MarkdownText />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <ReasoningRoot streaming={false} className="my-2">
-      <ReasoningTrigger active={false} />
-      <ReasoningContent>
+    <ReasoningRoot streaming={isStreaming} autoOpen={false} className="my-2">
+      <ReasoningTrigger active={isStreaming} />
+      <ReasoningContent aria-busy={isStreaming}>
         <ReasoningText>
           <MarkdownText />
         </ReasoningText>
@@ -385,9 +374,9 @@ const CukoToolFallback: ToolCallMessagePartComponent = ({
             {isRunning ? (
               <LoaderIcon className="size-3.5 shrink-0 animate-spin" />
             ) : isError ? (
-              <XCircleIcon className="size-3.5 shrink-0 text-red-500" />
+              <XCircleIcon className="size-3.5 shrink-0" />
             ) : (
-              <CheckIcon className="size-3.5 shrink-0 text-green-500" />
+              <CheckIcon className="size-3.5 shrink-0" />
             )}
             <span className="flex-1 truncate text-left font-mono text-xs">
               <b className="text-foreground">{t.name}</b> {t.arg}
@@ -404,8 +393,8 @@ const CukoToolFallback: ToolCallMessagePartComponent = ({
       </CollapsibleTrigger>
       <ToolFallbackContent className="rounded-b-lg border border-t-0 border-border/50 bg-muted/10 p-3">
         <ToolFallbackError status={status} />
-        <ToolFallbackArgs argsText={argsText} className="mb-3" />
-        <ToolFallbackResult result={result} />
+        <ToolFallbackArgs argsText={argsText} className="mb-3 max-h-[300px] overflow-y-auto custom-scrollbar" />
+        <ToolFallbackResult result={result} className="max-h-[300px] overflow-y-auto custom-scrollbar" />
       </ToolFallbackContent>
     </ToolFallbackRoot>
   );
