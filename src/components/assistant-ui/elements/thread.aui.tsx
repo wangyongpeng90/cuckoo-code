@@ -138,6 +138,8 @@ export type ThreadComponents = {
   Reasoning?: ReasoningMessagePartComponent | undefined;
   TaskGroup?: ComponentType<{ group: ThreadGroupPart }> | undefined;
   ComposerExtra?: ComponentType | undefined;
+  /** 渲染在输入框下方（如用量统计），与 ComposerExtra 不同，它位于 Composer 之后。 */
+  ComposerFooter?: ComponentType | undefined;
 };
 
 const messageGroupBy = groupPartByType({
@@ -231,7 +233,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
   isEmpty,
   autoFocus,
 }) => {
-  const { Welcome = ThreadWelcome } = useContext(ThreadComponentsContext);
+  const { Welcome = ThreadWelcome, ComposerFooter } = useContext(ThreadComponentsContext);
 
   return (
     <ThreadPrimitive.Root
@@ -283,6 +285,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
             <ThreadScrollToBottom />
             <ThreadFollowupSuggestions />
             <Composer autoFocus={autoFocus} />
+            {ComposerFooter && <ComposerFooter />}
             <AuiIf condition={(s) => isNewChatView(s) && s.composer.isEmpty}>
               <ThreadSuggestions />
             </AuiIf>

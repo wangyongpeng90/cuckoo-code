@@ -343,6 +343,26 @@ const CukoReasoning: ReasoningMessagePartComponent = () => {
   );
 };
 
+const CukoUsage: React.FC = () => {
+  // selector 只返回原始数字，避免每次生成新对象触发 getSnapshot 警告/无限重渲染
+  const totalTokens = useAuiState((s) => {
+    const msgs = s.thread.messages;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const u = (msgs[i] as any)?.metadata?.custom?.usage as Usage | undefined;
+      if (u && typeof u.total_tokens === 'number') return u.total_tokens;
+    }
+    return 0;
+  });
+
+  if (!totalTokens) return null;
+  const k = (totalTokens / 1000).toFixed(2);
+  return (
+    <div className="mt-2 text-center text-xs text-muted-foreground/70 select-none">
+      上下文 {k} k
+    </div>
+  );
+};
+
 const CukoToolFallback: ToolCallMessagePartComponent = ({
   toolName,
   argsText,
@@ -933,6 +953,7 @@ function ChatApp() {
         <div className="relative min-h-0 min-w-0 overflow-hidden">
           <Thread components={{
             Reasoning: CukoReasoning,
+            ComposerFooter: CukoUsage,
             ToolFallback: CukoToolFallback,
             ComposerExtra: () => (
               <div className="flex items-center gap-1">
