@@ -64,6 +64,32 @@ function extractText(content: AppendMessage['content']): string {
   return parts.filter((p: any) => p && p.type === 'text' && typeof p.text === 'string').map((p: any) => p.text).join('\n');
 }
 
+/** 从代码块里提取所有被调用的工具名（去重） */
+function extractToolNames(code: string): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  const re = /await\s+([a-zA-Z_$][\w$]*)\s*\(/g;
+  let m;
+  while ((m = re.exec(code)) !== null) {
+    const name = m[1];
+    if (!seen.has(name)) { seen.add(name); names.push(name); }
+  }
+  return names;
+}
+
+/** 从代码块里提取第一个字符串参数作为预览 */
+function extractFirstArg(code: string, toolName: string): string {
+  try {
+    const re = new RegExp(toolName + '\\s*\\(\\s*([\'"\`])([\\s\\S]*?)\\1');
+    const m = re.exec(code);
+    if (m && m[2]) {
+      const s = m[2];
+      return s.length > 60 ? s.slice(0, 60) + '…' : s;
+    }
+  } catch { /* ignore */ }
+  return '';
+}
+
 /** 从 AI 回复中提取 ```cuckoo 代码块 */
 function extractCuckooBlocks(text: string): string[] {
   const blocks: string[] = [];
@@ -385,10 +411,20 @@ function ChatApp() {
     setCurrentThreadId(id);
     const dbMsgs = await window.cukoAPI.getMessages(id);
     const loadedMsgs: Msg[] = dbMsgs.map(m => {
+      // 工具卡片消息：content 是 JSON 数组（tool-call part）
+      let content: any = m.content;
+      if (typeof m.content === 'string' && m.content.trim().startsWith('[')) {
+        try {
+          const parsed = JSON.parse(m.content);
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.type === 'tool-call') {
+            content = parsed;
+          }
+        } catch { /* 非 JSON，保留原文本 */ }
+      }
       return {
         id: m.id,
         role: m.role as any,
-        content: m.content,
+        content,
         think: m.think || undefined,
         usage: m.usage_json ? JSON.parse(m.usage_json) : undefined,
         ...(m.role === 'assistant' ? { status: { type: 'complete' as const, reason: 'stop' } } : {}),
@@ -656,15 +692,65 @@ function ChatApp() {
 
         console.log('[Cuko] 检测到 ' + blocks.length + ' 个 cuckoo 代码块，开始执行');
 
-        // 逐个执行代码块
+        // 逐个执行代码块，每个代码块插入一张工具卡片
         const results: Array<{ success: boolean; output?: string; error?: string }> = [];
         for (const code of blocks) {
+          const toolCallId = crypto.randomUUID();
+          const toolNames = extractToolNames(code);
+          const toolName = toolNames.length === 0 ? 'cuckoo' : toolNames.join(' + ');
+          const firstArg = toolNames.length > 0 ? extractFirstArg(code, toolNames[0]) : '';
+          const toolMsgId = crypto.randomUUID();
+          setMessages((prev) => [...prev, {
+            role: 'assistant',
+            id: toolMsgId,
+            content: [{
+              type: 'tool-call' as const,
+              toolCallId,
+              toolName,
+              args: {},
+              argsText: code,
+              result: undefined,
+            }],
+            status: { type: 'running' as const, reason: 'stop' as const },
+          }]);
+
+          let r: { success: boolean; output?: string; error?: string };
           try {
-            const r = await (window.cukoAPI as any).executeJs(code, activeWorkspace?.path || '');
-            results.push(r);
+            r = await (window.cukoAPI as any).executeJs(code, activeWorkspace?.path || '');
           } catch (e: any) {
-            results.push({ success: false, error: e.message || '执行失败' });
+            r = { success: false, error: e.message || '执行失败' };
           }
+          results.push(r);
+
+          setMessages((prev) => prev.map((m) => {
+            if (m.id !== toolMsgId) return m;
+            const parts = Array.isArray(m.content) ? [...m.content] : [];
+            return {
+              ...m,
+              content: parts.map((p: any) => p && p.type === 'tool-call' ? {
+                ...p,
+                result: r.success ? (r.output || '') : (r.error || ''),
+                isError: !r.success,
+              } : p),
+              status: { type: 'complete' as const, reason: 'stop' as const },
+            };
+          }));
+
+          // 落库工具卡片消息
+          window.cukoAPI.saveMessage({
+            id: toolMsgId,
+            sessionId: activeThreadId,
+            role: 'assistant',
+            content: JSON.stringify([{
+              type: 'tool-call',
+              toolCallId,
+              toolName,
+              args: {},
+              argsText: code,
+              result: r.success ? (r.output || '') : (r.error || ''),
+              isError: !r.success,
+            }]),
+          });
         }
 
         // 拼下一轮 input：第一元素是回复语，后续每元素一个脚本结果
