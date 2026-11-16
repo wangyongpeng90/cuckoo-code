@@ -628,7 +628,7 @@ const AssistantMessage: FC = () => {
                 }
                 const running = part.status.type === "running";
                 return (
-                  <ReasoningRoot streaming={running}>
+                  <ReasoningRoot streaming={running} autoOpen={false}>
                     <ReasoningTrigger
                       active={running}
                       duration={reasoningDuration(part.timing)}

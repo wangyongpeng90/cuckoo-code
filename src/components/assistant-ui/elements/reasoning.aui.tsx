@@ -62,7 +62,19 @@ const ReasoningRoot = forwardRef<
   );
 });
 
-const ReasoningImpl: ReasoningMessagePartComponent = () => <MarkdownText />;
+const ReasoningImpl: ReasoningMessagePartComponent = () => {
+  const isStreaming = useAuiState((s) => s.message.status?.type === "running");
+  return (
+    <ReasoningRoot streaming={isStreaming} autoOpen={false}>
+      <ReasoningTrigger active={isStreaming} />
+      <ReasoningContent aria-busy={isStreaming}>
+        <ReasoningText>
+          <MarkdownText />
+        </ReasoningText>
+      </ReasoningContent>
+    </ReasoningRoot>
+  );
+};
 
 const ReasoningGroupImpl: ReasoningGroupComponent = ({
   children,

@@ -44,6 +44,8 @@ export type ReasoningRootProps = Omit<
     open?: boolean;
     onOpenChange?: (open: boolean) => void;
     defaultOpen?: boolean;
+    /** 流式期间是否自动展开。默认 true；传 false 时流式期间也保持折叠。 */
+    autoOpen?: boolean;
     /**
      * Whether the reasoning is currently streaming. While `true` the
      * disclosure is held open with a bottom-pinned live preview; when
@@ -68,6 +70,7 @@ const ReasoningRoot = forwardRef<
     open: controlledOpen,
     onOpenChange: controlledOnOpenChange,
     defaultOpen = false,
+    autoOpen = true,
     streaming,
     onAnimationStart,
     children,
@@ -81,7 +84,7 @@ const ReasoningRoot = forwardRef<
   const isControlled = controlledOpen !== undefined;
   const isOpen = isControlled
     ? controlledOpen
-    : (userOpen ?? (streaming || initialOpen));
+    : (userOpen ?? ((autoOpen && streaming) || initialOpen));
   const isPreview = streaming === true && isOpen;
 
   const prevStreamingRef = useRef(streaming);
