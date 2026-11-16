@@ -357,7 +357,7 @@ const CukoUsage: React.FC = () => {
   if (!totalTokens) return null;
   const k = (totalTokens / 1000).toFixed(2);
   return (
-    <div className="mt-2 text-center text-xs text-muted-foreground/70 select-none">
+    <div className="text-center text-xs text-muted-foreground/70 select-none">
       上下文 {k} k
     </div>
   );
