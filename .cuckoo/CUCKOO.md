@@ -1,4 +1,4 @@
-# Cuckoo Code 项目说明
+## Cuckoo Code 项目说明
 
 > 本文件在初始化项目时随系统提示词发送给 AI。**做任何改动前先读它。**
 > （类似 Claude Code 的 CLAUDE.md，但对象是 Cuckoo Code 自身。）

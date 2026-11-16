@@ -3,11 +3,32 @@
  * 采用 Provider / Model 分离结构（类似 DSH 的工业级设计）。
  */
 import { createRequire } from 'node:module';
+import { buildPrompt } from '../../session/prompt-builder.js';
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
 
 function getDb() {
   return (global as any).__globalDb;
+}
+
+/** 按 Markdown 一级标题（行首 "# "）把完整提示词切分成段 */
+function splitPromptByH1(prompt: string): string[] {
+  if (!prompt) return [];
+  const lines = prompt.split('\n');
+  const segments: string[] = [];
+  let current: string[] = [];
+  for (const line of lines) {
+    if (/^# /.test(line)) {
+      const text = current.join('\n').trim();
+      if (text) segments.push(text);
+      current = [line];
+    } else {
+      current.push(line);
+    }
+  }
+  const tail = current.join('\n').trim();
+  if (tail) segments.push(tail);
+  return segments;
 }
 
 export function registerCukoIpc(): void {
@@ -131,12 +152,12 @@ export function registerCukoIpc(): void {
     return db.prepare('SELECT * FROM cuko_sessions ORDER BY updated_at DESC').all();
   });
 
-  ipcMain.handle('cuko:create-session', (_event: any, sessionId: string, providerId?: string, modelId?: string) => {
+  ipcMain.handle('cuko:create-session', (_event: any, sessionId: string, providerId?: string, modelId?: string, projectDir?: string) => {
     const db = getDb();
     if (!db) return { success: false };
     const now = new Date().toISOString();
-    db.prepare('INSERT INTO cuko_sessions (id, title, provider_id, model_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(sessionId, 'New Chat', providerId || null, modelId || null, now, now);
+    db.prepare('INSERT INTO cuko_sessions (id, title, provider_id, model_id, project_dir, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(sessionId, 'New Chat', providerId || null, modelId || null, projectDir || null, now, now);
     return { success: true };
   });
 
@@ -146,6 +167,55 @@ export function registerCukoIpc(): void {
     const now = new Date().toISOString();
     db.prepare('UPDATE cuko_sessions SET title = ?, updated_at = ? WHERE id = ?').run(title, now, sessionId);
     return { success: true };
+  });
+
+  // 组装完整系统提示词并按一级标题切分成段
+  ipcMain.handle('cuko:build-system-prompt', (_event: any, projectDir: string) => {
+    try {
+      if (!projectDir) return { success: true, segments: [] };
+      const built = buildPrompt({ providerId: 'cuko', selectedDir: projectDir });
+      if (built.error) return { success: false, error: built.error };
+      const segments = splitPromptByH1(built.prompt);
+      return { success: true, segments };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  // ====== 工作区管理 ======
+  ipcMain.handle('cuko:list-workspaces', () => {
+    const db = getDb();
+    if (!db) return [];
+    try {
+      return db.prepare('SELECT path, name FROM cuko_workspaces ORDER BY created_at ASC').all();
+    } catch { return []; }
+  });
+
+  ipcMain.handle('cuko:add-workspace', (_event: any, path: string, name: string) => {
+    const db = getDb();
+    if (!db) return { success: false };
+    try {
+      db.prepare('INSERT OR IGNORE INTO cuko_workspaces (path, name) VALUES (?, ?)').run(path, name);
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('cuko:get-active-workspace', () => {
+    const db = getDb();
+    if (!db) return null;
+    try {
+      const row = db.prepare("SELECT value FROM cuko_config WHERE key = 'active_workspace'").get() as any;
+      return row ? row.value : null;
+    } catch { return null; }
+  });
+
+  ipcMain.handle('cuko:set-active-workspace', (_event: any, path: string) => {
+    const db = getDb();
+    if (!db) return { success: false };
+    try {
+      db.prepare('INSERT OR REPLACE INTO cuko_config (key, value) VALUES (?, ?)').run('active_workspace', path);
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
   });
 
   ipcMain.handle('cuko:select-directory', async (event: any) => {

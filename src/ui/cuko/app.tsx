@@ -44,6 +44,13 @@ declare global {
       renameSession: (sessionId: string, title: string) => Promise<{ success: boolean }>;
       deleteSession: (sessionId: string) => Promise<{ success: boolean }>;
       updateProviderId: (sessionId: string, providerId: string) => Promise<{ success: boolean }>;
+      updateSessionModel: (sessionId: string, providerId: string, modelId: string) => Promise<{ success: boolean }>;
+      listWorkspaces: () => Promise<Array<{ path: string; name: string }>>;
+      addWorkspace: (path: string, name: string) => Promise<{ success: boolean; error?: string }>;
+      getActiveWorkspace: () => Promise<string | null>;
+      setActiveWorkspace: (path: string) => Promise<{ success: boolean; error?: string }>;
+      selectDirectory: () => Promise<{ success: boolean; dir?: string; canceled?: boolean }>;
+      buildSystemPrompt: (projectDir: string) => Promise<{ success: boolean; segments?: string[]; error?: string }>;
       getMessages: (sessionId: string) => Promise<Array<{ id: string; role: string; content: string; think: string; usage_json: string }>>;
       saveMessage: (msg: any) => Promise<{ success: boolean }>;
     };
@@ -254,41 +261,38 @@ function ChatApp() {
   const abortRef = useRef<AbortController | null>(null);
 
   // 工作区状态
+  // 工作区状态（持久化）
   const [workspaces, setWorkspaces] = useState<Array<{ path: string; name: string }>>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<{ path: string; name: string } | null>(null);
 
-  // 从会话列表聚合出工作区（按 project_dir 去重）
-  const rebuildWorkspaces = (sessions: any[]) => {
-    const seen = new Map<string, string>();
-    for (const s of sessions) {
-      if (s.project_dir && !seen.has(s.project_dir)) {
-        const parts = String(s.project_dir).replace(/[\\/]+$/, '').split(/[\\/]/);
-        seen.set(s.project_dir, parts[parts.length - 1] || s.project_dir);
+  const loadWorkspaces = async () => {
+    try {
+      const list = await (window.cukoAPI as any).listWorkspaces();
+      setWorkspaces(list);
+      const activePath = await (window.cukoAPI as any).getActiveWorkspace();
+      if (activePath) {
+        const found = list.find((w: any) => w.path === activePath);
+        if (found) { setActiveWorkspace(found); return; }
       }
-    }
-    const list = Array.from(seen.entries()).map(([path, name]) => ({ path, name }));
-    setWorkspaces(list);
-    // 如果当前 activeWorkspace 不在列表里了，重置为第一个
-    if (activeWorkspace && !list.find(w => w.path === activeWorkspace.path)) {
-      setActiveWorkspace(list.length > 0 ? list[0] : null);
-    } else if (!activeWorkspace && list.length > 0) {
-      setActiveWorkspace(list[0]);
-    }
+      if (list.length > 0) setActiveWorkspace(list[0]);
+    } catch (e) { console.error('加载工作区失败', e); }
   };
 
-  // 弹出原生选目录，添加工作区
+  const handleSelectWorkspace = async (ws: { path: string; name: string }) => {
+    setActiveWorkspace(ws);
+    try { await (window.cukoAPI as any).setActiveWorkspace(ws.path); } catch (e) { console.error(e); }
+  };
+
   const handleAddWorkspace = async () => {
     try {
       const res = await (window.cukoAPI as any).selectDirectory();
       if (!res.success || !res.dir) return;
       const parts = String(res.dir).replace(/[\\/]+$/, '').split(/[\\/]/);
       const name = parts[parts.length - 1] || res.dir;
-      const ws = { path: res.dir, name };
-      setWorkspaces(prev => prev.some(w => w.path === ws.path) ? prev : [...prev, ws]);
-      setActiveWorkspace(ws);
-    } catch (e) {
-      console.error('选择目录失败', e);
-    }
+      await (window.cukoAPI as any).addWorkspace(res.dir, name);
+      await (window.cukoAPI as any).setActiveWorkspace(res.dir);
+      await loadWorkspaces();
+    } catch (e) { console.error('选择目录失败', e); }
   };
 
   // 更新模型选择并保存为全局默认，同时更新当前空会话的绑定
@@ -328,6 +332,7 @@ function ChatApp() {
         await window.cukoAPI.setActive(defaultConfig.providerId, defaultConfig.modelId);
       }
       
+      await loadWorkspaces();
       refreshThreads();
     }
     init();
@@ -337,7 +342,6 @@ function ChatApp() {
   const refreshThreads = async () => {
     const list = await window.cukoAPI.listSessions();
     setThreads(list);
-    rebuildWorkspaces(list);
     if (list.length > 0 && !currentThreadId) {
       switchThread(list[0].id);
     } else if (list.length === 0) {
@@ -465,11 +469,27 @@ function ChatApp() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
       if (activeToken) headers.Authorization = 'Bearer ' + activeToken;
 
+      // 新对话首次发送：把系统提示词按一级标题分段，依次塞进 input 数组
+      const inputParts: Array<{ type: 'text'; text: string }> = [];
+      if (!providerSessionId && activeWorkspace?.path) {
+        try {
+          const sysRes = await (window.cukoAPI as any).buildSystemPrompt(activeWorkspace.path);
+          if (sysRes && sysRes.success && Array.isArray(sysRes.segments)) {
+            for (const seg of sysRes.segments) {
+              if (seg && seg.trim()) inputParts.push({ type: 'text', text: seg });
+            }
+          }
+        } catch (e) {
+          console.error('组装系统提示词失败', e);
+        }
+      }
+      inputParts.push({ type: 'text', text });
+
       const body: Record<string, any> = {
         cuckSessionId: activeThreadId,
         requestId,
         model: activeModel,
-        input: [{ type: 'text', text }],
+        input: inputParts,
       };
       if (providerSessionId) body.providerSessionId = providerSessionId;
 
@@ -584,7 +604,7 @@ function ChatApp() {
       });
       refreshThreads();
     }
-  }, [config, currentThreadId, providerSessionId, threads, providers]);
+  }, [config, currentThreadId, providerSessionId, threads, providers, activeWorkspace]);
 
   const onCancel = useCallback(async () => {
     abortRef.current?.abort();
@@ -636,7 +656,7 @@ function ChatApp() {
                 <WorkspaceSelector
                   workspaces={workspaces}
                   activeWorkspace={activeWorkspace}
-                  onSelect={(ws) => setActiveWorkspace(ws)}
+                  onSelect={handleSelectWorkspace}
                   onAdd={handleAddWorkspace}
                 />
                 <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={isModelLocked} />

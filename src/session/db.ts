@@ -59,6 +59,15 @@ const CUKO_MODELS_DDL = `
   );
 `;
 
+// [261109-cuko-api] Cuko 工作区表
+const CUKO_WORKSPACES_DDL = `
+  CREATE TABLE IF NOT EXISTS cuko_workspaces (
+    path TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+`;
+
 // [261109-cuko-api] Cuko 会话表
 const CUKO_SESSIONS_DDL = `
   CREATE TABLE IF NOT EXISTS cuko_sessions (
@@ -162,6 +171,7 @@ function initDatabase(userDataDir: string): DatabaseSync {
 
   // 强制兜底：不管历史版本号是多少，确保最新的 Cuko 表一定存在
   db.exec(CUKO_CONFIG_DDL);
+  db.exec(CUKO_WORKSPACES_DDL);
   db.exec(CUKO_SESSIONS_DDL);
   db.exec(CUKO_MESSAGES_DDL);
   db.exec(CUKO_PROVIDERS_DDL);
@@ -176,6 +186,25 @@ function initDatabase(userDataDir: string): DatabaseSync {
     if (!colNames.includes('project_dir')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN project_dir TEXT');
   } catch (e) {
     console.error('[db] 补充 cuko_sessions 列失败:', e);
+  }
+
+  // 一次性迁移：从已有会话的 project_dir 回填 cuko_workspaces（仅在表为空时执行，幂等）
+  try {
+    const cnt = db.prepare('SELECT COUNT(*) as c FROM cuko_workspaces').get() as any;
+    if (cnt && cnt.c === 0) {
+      const dirs = db.prepare("SELECT DISTINCT project_dir FROM cuko_sessions WHERE project_dir IS NOT NULL AND project_dir != ''").all() as any[];
+      if (dirs.length > 0) {
+        const insert = db.prepare('INSERT OR IGNORE INTO cuko_workspaces (path, name) VALUES (?, ?)');
+        for (const row of dirs) {
+          const parts = String(row.project_dir).replace(/[\\/]+$/, '').split(/[\\/]/);
+          const name = parts[parts.length - 1] || row.project_dir;
+          insert.run(row.project_dir, name);
+        }
+        console.log('[db] 已从历史会话回填', dirs.length, '个工作区');
+      }
+    }
+  } catch (e) {
+    console.error('[db] 回填工作区失败:', e);
   }
 
   return db;

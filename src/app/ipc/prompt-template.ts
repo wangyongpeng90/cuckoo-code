@@ -48,6 +48,8 @@ function registerPromptTemplateIpc(): void {
       const providerId = (payload && payload.providerId) || '';
       // 平台列表：内置 + 用户导入 + 插件贡献（动态）
       const providers = getAllProviders().map((p: any) => ({ id: p.id, name: p.name || p.id }));
+      // Cuko API 模式使用独立的虚拟平台 ID，方便单独定制系统提示词
+      providers.push({ id: 'cuko', name: 'Cuko API' });
       const builtin = providerId ? readBuiltinTemplate(providerId) : '';
       const custom = providerId ? (getSetting(customTemplateKey(providerId)) || '') : '';
       return { success: true, providers, builtin, custom };
