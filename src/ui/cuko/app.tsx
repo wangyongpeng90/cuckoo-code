@@ -3,13 +3,34 @@ import { createRoot } from 'react-dom/client';
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
+  useAuiState,
   type ThreadMessageLike,
   type AppendMessage,
   type ExternalStoreThreadListAdapter,
+  type ReasoningMessagePartComponent,
+  type ToolCallMessagePartComponent,
 } from '@assistant-ui/react';
+import {
+  ReasoningRoot,
+  ReasoningTrigger,
+  ReasoningContent,
+  ReasoningText,
+} from '@/components/assistant-ui/elements/reasoning.aui';
+import { MarkdownText } from '@/components/assistant-ui/elements/markdown-text';
 import { Thread } from '@/components/assistant-ui/elements/thread.aui';
 import { ThreadList } from '@/components/assistant-ui/elements/thread-list.aui';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
+import {
+  ToolFallbackRoot,
+  ToolFallbackContent,
+  ToolFallbackArgs,
+  ToolFallbackResult,
+  ToolFallbackError,
+  ToolFallback,
+} from '@/components/assistant-ui/elements/tool-fallback.aui';
+import { CollapsibleTrigger } from '@/components/assistant-ui/elements/collapsible-root';
+import { ChevronDownIcon, CheckIcon, XCircleIcon, LoaderIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 // ============ 类型定义 ============
 interface Config {
@@ -300,6 +321,95 @@ function WorkspaceSelector({ workspaces, activeWorkspace, onSelect, onAdd }: {
     </div>
   );
 }
+
+const CukoReasoning: ReasoningMessagePartComponent = () => {
+  const isStreaming = useAuiState((s) => s.message.status?.type === 'running');
+  
+  if (isStreaming) {
+    return (
+      <div className="my-2 flex items-center gap-2 text-sm text-muted-foreground">
+        <span className="shrink-0 font-medium">思考中:</span>
+        <div className="line-clamp-1 flex-1 opacity-80">
+          <MarkdownText />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ReasoningRoot streaming={false} className="my-2">
+      <ReasoningTrigger active={false} />
+      <ReasoningContent>
+        <ReasoningText>
+          <MarkdownText />
+        </ReasoningText>
+      </ReasoningContent>
+    </ReasoningRoot>
+  );
+};
+
+const CukoToolFallback: ToolCallMessagePartComponent = ({
+  toolName,
+  argsText,
+  result,
+  isError,
+  status,
+}) => {
+  const isRunning = status?.type === 'running';
+  
+  // 解析 argsText 提取多个工具调用
+  const tools = React.useMemo(() => {
+    const list: Array<{ name: string; arg: string }> = [];
+    if (!argsText) return list;
+    // 匹配 await xxx('...') 或 await xxx("...")
+    const re = /await\s+([a-zA-Z_$][\w$]*)\s*\(\s*(['"\`])(.*?)\2/g;
+    let match;
+    while ((match = re.exec(argsText)) !== null) {
+      list.push({ name: match[1], arg: match[3] });
+    }
+    // 兜底：如果没匹配到带字符串参数的，匹配所有 await xxx(
+    if (list.length === 0) {
+      const re2 = /await\s+([a-zA-Z_$][\w$]*)\s*\(/g;
+      while ((match = re2.exec(argsText)) !== null) {
+        list.push({ name: match[1], arg: '' });
+      }
+    }
+    return list;
+  }, [argsText]);
+
+  return (
+    <ToolFallbackRoot className="my-2 w-full max-w-[800px]">
+      <CollapsibleTrigger className="group/trigger relative flex w-full flex-col items-start gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors data-[state=open]:rounded-b-none data-[state=open]:border-b-transparent">
+        {tools.length > 0 ? tools.map((t, i) => (
+          <div key={i} className="flex w-full items-center gap-2 text-muted-foreground">
+            {isRunning ? (
+              <LoaderIcon className="size-3.5 shrink-0 animate-spin" />
+            ) : isError ? (
+              <XCircleIcon className="size-3.5 shrink-0 text-red-500" />
+            ) : (
+              <CheckIcon className="size-3.5 shrink-0 text-green-500" />
+            )}
+            <span className="flex-1 truncate text-left font-mono text-xs">
+              <b className="text-foreground">{t.name}</b> {t.arg}
+            </span>
+          </div>
+        )) : (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <span className="font-mono text-xs">Tool: {toolName}</span>
+          </div>
+        )}
+        <div className="absolute right-3 top-3 opacity-50 transition-transform group-data-[state=open]/trigger:rotate-180">
+          <ChevronDownIcon className="size-4" />
+        </div>
+      </CollapsibleTrigger>
+      <ToolFallbackContent className="rounded-b-lg border border-t-0 border-border/50 bg-muted/10 p-3">
+        <ToolFallbackError status={status} />
+        <ToolFallbackArgs argsText={argsText} className="mb-3" />
+        <ToolFallbackResult result={result} />
+      </ToolFallbackContent>
+    </ToolFallbackRoot>
+  );
+};
 
 // ============ 主应用 ============
 function ChatApp() {
@@ -820,6 +930,8 @@ function ChatApp() {
         </div>
         <div className="relative min-h-0 min-w-0 overflow-hidden">
           <Thread components={{
+            Reasoning: CukoReasoning,
+            ToolFallback: CukoToolFallback,
             ComposerExtra: () => (
               <div className="flex items-center gap-1">
                 <WorkspaceSelector

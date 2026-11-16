@@ -144,9 +144,10 @@ function ToolFallbackTrigger({
   isError,
   responseDeliveryStatus,
   className,
+  children,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
-  toolName: string;
+  toolName?: string;
   status?: ToolCallMessagePartStatus;
   isError?: ToolCallMessagePart["isError"];
   responseDeliveryStatus?: ToolCallMessagePart["responseDeliveryStatus"];
@@ -179,6 +180,8 @@ function ToolFallbackTrigger({
       )}
       {...props}
     >
+      {children ? children : (
+        <>
       <Icon
         data-slot="tool-fallback-trigger-icon"
         className={cn(
@@ -208,6 +211,8 @@ function ToolFallbackTrigger({
           "group-data-panel-open/trigger:rotate-0",
         )}
       />
+      </>
+      )}
     </CollapsibleTrigger>
   );
 }
