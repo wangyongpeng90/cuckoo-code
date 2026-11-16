@@ -42,7 +42,7 @@ const useShallowStable = <T extends Record<string, unknown> | undefined>(
 
 const CuckooSyntaxHighlighter: FC<SyntaxHighlighterProps> = ({ language, code, components: { Pre, Code } }) => {
   return (
-    <details className="aui-cuckoo-details border-border/50 bg-muted/30 group mt-3 rounded-xl border" open={false}>
+    <details className="aui-cuckoo-details border-border/50 bg-muted/30 group mt-3 rounded-xl border">
       <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer items-center justify-between px-3.5 py-1.5 text-xs font-medium transition-colors select-none">
         <span className="lowercase">{language} 脚本</span>
         <span className="text-[10px] opacity-60 group-open:hidden">点击展开</span>
