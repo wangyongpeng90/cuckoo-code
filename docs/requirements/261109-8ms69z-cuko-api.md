@@ -5,7 +5,7 @@ title: Cuko API 客户端与独立工作窗口
 status: done
 branch: feat/261109-8ms69z-cuko-api
 created: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-17
 ---
 
 # Cuko API 客户端与独立工作窗口
@@ -29,41 +29,50 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 ### 整体架构
 
 - **UI 层**：新建独立的 `src/ui/cuko/` 目录，使用 React 19 + `assistant-ui` 官方源码组件（通过 shadcn 拉取）。
-- **业务层**：SSE 客户端与 Cuko API 请求逻辑内联在 `src/ui/cuko/app.tsx`，不依赖网页解析、不依赖现有 Provider 系统。
+- **业务层**：SSE 客户端、工具执行循环、Cuko API 请求逻辑内联在 `src/ui/cuko/app.tsx`，不依赖网页解析、不依赖现有 Provider 系统。
 - **协议层**：严格遵循 `docs/protocols/cuko-api-v1.md`。
 - **构建层**：独立的 `scripts/build-cuko.mjs`，依次编译 Tailwind CSS + esbuild 打包 JS，内联成一个 `built.html`。
 - **主进程**：独立的 BrowserWindow 加载 `built.html`，独立 session partition，禁止任意导航。
 
 ### 数据库设计（对齐 DSH 工业级结构）
 
-三张表替代了早期的 Key-Value 方案：
+六张表：
 
-- `cuko_config`：杂项配置（当前激活的 providerId / modelId）。
+- `cuko_config`：杂项配置（当前激活的 providerId / modelId / active_workspace）。
 - `cuko_providers`：Provider 列表（id / name / base_url / api_key / protocol / created_at / updated_at）。
 - `cuko_models`：模型目录（provider_id + model_id 复合主键 / name / created_at / updated_at）。
-- `cuko_sessions`：会话，额外记录 `provider_id` 和 `model_id`，实现会话级模型锁定。
-- `cuko_messages`：消息（含 think 和 usage_json）。
+- `cuko_sessions`：会话，记录 `provider_id`、`model_id`、`project_dir`，实现会话级模型锁定和项目绑定。
+- `cuko_messages`：消息（含 think、usage_json 和 JSON 格式的 tool-call）。
+- `cuko_workspaces`：工作区目录（path / name）。
 
-数据库通过标准的 `PRAGMA user_version` 做版本迁移（当前版本 5），并在启动末尾执行一次幂等的 `CREATE TABLE IF NOT EXISTS` 兜底。
+数据库通过标准的 `PRAGMA user_version` 做版本迁移，并在启动末尾执行幂等的 `CREATE TABLE IF NOT EXISTS` 和 `ALTER TABLE` 兜底。
 
-### 通信与解析
+### 系统提示词分段注入
 
-- `POST /v1/responses`，请求体只含 `cuckSessionId` / `providerSessionId` / `requestId` / `model` / `input` 数组。
-- SSE 事件：`event: message`（含 output 与 think 增量）、`event: done`（含 usage）、`event: error`（含标准错误码）。
-- `providerSessionId` 首次由 Provider 在首帧返回，前端存入数据库，后续自动续接。
-- 思维链渲染为标准 `reasoning` 内容块，由 `assistant-ui` 官方 `Reasoning` 组件自动折叠展示。
+- 首次新建对话时（无 providerSessionId），主进程调用主项目的 `buildPrompt` 获取完整提示词。
+- 通过正则 `/^# /` 按一级标题切分成字符串数组。
+- 将分段注入 `input` 数组的前面，最后跟上用户消息。
+- 续接对话时不重复发送。
 
-### UI 交互
+### 工具执行循环
+
+- SSE 流式接收结束后（且收到 `done` 事件），提取回复中的 cuckoo 代码块。
+- 逐个调用主进程的 `cuko:execute-js` 执行代码。
+- 执行完成后，将结果拼装成下一轮的 `input` 数组：`[0]` 为随机回复语（从回复语池抽取），`[1..n]` 为每个代码块的执行结果。
+- 最多执行 10 轮，防止死循环。
+
+### UI 交互定制
 
 - 左侧使用官方 `ThreadList`，支持新建 / 切换 / 重命名 / 删除。
 - 顶部模型选择器按 Provider 分组，展示所有可用模型。
-- **会话锁定**：一旦当前会话已有消息，模型选择器自动置灰，防止中途切换导致 Provider 上下文错乱。
+- **会话锁定**：一旦当前会话已有消息，模型选择器自动置灰。
 - 设置面板通过 `settings-cuko.tsx` 独立组件实现，沿用主项目 `--ck-*` 设计 token。
+- **UI 魔改**：为了让界面贴近用户预期，直接修改了 `assistant-ui` 的源码（详见验收标准中的细节）。
 
 ### 关键约定
 
 - Cuko 窗口与主应用完全隔离：独立入口 `src/ui/cuko/app.tsx`，独立 tsconfig（`tsconfig.cuko.json`，bundler 解析），独立 Tailwind 配置。
-- 不出现"桥接"字样：Provider 定位为中性的 Stateful Provider，不鼓励对外宣传中绑定具体实现。
+- 不出现"桥接"字样：Provider 定位为中性的 Stateful Provider。
 - 不含阻塞式弹窗：所有提示改为 2 秒自动消失的内联 tip，避免 Electron 无边框窗口下 UI 失焦。
 
 ## 验收标准
@@ -75,6 +84,16 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - [x] 支持多 Provider、多模型切换，并在会话内锁定模型。
 - [x] 支持思维链（think）折叠展示和 token 用量（usage）记录。
 - [x] 多会话持久化，切换会话时恢复历史消息和绑定模型。
+- [x] **工作区绑定**：支持选择工作区目录，新建会话时绑定 `project_dir`。
+- [x] **系统提示词注入**：首次对话自动按 `# ` 分段注入系统提示词。
+- [x] **工具执行循环**：自动提取 `cuckoo` 代码块并执行，将结果回传，最多 10 轮。
+- [x] **UI 深度定制**：
+  - [x] 去除冗余的 `1 tool call` 外层分组。
+  - [x] 去除纯工具消息底部的复制/重试操作栏。
+  - [x] 思考块流式展开、结束后折叠。
+  - [x] cuckoo 代码块默认折叠，带复制按钮。
+  - [x] 工具卡片折叠时多行展示 `await xxx` 参数解析，展开后代码/结果限高滚动。
+  - [x] 多个工具调用合并到同一消息，消除巨大间距。
 - [ ] 支持传入多模态文件（Base64）。
 - [x] `typecheck / test / lint / compile` 全绿。
 

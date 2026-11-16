@@ -1,5 +1,11 @@
 "use client";
 
+/**
+ * [261109-8ms69z-cuko-api] 魔改 assistant-ui 消息结构（去分组/去操作栏）
+ * 此文件属于 Cuko API 独立工作窗口需求，详细设计见：
+ * docs/requirements/261109-8ms69z-cuko-api.md
+ */
+
 import {
   ComposerAddAttachment,
   ComposerAttachments,

@@ -1,3 +1,9 @@
+/**
+ * [261109-8ms69z-cuko-api] Cuko 独立窗口 Preload 脚本
+ * 此文件属于 Cuko API 独立工作窗口需求，详细设计见：
+ * docs/requirements/261109-8ms69z-cuko-api.md
+ */
+
 import { contextBridge, ipcRenderer } from 'electron';
 
 contextBridge.exposeInMainWorld('cukoAPI', {

@@ -1,3 +1,9 @@
+/**
+ * [261109-8ms69z-cuko-api] 数据库定义与迁移（包含 cuko_* 相关表）
+ * 此文件属于 Cuko API 独立工作窗口需求，详细设计见：
+ * docs/requirements/261109-8ms69z-cuko-api.md
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';

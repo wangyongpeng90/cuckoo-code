@@ -1,4 +1,10 @@
 /**
+ * [261109-8ms69z-cuko-api] Cuko API IPC 处理器（整合 Provider、Session、工具执行）
+ * 此文件属于 Cuko API 独立工作窗口需求，详细设计见：
+ * docs/requirements/261109-8ms69z-cuko-api.md
+ */
+
+/**
  * Cuko API 独立窗口的 IPC 处理器。
  * 采用 Provider / Model 分离结构（类似 DSH 的工业级设计）。
  */
