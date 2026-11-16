@@ -326,7 +326,7 @@ const CukoReasoning: ReasoningMessagePartComponent = () => {
   const isStreaming = useAuiState((s) => s.message.status?.type === 'running');
   
   return (
-    <ReasoningRoot streaming={isStreaming} autoOpen={false} className="my-2">
+    <ReasoningRoot streaming={isStreaming} autoOpen={true} className="my-2">
       <ReasoningTrigger active={isStreaming} />
       <ReasoningContent aria-busy={isStreaming}>
         <ReasoningText>

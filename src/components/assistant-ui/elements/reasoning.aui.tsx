@@ -65,7 +65,7 @@ const ReasoningRoot = forwardRef<
 const ReasoningImpl: ReasoningMessagePartComponent = () => {
   const isStreaming = useAuiState((s) => s.message.status?.type === "running");
   return (
-    <ReasoningRoot streaming={isStreaming} autoOpen={false}>
+    <ReasoningRoot streaming={isStreaming}>
       <ReasoningTrigger active={isStreaming} />
       <ReasoningContent aria-busy={isStreaming}>
         <ReasoningText>
@@ -90,7 +90,7 @@ const ReasoningGroupImpl: ReasoningGroupComponent = ({
   });
 
   return (
-    <ReasoningRoot streaming={isReasoningStreaming} autoOpen={false}>
+    <ReasoningRoot streaming={isReasoningStreaming}>
       <ReasoningTrigger active={isReasoningStreaming} />
       <ReasoningContent aria-busy={isReasoningStreaming}>
         <ReasoningText>{children}</ReasoningText>
