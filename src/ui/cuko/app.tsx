@@ -481,9 +481,11 @@ function ChatApp() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    let currentProviderSessionId = providerSessionId;
+
     // 构建首轮 input（系统提示词分段 + 用户消息）
     const inputParts: Array<{ type: 'text'; text: string }> = [];
-    if (!providerSessionId && activeWorkspace?.path) {
+    if (!currentProviderSessionId && activeWorkspace?.path) {
       try {
         const sysRes = await (window.cukoAPI as any).buildSystemPrompt(activeWorkspace.path);
         if (sysRes && sysRes.success && Array.isArray(sysRes.segments)) {
@@ -521,7 +523,7 @@ function ChatApp() {
           model: activeModel,
           input: currentInput,
         };
-        if (providerSessionId) body.providerSessionId = providerSessionId;
+        if (currentProviderSessionId) body.providerSessionId = currentProviderSessionId;
 
         let roundContent = '';
         let roundThink = '';
@@ -548,7 +550,8 @@ function ChatApp() {
             if (eventName === 'message') {
               try {
                 const payload = JSON.parse(data);
-                if (payload.providerSessionId && payload.providerSessionId !== providerSessionId) {
+                if (payload.providerSessionId && payload.providerSessionId !== currentProviderSessionId) {
+                  currentProviderSessionId = payload.providerSessionId;
                   setProviderSessionId(payload.providerSessionId);
                   window.cukoAPI.updateProviderId(activeThreadId, payload.providerSessionId);
                 }
@@ -577,6 +580,12 @@ function ChatApp() {
               try {
                 const payload = JSON.parse(data);
                 roundUsage = payload.usage;
+                // done 帧里也可能携带 providerSessionId（首帧没给时的兜底）
+                if (payload.providerSessionId && payload.providerSessionId !== currentProviderSessionId) {
+                  currentProviderSessionId = payload.providerSessionId;
+                  setProviderSessionId(payload.providerSessionId);
+                  window.cukoAPI.updateProviderId(activeThreadId, payload.providerSessionId);
+                }
                 patchAssistant({ usage: roundUsage, status: { type: 'complete', reason: 'stop' } });
               } catch {
                 patchAssistant({ status: { type: 'complete', reason: 'stop' } });
@@ -633,6 +642,9 @@ function ChatApp() {
           think: roundThink,
           usage: roundUsage,
         });
+
+        // 只有正常收到 done 帧才检测并执行工具；中断/出错不执行
+        if (!sawDone) break;
 
         // 检测 cuckoo 代码块
         const blocks = extractCuckooBlocks(roundContent);
