@@ -680,13 +680,15 @@ const AssistantMessage: FC = () => {
         <MessageError />
       </div>
 
-      <div
-        data-slot="aui_assistant-message-footer"
-        className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}
-      >
-        <BranchPicker />
-        <AssistantActionBar />
-      </div>
+      <AuiIf condition={(s) => !s.message.content.every((p: any) => p.type === "tool-call")}>
+        <div
+          data-slot="aui_assistant-message-footer"
+          className={cn("ms-2 flex items-center", ACTION_BAR_HEIGHT)}
+        >
+          <BranchPicker />
+          <AssistantActionBar />
+        </div>
+      </AuiIf>
     </MessagePrimitive.Root>
   );
 };

@@ -368,7 +368,7 @@ const CukoToolFallback: ToolCallMessagePartComponent = ({
 
   return (
     <ToolFallbackRoot className="my-2 w-full max-w-[800px]">
-      <CollapsibleTrigger className="group/trigger relative flex w-full flex-col items-start gap-1.5 rounded-lg border border-border/50 bg-muted/30 px-3 py-2.5 text-sm hover:bg-muted/50 transition-colors data-[state=open]:rounded-b-none data-[state=open]:border-b-transparent">
+      <CollapsibleTrigger className="group/trigger relative flex w-full flex-col items-start gap-1 rounded-lg border border-border/40 bg-muted/20 px-3 py-2 text-sm transition-colors hover:bg-muted/50 data-[state=open]:rounded-b-none data-[state=open]:border-b-transparent">
         {tools.length > 0 ? tools.map((t, i) => (
           <div key={i} className="flex w-full items-center gap-2 text-muted-foreground">
             {isRunning ? (
@@ -379,7 +379,7 @@ const CukoToolFallback: ToolCallMessagePartComponent = ({
               <CheckIcon className="size-3.5 shrink-0" />
             )}
             <span className="flex-1 truncate text-left font-mono text-xs">
-              <b className="text-foreground">{t.name}</b> {t.arg}
+              <b className="text-foreground font-medium">{t.name}</b> <span className="opacity-80 ml-1">{t.arg}</span>
             </span>
           </div>
         )) : (
@@ -387,11 +387,11 @@ const CukoToolFallback: ToolCallMessagePartComponent = ({
             <span className="font-mono text-xs">Tool: {toolName}</span>
           </div>
         )}
-        <div className="absolute right-3 top-3 opacity-50 transition-transform group-data-[state=open]/trigger:rotate-180">
+        <div className="absolute right-3 top-2.5 opacity-50 transition-transform group-data-[state=open]/trigger:rotate-180">
           <ChevronDownIcon className="size-4" />
         </div>
       </CollapsibleTrigger>
-      <ToolFallbackContent className="rounded-b-lg border border-t-0 border-border/50 bg-muted/10 p-3">
+      <ToolFallbackContent className="rounded-b-lg border border-t-0 border-border/40 bg-muted/10 p-3">
         <ToolFallbackError status={status} />
         <ToolFallbackArgs argsText={argsText} className="mb-3 max-h-[300px] overflow-y-auto custom-scrollbar" />
         <ToolFallbackResult result={result} className="max-h-[300px] overflow-y-auto custom-scrollbar" />
@@ -791,27 +791,38 @@ function ChatApp() {
 
         console.log('[Cuko] 检测到 ' + blocks.length + ' 个 cuckoo 代码块，开始执行');
 
-        // 逐个执行代码块，每个代码块插入一张工具卡片
+        // 所有代码块合并到同一条消息中
         const results: Array<{ success: boolean; output?: string; error?: string }> = [];
+        const toolMsgId = crypto.randomUUID();
+        let combinedParts: any[] = [];
+
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          id: toolMsgId,
+          content: [],
+          status: { type: 'running' as const, reason: 'stop' as const },
+        }]);
+
         for (const code of blocks) {
           const toolCallId = crypto.randomUUID();
           const toolNames = extractToolNames(code);
           const toolName = toolNames.length === 0 ? 'cuckoo' : toolNames.join(' + ');
-          const firstArg = toolNames.length > 0 ? extractFirstArg(code, toolNames[0]) : '';
-          const toolMsgId = crypto.randomUUID();
-          setMessages((prev) => [...prev, {
-            role: 'assistant',
-            id: toolMsgId,
-            content: [{
-              type: 'tool-call' as const,
-              toolCallId,
-              toolName,
-              args: {},
-              argsText: code,
-              result: undefined,
-            }],
-            status: { type: 'running' as const, reason: 'stop' as const },
-          }]);
+
+          // 先加个占位
+          const currentPart = {
+            type: 'tool-call' as const,
+            toolCallId,
+            toolName,
+            args: {},
+            argsText: code,
+            result: undefined,
+          };
+          combinedParts.push(currentPart);
+
+          setMessages((prev) => prev.map((m) => {
+            if (m.id !== toolMsgId) return m;
+            return { ...m, content: [...combinedParts] };
+          }));
 
           let r: { success: boolean; output?: string; error?: string };
           try {
@@ -821,36 +832,32 @@ function ChatApp() {
           }
           results.push(r);
 
+          // 更新该 part 的结果
+          combinedParts = combinedParts.map(p => p.toolCallId === toolCallId ? {
+            ...p,
+            result: r.success ? (r.output || '') : (r.error || ''),
+            isError: !r.success,
+          } : p);
+
           setMessages((prev) => prev.map((m) => {
             if (m.id !== toolMsgId) return m;
-            const parts = Array.isArray(m.content) ? [...m.content] : [];
-            return {
-              ...m,
-              content: parts.map((p: any) => p && p.type === 'tool-call' ? {
-                ...p,
-                result: r.success ? (r.output || '') : (r.error || ''),
-                isError: !r.success,
-              } : p),
-              status: { type: 'complete' as const, reason: 'stop' as const },
-            };
+            return { ...m, content: [...combinedParts] };
           }));
-
-          // 落库工具卡片消息
-          window.cukoAPI.saveMessage({
-            id: toolMsgId,
-            sessionId: activeThreadId,
-            role: 'assistant',
-            content: JSON.stringify([{
-              type: 'tool-call',
-              toolCallId,
-              toolName,
-              args: {},
-              argsText: code,
-              result: r.success ? (r.output || '') : (r.error || ''),
-              isError: !r.success,
-            }]),
-          });
         }
+
+        // 最终落库
+        window.cukoAPI.saveMessage({
+          id: toolMsgId,
+          sessionId: activeThreadId,
+          role: 'assistant',
+          content: JSON.stringify(combinedParts),
+        });
+
+        // 更新状态为完成
+        setMessages((prev) => prev.map((m) => {
+          if (m.id !== toolMsgId) return m;
+          return { ...m, status: { type: 'complete' as const, reason: 'stop' as const } };
+        }));
 
         // 拼下一轮 input：第一元素是回复语，后续每元素一个脚本结果
         let phrase = `执行了 ${results.length} 个脚本`;
