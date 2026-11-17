@@ -10,6 +10,7 @@ import { DropdownMenu } from 'radix-ui';
 import {
   ChevronRightIcon,
   FolderIcon,
+  FolderOpenIcon,
   MoreHorizontalIcon,
   PencilIcon,
 } from 'lucide-react';
@@ -31,6 +32,7 @@ interface SessionTreeProps {
   workspaces: SessionTreeWorkspace[];
   activeWorkspacePath?: string;
   onRenameWorkspace?: (path: string, name: string) => Promise<void> | void;
+  onOpenWorkspaceFolder?: (path: string) => Promise<void> | void;
 }
 
 const UNASSIGNED = '__unassigned__';
@@ -48,7 +50,8 @@ const MENU_ITEM_CLASS =
 
 const ProjectMenu: React.FC<{
   onRename: () => void;
-}> = ({ onRename }) => (
+  onOpenFolder: () => void;
+}> = ({ onRename, onOpenFolder }) => (
   <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild>
       <button
@@ -71,6 +74,10 @@ const ProjectMenu: React.FC<{
         <DropdownMenu.Item className={MENU_ITEM_CLASS} onSelect={onRename}>
           <PencilIcon className="size-4" />
           重命名项目
+        </DropdownMenu.Item>
+        <DropdownMenu.Item className={MENU_ITEM_CLASS} onSelect={onOpenFolder}>
+          <FolderOpenIcon className="size-4" />
+          打开文件夹
         </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
@@ -129,6 +136,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
   workspaces,
   activeWorkspacePath,
   onRenameWorkspace,
+  onOpenWorkspaceFolder,
 }) => {
   // threadIds 与 adapter.threads 顺序一致，索引即 ByIndexProvider 需要的 index
   const threadIds = useAuiState((s) => s.threads.threadIds);
@@ -223,7 +231,10 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
                     </span>
                   </button>
                   {!isUnassigned && (
-                    <ProjectMenu onRename={() => setRenamingKey(g.key)} />
+                    <ProjectMenu
+                      onRename={() => setRenamingKey(g.key)}
+                      onOpenFolder={() => onOpenWorkspaceFolder?.(g.key)}
+                    />
                   )}
                 </>
               )}

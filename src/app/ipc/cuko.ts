@@ -232,6 +232,14 @@ export function registerCukoIpc(): void {
     } catch (err: any) { return { success: false, error: err.message }; }
   });
 
+  ipcMain.handle('cuko:open-workspace-folder', async (_event: any, path: string) => {
+    try {
+      const err = await require('electron').shell.openPath(path);
+      if (err) return { success: false, error: err };
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
   ipcMain.handle('cuko:rename-workspace', (_event: any, path: string, name: string) => {
     const db = getDb();
     if (!db) return { success: false };

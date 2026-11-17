@@ -75,6 +75,7 @@ declare global {
       listWorkspaces: () => Promise<Array<{ path: string; name: string }>>;
       addWorkspace: (path: string, name: string) => Promise<{ success: boolean; error?: string }>;
       renameWorkspace: (path: string, name: string) => Promise<{ success: boolean; error?: string }>;
+      openWorkspaceFolder: (path: string) => Promise<{ success: boolean; error?: string }>;
       getActiveWorkspace: () => Promise<string | null>;
       setActiveWorkspace: (path: string) => Promise<{ success: boolean; error?: string }>;
       selectDirectory: () => Promise<{ success: boolean; dir?: string; canceled?: boolean }>;
@@ -476,6 +477,12 @@ function ChatApp() {
       await (window.cukoAPI as any).setActiveWorkspace(res.dir);
       await loadWorkspaces();
     } catch (e) { console.error('选择目录失败', e); }
+  };
+
+  const handleOpenWorkspaceFolder = async (path: string) => {
+    try {
+      await (window.cukoAPI as any).openWorkspaceFolder(path);
+    } catch (e) { console.error('打开文件夹失败', e); }
   };
 
   const handleRenameWorkspace = async (path: string, name: string) => {
@@ -959,6 +966,7 @@ function ChatApp() {
               workspaces={workspaces}
               activeWorkspacePath={activeWorkspace?.path}
               onRenameWorkspace={handleRenameWorkspace}
+              onOpenWorkspaceFolder={handleOpenWorkspaceFolder}
             />
           </div>
           <div className="border-t p-2">

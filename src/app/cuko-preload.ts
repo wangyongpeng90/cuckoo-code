@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   listWorkspaces: () => ipcRenderer.invoke('cuko:list-workspaces'),
   addWorkspace: (path: string, name: string) => ipcRenderer.invoke('cuko:add-workspace', path, name),
   renameWorkspace: (path: string, name: string) => ipcRenderer.invoke('cuko:rename-workspace', path, name),
+  openWorkspaceFolder: (path: string) => ipcRenderer.invoke('cuko:open-workspace-folder', path),
   getActiveWorkspace: () => ipcRenderer.invoke('cuko:get-active-workspace'),
   setActiveWorkspace: (path: string) => ipcRenderer.invoke('cuko:set-active-workspace', path),
   selectDirectory: () => ipcRenderer.invoke('cuko:select-directory'),
