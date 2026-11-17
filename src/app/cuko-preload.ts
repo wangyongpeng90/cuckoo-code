@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   pickResultPhrase: (n: number) => ipcRenderer.invoke('cuko:pick-result-phrase', n),
   updateProviderId: (sessionId: string, providerId: string) => ipcRenderer.invoke('cuko:update-provider-id', sessionId, providerId),
   updateSessionModel: (sessionId: string, providerId: string, modelId: string) => ipcRenderer.invoke('cuko:update-session-model', sessionId, providerId, modelId),
+  updateSessionProject: (sessionId: string, projectDir: string) => ipcRenderer.invoke('cuko:update-session-project', sessionId, projectDir),
   
   getMessages: (sessionId: string) => ipcRenderer.invoke('cuko:get-messages', sessionId),
   saveMessage: (msg: any) => ipcRenderer.invoke('cuko:save-message', msg),

@@ -293,6 +293,16 @@ export function registerCukoIpc(): void {
     return { success: true };
   });
 
+  ipcMain.handle('cuko:update-session-project', (_event: any, sessionId: string, projectDir: string) => {
+    const db = getDb();
+    if (!db) return { success: false };
+    try {
+      const now = new Date().toISOString();
+      db.prepare('UPDATE cuko_sessions SET project_dir = ?, updated_at = ? WHERE id = ?').run(projectDir || null, now, sessionId);
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
   ipcMain.handle('cuko:update-provider-id', (_event: any, sessionId: string, providerSessionId: string) => {
     const db = getDb();
     if (!db) return { success: false };

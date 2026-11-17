@@ -72,6 +72,7 @@ declare global {
       deleteSession: (sessionId: string) => Promise<{ success: boolean }>;
       updateProviderId: (sessionId: string, providerId: string) => Promise<{ success: boolean }>;
       updateSessionModel: (sessionId: string, providerId: string, modelId: string) => Promise<{ success: boolean }>;
+      updateSessionProject: (sessionId: string, projectDir: string) => Promise<{ success: boolean; error?: string }>;
       listWorkspaces: () => Promise<Array<{ path: string; name: string }>>;
       addWorkspace: (path: string, name: string) => Promise<{ success: boolean; error?: string }>;
       renameWorkspace: (path: string, name: string) => Promise<{ success: boolean; error?: string }>;
@@ -469,7 +470,15 @@ function ChatApp() {
 
   const handleSelectWorkspace = async (ws: { path: string; name: string }) => {
     setActiveWorkspace(ws);
-    try { await (window.cukoAPI as any).setActiveWorkspace(ws.path); } catch (e) { console.error(e); }
+    try {
+      await (window.cukoAPI as any).setActiveWorkspace(ws.path);
+      // 同步把当前会话迁移到所选工作区（持久化），否则左侧树仍显示在旧项目下
+      const tid = currentThreadIdRef.current;
+      if (tid) {
+        await (window.cukoAPI as any).updateSessionProject(tid, ws.path);
+        await refreshThreads();
+      }
+    } catch (e) { console.error(e); }
   };
 
   const handleAddWorkspace = async () => {
