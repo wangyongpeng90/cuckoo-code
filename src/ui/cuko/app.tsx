@@ -24,7 +24,7 @@ import {
 } from '@/components/assistant-ui/elements/reasoning.aui';
 import { MarkdownText } from '@/components/assistant-ui/elements/markdown-text';
 import { Thread } from '@/components/assistant-ui/elements/thread.aui';
-import { ThreadList } from '@/components/assistant-ui/elements/thread-list.aui';
+import { SessionTree } from '@/ui/cuko/session-tree';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
 import {
   ToolFallbackRoot,
@@ -433,7 +433,7 @@ function ChatApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   
   // 会话状态
-  const [threads, setThreads] = useState<Array<{ id: string; title: string; provider_id: string; model_id: string; provider_session_id?: string; updated_at: string }>>([]);
+  const [threads, setThreads] = useState<Array<{ id: string; title: string; provider_id: string; model_id: string; project_dir?: string; provider_session_id?: string; updated_at: string }>>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string>('');
   const [providerSessionId, setProviderSessionId] = useState<string>('');
   
@@ -910,7 +910,7 @@ function ChatApp() {
   // 组装 ThreadList Adapter
   const threadListAdapter: ExternalStoreThreadListAdapter = {
     threadId: currentThreadId,
-    threads: threads.map(t => ({ id: t.id, status: 'regular', threadId: t.id, title: t.title })),
+    threads: threads.map(t => ({ id: t.id, status: 'regular' as const, threadId: t.id, title: t.title, custom: { projectDir: t.project_dir || '', providerSessionId: t.provider_session_id || '' } })),
     onSwitchToThread: (id) => switchThread(id),
     onSwitchToNewThread: () => switchNewThread(),
     onRename: (id, title) => renameThread(id, title),
@@ -937,8 +937,16 @@ function ChatApp() {
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="grid h-dvh max-h-dvh grid-cols-[260px_1fr] bg-background text-foreground dark overflow-hidden">
         <div className="flex flex-col min-h-0 border-r bg-sidebar overflow-hidden">
+          <div className="p-2 pb-0">
+            <button
+              onClick={() => switchNewThread()}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border/50 bg-muted/30 px-3 py-1.5 text-sm transition-colors hover:bg-muted/60"
+            >
+              <span className="text-base leading-none">+</span> 新对话
+            </button>
+          </div>
           <div className="flex-1 overflow-y-auto p-2">
-            <ThreadList />
+            <SessionTree threads={threads} workspaces={workspaces} />
           </div>
           <div className="border-t p-2">
             <button onClick={() => setSettingsOpen(true)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
