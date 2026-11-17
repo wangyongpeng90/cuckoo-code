@@ -115,7 +115,9 @@ const readFileAsBase64 = (file: File): Promise<string> =>
  * 协议：{ type: "file", filename, mimeType, data }（见需求档案 261109-8ms69z）
  */
 const CukoAttachmentAdapter: AttachmentAdapter = {
-  accept: '*/*',
+  // 注意：必须是 "*" 而不是 "*/*"。assistant-ui 的 fileMatchesAccept 只对 "*" 特判放行，
+  // "*/*" 会被拆成 generalType="*"，导致任何文件都匹配失败（表现为选完文件毫无反应）。
+  accept: '*',
   async add({ file }) {
     if (file.size > MAX_ATTACHMENT_BYTES) {
       return {
