@@ -582,10 +582,16 @@ function ChatApp() {
     }
   };
 
-  // 新建会话
-  const switchNewThread = async () => {
+  // 新建会话（可指定项目目录；不传则用当前 activeWorkspace）
+  const switchNewThread = async (projectDir?: string) => {
     const newId = crypto.randomUUID();
-    await (window.cukoAPI as any).createSession(newId, config.providerId || undefined, config.modelId || undefined, activeWorkspace?.path || undefined);
+    const targetDir = projectDir || activeWorkspace?.path || undefined;
+    await (window.cukoAPI as any).createSession(newId, config.providerId || undefined, config.modelId || undefined, targetDir);
+    if (projectDir && projectDir !== activeWorkspace?.path) {
+      const ws = workspaces.find((w) => w.path === projectDir);
+      if (ws) setActiveWorkspace(ws);
+      try { await (window.cukoAPI as any).setActiveWorkspace(projectDir); } catch (e) { console.error(e); }
+    }
     setCurrentThreadId(newId);
     setMessages([]);
     setProviderSessionId('');
@@ -967,6 +973,7 @@ function ChatApp() {
               activeWorkspacePath={activeWorkspace?.path}
               onRenameWorkspace={handleRenameWorkspace}
               onOpenWorkspaceFolder={handleOpenWorkspaceFolder}
+              onNewThreadInWorkspace={switchNewThread}
             />
           </div>
           <div className="border-t p-2">
