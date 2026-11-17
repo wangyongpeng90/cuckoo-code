@@ -190,8 +190,18 @@ function initDatabase(userDataDir: string): DatabaseSync {
     if (!colNames.includes('provider_id')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN provider_id TEXT');
     if (!colNames.includes('model_id')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN model_id TEXT');
     if (!colNames.includes('project_dir')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN project_dir TEXT');
+    if (!colNames.includes('archived')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN archived INTEGER DEFAULT 0');
   } catch (e) {
     console.error('[db] 补充 cuko_sessions 列失败:', e);
+  }
+
+  // 补齐 cuko_workspaces 可能缺失的新列（无条件执行，幂等）
+  try {
+    const wcols = db.prepare('PRAGMA table_info(cuko_workspaces)').all() as any[];
+    const wcolNames = wcols.map((c: any) => c.name);
+    if (!wcolNames.includes('archived')) db.exec('ALTER TABLE cuko_workspaces ADD COLUMN archived INTEGER DEFAULT 0');
+  } catch (e) {
+    console.error('[db] 补充 cuko_workspaces 列失败:', e);
   }
 
   // 一次性迁移：从已有会话的 project_dir 回填 cuko_workspaces（仅在表为空时执行，幂等）

@@ -219,7 +219,7 @@ export function registerCukoIpc(): void {
     const db = getDb();
     if (!db) return [];
     try {
-      return db.prepare('SELECT path, name FROM cuko_workspaces ORDER BY created_at ASC').all();
+      return db.prepare('SELECT path, name, COALESCE(archived, 0) AS archived FROM cuko_workspaces ORDER BY created_at ASC').all();
     } catch { return []; }
   });
 
@@ -291,6 +291,42 @@ export function registerCukoIpc(): void {
     const now = new Date().toISOString();
     db.prepare('UPDATE cuko_sessions SET provider_id = ?, model_id = ?, updated_at = ? WHERE id = ?').run(providerId, modelId, now, sessionId);
     return { success: true };
+  });
+
+  ipcMain.handle('cuko:archive-session', (_event: any, sessionId: string) => {
+    const db = getDb();
+    if (!db) return { success: false };
+    try {
+      db.prepare('UPDATE cuko_sessions SET archived = 1, updated_at = ? WHERE id = ?').run(new Date().toISOString(), sessionId);
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('cuko:unarchive-session', (_event: any, sessionId: string) => {
+    const db = getDb();
+    if (!db) return { success: false };
+    try {
+      db.prepare('UPDATE cuko_sessions SET archived = 0, updated_at = ? WHERE id = ?').run(new Date().toISOString(), sessionId);
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('cuko:archive-workspace', (_event: any, path: string) => {
+    const db = getDb();
+    if (!db) return { success: false };
+    try {
+      db.prepare('UPDATE cuko_workspaces SET archived = 1 WHERE path = ?').run(path);
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('cuko:unarchive-workspace', (_event: any, path: string) => {
+    const db = getDb();
+    if (!db) return { success: false };
+    try {
+      db.prepare('UPDATE cuko_workspaces SET archived = 0 WHERE path = ?').run(path);
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
   });
 
   ipcMain.handle('cuko:update-session-project', (_event: any, sessionId: string, projectDir: string) => {

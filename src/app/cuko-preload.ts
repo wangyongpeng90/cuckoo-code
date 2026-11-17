@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   updateProviderId: (sessionId: string, providerId: string) => ipcRenderer.invoke('cuko:update-provider-id', sessionId, providerId),
   updateSessionModel: (sessionId: string, providerId: string, modelId: string) => ipcRenderer.invoke('cuko:update-session-model', sessionId, providerId, modelId),
   updateSessionProject: (sessionId: string, projectDir: string) => ipcRenderer.invoke('cuko:update-session-project', sessionId, projectDir),
+  archiveSession: (sessionId: string) => ipcRenderer.invoke('cuko:archive-session', sessionId),
+  unarchiveSession: (sessionId: string) => ipcRenderer.invoke('cuko:unarchive-session', sessionId),
+  archiveWorkspace: (path: string) => ipcRenderer.invoke('cuko:archive-workspace', path),
+  unarchiveWorkspace: (path: string) => ipcRenderer.invoke('cuko:unarchive-workspace', path),
   
   getMessages: (sessionId: string) => ipcRenderer.invoke('cuko:get-messages', sessionId),
   saveMessage: (msg: any) => ipcRenderer.invoke('cuko:save-message', msg),

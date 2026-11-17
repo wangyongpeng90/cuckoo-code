@@ -66,14 +66,18 @@ declare global {
       listProviders: () => Promise<CukoProvider[]>;
       getActive: () => Promise<{ providerId?: string, modelId?: string }>;
       setActive: (providerId: string, modelId: string) => Promise<{ success: boolean }>;
-      listSessions: () => Promise<Array<{ id: string; title: string; provider_id: string; model_id: string; project_dir?: string; provider_session_id?: string; updated_at: string }>>;
+      listSessions: () => Promise<Array<{ id: string; title: string; provider_id: string; model_id: string; project_dir?: string; provider_session_id?: string; archived?: number; updated_at: string }>>;
       createSession: (sessionId: string, providerId?: string, modelId?: string, projectDir?: string) => Promise<{ success: boolean }>;
       renameSession: (sessionId: string, title: string) => Promise<{ success: boolean }>;
       deleteSession: (sessionId: string) => Promise<{ success: boolean }>;
       updateProviderId: (sessionId: string, providerId: string) => Promise<{ success: boolean }>;
       updateSessionModel: (sessionId: string, providerId: string, modelId: string) => Promise<{ success: boolean }>;
       updateSessionProject: (sessionId: string, projectDir: string) => Promise<{ success: boolean; error?: string }>;
-      listWorkspaces: () => Promise<Array<{ path: string; name: string }>>;
+      archiveSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+      unarchiveSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+      archiveWorkspace: (path: string) => Promise<{ success: boolean; error?: string }>;
+      unarchiveWorkspace: (path: string) => Promise<{ success: boolean; error?: string }>;
+      listWorkspaces: () => Promise<Array<{ path: string; name: string; archived?: number }>>;
       addWorkspace: (path: string, name: string) => Promise<{ success: boolean; error?: string }>;
       renameWorkspace: (path: string, name: string) => Promise<{ success: boolean; error?: string }>;
       openWorkspaceFolder: (path: string) => Promise<{ success: boolean; error?: string }>;
@@ -436,7 +440,7 @@ function ChatApp() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   
   // 会话状态
-  const [threads, setThreads] = useState<Array<{ id: string; title: string; provider_id: string; model_id: string; project_dir?: string; provider_session_id?: string; updated_at: string }>>([]);
+  const [threads, setThreads] = useState<Array<{ id: string; title: string; provider_id: string; model_id: string; project_dir?: string; provider_session_id?: string; archived?: number; updated_at: string }>>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string>('');
   const currentThreadIdRef = useRef<string>('');
   const setThreadId = useCallback((id: string) => {
@@ -452,7 +456,7 @@ function ChatApp() {
 
   // 工作区状态
   // 工作区状态（持久化）
-  const [workspaces, setWorkspaces] = useState<Array<{ path: string; name: string }>>([]);
+  const [workspaces, setWorkspaces] = useState<Array<{ path: string; name: string; archived?: number }>>([]);
   const [activeWorkspace, setActiveWorkspace] = useState<{ path: string; name: string } | null>(null);
 
   const loadWorkspaces = async () => {
@@ -497,6 +501,14 @@ function ChatApp() {
     try {
       await (window.cukoAPI as any).openWorkspaceFolder(path);
     } catch (e) { console.error('打开文件夹失败', e); }
+  };
+
+  const handleArchiveWorkspace = async (path: string, archived: boolean) => {
+    try {
+      if (archived) await (window.cukoAPI as any).unarchiveWorkspace(path);
+      else await (window.cukoAPI as any).archiveWorkspace(path);
+      await loadWorkspaces();
+    } catch (e) { console.error('归档工作区失败', e); }
   };
 
   const handleRenameWorkspace = async (path: string, name: string) => {
@@ -954,11 +966,18 @@ function ChatApp() {
   // 组装 ThreadList Adapter
   const threadListAdapter: ExternalStoreThreadListAdapter = {
     threadId: currentThreadId,
-    threads: threads.map(t => ({ id: t.id, status: 'regular' as const, threadId: t.id, title: t.title, custom: { projectDir: t.project_dir || '', providerSessionId: t.provider_session_id || '' } })),
+    threads: threads
+      .filter((t) => !t.archived)
+      .map((t) => ({ id: t.id, status: 'regular' as const, threadId: t.id, title: t.title, custom: { projectDir: t.project_dir || '', providerSessionId: t.provider_session_id || '' } })),
+    archivedThreads: threads
+      .filter((t) => !!t.archived)
+      .map((t) => ({ id: t.id, status: 'archived' as const, threadId: t.id, title: t.title, custom: { projectDir: t.project_dir || '', providerSessionId: t.provider_session_id || '' } })),
     onSwitchToThread: (id) => switchThread(id),
     onSwitchToNewThread: () => switchNewThread(),
     onRename: (id, title) => renameThread(id, title),
     onDelete: (id) => deleteThread(id),
+    onArchive: async (id) => { await (window.cukoAPI as any).archiveSession(id); await refreshThreads(); },
+    onUnarchive: async (id) => { await (window.cukoAPI as any).unarchiveSession(id); await refreshThreads(); },
   };
 
   const runtime = useExternalStoreRuntime({
@@ -997,6 +1016,7 @@ function ChatApp() {
               onRenameWorkspace={handleRenameWorkspace}
               onOpenWorkspaceFolder={handleOpenWorkspaceFolder}
               onNewThreadInWorkspace={switchNewThread}
+              onArchiveWorkspace={handleArchiveWorkspace}
             />
           </div>
           <div className="border-t p-2">

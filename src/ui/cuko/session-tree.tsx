@@ -8,6 +8,7 @@ import { ThreadListItemByIndexProvider, useAuiState } from '@assistant-ui/react'
 import { ThreadListItem } from '@/components/assistant-ui/elements/thread-list.aui';
 import { DropdownMenu } from 'radix-ui';
 import {
+  ArchiveIcon,
   ChevronRightIcon,
   FolderIcon,
   FolderOpenIcon,
@@ -21,11 +22,13 @@ export interface SessionTreeThread {
   id: string;
   title: string;
   project_dir?: string;
+  archived?: number;
 }
 
 export interface SessionTreeWorkspace {
   path: string;
   name: string;
+  archived?: number;
 }
 
 interface SessionTreeProps {
@@ -35,6 +38,7 @@ interface SessionTreeProps {
   onRenameWorkspace?: (path: string, name: string) => Promise<void> | void;
   onOpenWorkspaceFolder?: (path: string) => Promise<void> | void;
   onNewThreadInWorkspace?: (path: string) => Promise<void> | void;
+  onArchiveWorkspace?: (path: string, archived: boolean) => Promise<void> | void;
 }
 
 const UNASSIGNED = '__unassigned__';
@@ -45,6 +49,7 @@ interface Group {
   key: string;
   label: string;
   items: Array<{ index: number; id: string }>;
+  archivedItems: Array<{ index: number; id: string }>;
 }
 
 const MENU_ITEM_CLASS =
@@ -54,7 +59,9 @@ const ProjectMenu: React.FC<{
   onRename: () => void;
   onOpenFolder: () => void;
   onNewThread: () => void;
-}> = ({ onRename, onOpenFolder, onNewThread }) => (
+  onArchive: () => void;
+  archived?: boolean;
+}> = ({ onRename, onOpenFolder, onNewThread, onArchive, archived }) => (
   <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild>
       <button
@@ -85,6 +92,10 @@ const ProjectMenu: React.FC<{
         <DropdownMenu.Item className={MENU_ITEM_CLASS} onSelect={onNewThread}>
           <PlusIcon className="size-4" />
           新建对话
+        </DropdownMenu.Item>
+        <DropdownMenu.Item className={MENU_ITEM_CLASS} onSelect={onArchive}>
+          <ArchiveIcon className="size-4" />
+          {archived ? '取消归档' : '归档项目'}
         </DropdownMenu.Item>
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
@@ -145,10 +156,14 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
   onRenameWorkspace,
   onOpenWorkspaceFolder,
   onNewThreadInWorkspace,
+  onArchiveWorkspace,
 }) => {
   // threadIds 与 adapter.threads 顺序一致，索引即 ByIndexProvider 需要的 index
   const threadIds = useAuiState((s) => s.threads.threadIds);
+  const archivedThreadIds = useAuiState((s) => s.threads.archivedThreadIds);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [collapsedArchived, setCollapsedArchived] = useState<Set<string>>(new Set());
+  const [archivedProjectsOpen, setArchivedProjectsOpen] = useState(false);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
 
   const groups = useMemo<Group[]>(() => {
@@ -164,32 +179,53 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
           key,
           label: dir ? (nameByPath.get(dir) || basename(dir)) : '未指定工作区',
           items: [],
+          archivedItems: [],
         };
         map.set(key, g);
       }
-      const index = threadIds.indexOf(t.id);
-      if (index >= 0) g.items.push({ index, id: t.id });
-    });
-
-    // 空工作区也要显示（用户选了目录但还没建会话）
-    workspaces.forEach((w) => {
-      if (!map.has(w.path)) {
-        map.set(w.path, { key: w.path, label: w.name || basename(w.path), items: [] });
+      // 归档会话的 index 属于 archivedThreadIds，活跃会话属于 threadIds
+      if (t.archived) {
+        const index = archivedThreadIds.indexOf(t.id);
+        if (index >= 0) g.archivedItems.push({ index, id: t.id });
+      } else {
+        const index = threadIds.indexOf(t.id);
+        if (index >= 0) g.items.push({ index, id: t.id });
       }
     });
 
-    const list = Array.from(map.values());
+    // 空工作区也要显示（用户选了目录但还没建会话）；已归档项目不在此区渲染
+    workspaces.forEach((w) => {
+      if (!w.archived && !map.has(w.path)) {
+        map.set(w.path, { key: w.path, label: w.name || basename(w.path), items: [], archivedItems: [] });
+      }
+    });
+
+    const list = Array.from(map.values()).filter((g) => g.key !== UNASSIGNED || g.items.length > 0 || g.archivedItems.length > 0);
     // 有会话的组在前，未指定工作区垫底
     list.sort((a, b) => {
       if (a.key === UNASSIGNED) return 1;
       if (b.key === UNASSIGNED) return -1;
-      return b.items.length - a.items.length;
+      return (b.items.length + b.archivedItems.length) - (a.items.length + a.archivedItems.length);
     });
     return list;
-  }, [threads, workspaces, threadIds]);
+  }, [threads, workspaces, threadIds, archivedThreadIds]);
+
+  const archivedProjects = useMemo(
+    () => workspaces.filter((w) => !!w.archived),
+    [workspaces],
+  );
 
   const toggle = (key: string) => {
     setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleArchivedSessions = (key: string) => {
+    setCollapsedArchived((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -243,6 +279,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
                       onRename={() => setRenamingKey(g.key)}
                       onOpenFolder={() => onOpenWorkspaceFolder?.(g.key)}
                       onNewThread={() => onNewThreadInWorkspace?.(g.key)}
+                      onArchive={() => onArchiveWorkspace?.(g.key, false)}
                     />
                   )}
                 </>
@@ -251,7 +288,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
 
             {!isCollapsed && (
               <div className="ms-2 flex flex-col gap-0.5 border-s border-border/40 ps-1.5 pt-0.5">
-                {g.items.length === 0 ? (
+                {g.items.length === 0 && g.archivedItems.length === 0 ? (
                   <div className="px-2 py-1 text-xs text-muted-foreground/60">暂无会话</div>
                 ) : (
                   g.items.map((it) => (
@@ -260,11 +297,75 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
                     </ThreadListItemByIndexProvider>
                   ))
                 )}
+
+                {g.archivedItems.length > 0 && (() => {
+                  const archivedOpen = !collapsedArchived.has(g.key);
+                  return (
+                    <div className="flex flex-col">
+                      <button
+                        type="button"
+                        onClick={() => toggleArchivedSessions(g.key)}
+                        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs text-muted-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                      >
+                        <ChevronRightIcon
+                          className={cn('size-3 shrink-0 transition-transform', archivedOpen && 'rotate-90')}
+                        />
+                        <span className="flex-1 truncate">已归档 ({g.archivedItems.length})</span>
+                      </button>
+                      {archivedOpen && (
+                        <div className="ms-2 flex flex-col gap-0.5 border-s border-border/30 ps-1.5">
+                          {g.archivedItems.map((it) => (
+                            <ThreadListItemByIndexProvider key={it.id} index={it.index} archived={true}>
+                              <ThreadListItem />
+                            </ThreadListItemByIndexProvider>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
         );
       })}
+
+      {archivedProjects.length > 0 && (
+        <div className="mt-2 flex flex-col border-t border-border/40 pt-2">
+          <button
+            type="button"
+            onClick={() => setArchivedProjectsOpen((v) => !v)}
+            className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+          >
+            <ChevronRightIcon
+              className={cn('size-3.5 shrink-0 transition-transform', archivedProjectsOpen && 'rotate-90')}
+            />
+            <span className="flex-1 truncate">已归档项目 ({archivedProjects.length})</span>
+          </button>
+          {archivedProjectsOpen && (
+            <div className="ms-2 flex flex-col gap-0.5 border-s border-border/40 ps-1.5">
+              {archivedProjects.map((w) => (
+                <div
+                  key={w.path}
+                  className="group relative flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
+                >
+                  <FolderIcon className="size-3.5 shrink-0 opacity-50" />
+                  <span className="min-w-0 flex-1 truncate opacity-70" title={w.path}>
+                    {w.name || basename(w.path)}
+                  </span>
+                  <ProjectMenu
+                    onRename={() => {}}
+                    onOpenFolder={() => onOpenWorkspaceFolder?.(w.path)}
+                    onNewThread={() => onNewThreadInWorkspace?.(w.path)}
+                    onArchive={() => onArchiveWorkspace?.(w.path, true)}
+                    archived={true}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
