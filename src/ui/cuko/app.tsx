@@ -15,6 +15,7 @@ import {
   type ExternalStoreThreadListAdapter,
   type ReasoningMessagePartComponent,
   type ToolCallMessagePartComponent,
+  type AttachmentAdapter,
 } from '@assistant-ui/react';
 import {
   ReasoningRoot,
@@ -92,6 +93,75 @@ declare global {
     };
   }
 }
+
+/** 附件大小上限（原始字节） */
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+const readFileAsBase64 = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result || '');
+      // "data:<mime>;base64,xxxx" → 取逗号后的部分
+      const idx = s.indexOf(',');
+      resolve(idx >= 0 ? s.slice(idx + 1) : s);
+    };
+    reader.onerror = () => reject(reader.error || new Error('读取文件失败'));
+    reader.readAsDataURL(file);
+  });
+
+/**
+ * Cuko 附件适配器：本地文件直接读成 base64，随 input 一起发给 Stateful Provider。
+ * 协议：{ type: "file", filename, mimeType, data }（见需求档案 261109-8ms69z）
+ */
+const CukoAttachmentAdapter: AttachmentAdapter = {
+  accept: '*/*',
+  async add({ file }) {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      return {
+        id: crypto.randomUUID(),
+        type: 'file',
+        name: file.name,
+        contentType: file.type || 'application/octet-stream',
+        file,
+        status: {
+          type: 'incomplete',
+          reason: 'error',
+          message: '文件超过 10MB 上限',
+        },
+      };
+    }
+    return {
+      id: crypto.randomUUID(),
+      type: 'file',
+      name: file.name,
+      contentType: file.type || 'application/octet-stream',
+      file,
+      status: { type: 'requires-action', reason: 'composer-send' },
+    };
+  },
+  async remove() {
+    // 本地文件，无需清理远端资源
+  },
+  async send(attachment) {
+    const data = await readFileAsBase64(attachment.file);
+    return {
+      id: attachment.id,
+      type: 'file',
+      name: attachment.name,
+      contentType: attachment.contentType,
+      status: { type: 'complete' },
+      content: [
+        {
+          type: 'file',
+          filename: attachment.name,
+          mimeType: attachment.contentType || 'application/octet-stream',
+          data,
+        } as any,
+      ],
+    };
+  },
+};
 
 function extractText(content: AppendMessage['content']): string {
   const parts = Array.isArray(content) ? content : [];
@@ -652,7 +722,8 @@ function ChatApp() {
   // 发送消息
   const onNew = useCallback(async (append: AppendMessage) => {
     const text = extractText(append.content);
-    if (!text) return;
+    const hasAttachments = Array.isArray((append as any).attachments) && (append as any).attachments.length > 0;
+    if (!text && !hasAttachments) return;
 
     let activeThreadId = currentThreadId;
     if (!activeThreadId) {
@@ -690,7 +761,8 @@ function ChatApp() {
     // 如果当前标题是 New Chat，顺便改个名
     const currentThread = threads.find(t => t.id === activeThreadId);
     if (currentThread && currentThread.title === 'New Chat') {
-      const newTitle = text.slice(0, 15) + (text.length > 15 ? '...' : '');
+      const titleSource = text.trim() || (hasAttachments ? '附件对话' : '');
+      const newTitle = titleSource.slice(0, 15) + (titleSource.length > 15 ? '...' : '');
       await window.cukoAPI.renameSession(activeThreadId, newTitle);
       refreshThreads();
     }
@@ -700,8 +772,8 @@ function ChatApp() {
 
     let currentProviderSessionId = providerSessionId;
 
-    // 构建首轮 input（系统提示词分段 + 用户消息）
-    const inputParts: Array<{ type: 'text'; text: string }> = [];
+    // 构建首轮 input（系统提示词分段 + 用户消息 + 附件）
+    const inputParts: Array<any> = [];
     if (!currentProviderSessionId && activeWorkspace?.path) {
       try {
         const sysRes = await (window.cukoAPI as any).buildSystemPrompt(activeWorkspace.path);
@@ -714,7 +786,38 @@ function ChatApp() {
         console.error('组装系统提示词失败', e);
       }
     }
-    inputParts.push({ type: 'text', text });
+    if (text.trim()) inputParts.push({ type: 'text', text });
+
+    // 附件：assistant-ui 把已发送附件放在 append.attachments（CompleteAttachment[]），
+    // 每个附件自带 content（file/image part 数组），转成 Provider 协议
+    // { type: "file", filename, mimeType, data }
+    const rawParts: any[] = [];
+    const appendAttachments = (append as any).attachments;
+    if (Array.isArray(appendAttachments)) {
+      for (const att of appendAttachments) {
+        if (att && Array.isArray(att.content)) rawParts.push(...att.content);
+      }
+    }
+    for (const p of rawParts) {
+      if (!p) continue;
+      if (p.type === 'file' && typeof p.data === 'string') {
+        inputParts.push({
+          type: 'file',
+          filename: p.filename || 'attachment',
+          mimeType: p.mimeType || 'application/octet-stream',
+          data: p.data,
+        });
+      } else if (p.type === 'image' && typeof p.image === 'string') {
+        // image part 的 image 字段是 data URL，拆出 base64 与 mime
+        const m = /^data:([^;]+);base64,(.*)$/.exec(p.image);
+        inputParts.push({
+          type: 'file',
+          filename: p.filename || 'image',
+          mimeType: m ? m[1] : 'image/png',
+          data: m ? m[2] : p.image,
+        });
+      }
+    }
 
     let currentInput = inputParts;
 
@@ -985,7 +1088,7 @@ function ChatApp() {
     isRunning,
     onNew,
     onCancel,
-    adapters: { threadList: threadListAdapter },
+    adapters: { threadList: threadListAdapter, attachments: CukoAttachmentAdapter },
     convertMessage: (m: Msg) => {
       let content = Array.isArray(m.content) ? [...m.content] : [{ type: 'text', text: (m.content || '') as string }];
       if (m.think) content = [{ type: 'reasoning', text: m.think } as any, ...content];
