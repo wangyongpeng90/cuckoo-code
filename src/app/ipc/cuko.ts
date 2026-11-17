@@ -232,6 +232,15 @@ export function registerCukoIpc(): void {
     } catch (err: any) { return { success: false, error: err.message }; }
   });
 
+  ipcMain.handle('cuko:rename-workspace', (_event: any, path: string, name: string) => {
+    const db = getDb();
+    if (!db) return { success: false };
+    try {
+      db.prepare('UPDATE cuko_workspaces SET name = ? WHERE path = ?').run(name, path);
+      return { success: true };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
   ipcMain.handle('cuko:get-active-workspace', () => {
     const db = getDb();
     if (!db) return null;

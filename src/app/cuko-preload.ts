@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   deleteSession: (sessionId: string) => ipcRenderer.invoke('cuko:delete-session', sessionId),
   listWorkspaces: () => ipcRenderer.invoke('cuko:list-workspaces'),
   addWorkspace: (path: string, name: string) => ipcRenderer.invoke('cuko:add-workspace', path, name),
+  renameWorkspace: (path: string, name: string) => ipcRenderer.invoke('cuko:rename-workspace', path, name),
   getActiveWorkspace: () => ipcRenderer.invoke('cuko:get-active-workspace'),
   setActiveWorkspace: (path: string) => ipcRenderer.invoke('cuko:set-active-workspace', path),
   selectDirectory: () => ipcRenderer.invoke('cuko:select-directory'),

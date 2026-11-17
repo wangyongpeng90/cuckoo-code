@@ -74,6 +74,7 @@ declare global {
       updateSessionModel: (sessionId: string, providerId: string, modelId: string) => Promise<{ success: boolean }>;
       listWorkspaces: () => Promise<Array<{ path: string; name: string }>>;
       addWorkspace: (path: string, name: string) => Promise<{ success: boolean; error?: string }>;
+      renameWorkspace: (path: string, name: string) => Promise<{ success: boolean; error?: string }>;
       getActiveWorkspace: () => Promise<string | null>;
       setActiveWorkspace: (path: string) => Promise<{ success: boolean; error?: string }>;
       selectDirectory: () => Promise<{ success: boolean; dir?: string; canceled?: boolean }>;
@@ -475,6 +476,13 @@ function ChatApp() {
       await (window.cukoAPI as any).setActiveWorkspace(res.dir);
       await loadWorkspaces();
     } catch (e) { console.error('选择目录失败', e); }
+  };
+
+  const handleRenameWorkspace = async (path: string, name: string) => {
+    try {
+      await (window.cukoAPI as any).renameWorkspace(path, name);
+      await loadWorkspaces();
+    } catch (e) { console.error('重命名工作区失败', e); }
   };
 
   // 更新模型选择并保存为全局默认，同时更新当前空会话的绑定
@@ -946,7 +954,12 @@ function ChatApp() {
             </button>
           </div>
           <div className="flex-1 overflow-y-auto p-2">
-            <SessionTree threads={threads} workspaces={workspaces} />
+            <SessionTree
+              threads={threads}
+              workspaces={workspaces}
+              activeWorkspacePath={activeWorkspace?.path}
+              onRenameWorkspace={handleRenameWorkspace}
+            />
           </div>
           <div className="border-t p-2">
             <button onClick={() => setSettingsOpen(true)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
