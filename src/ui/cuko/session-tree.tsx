@@ -50,6 +50,8 @@ interface Group {
   label: string;
   items: Array<{ index: number; id: string }>;
   archivedItems: Array<{ index: number; id: string }>;
+  /** 项目本身是否已归档 */
+  archived?: boolean;
 }
 
 const MENU_ITEM_CLASS =
@@ -168,13 +170,12 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
 
   const groups = useMemo<Group[]>(() => {
     const nameByPath = new Map(workspaces.map((w) => [w.path, w.name]));
-    // 已归档项目：其下会话不再出现在正常工作区，只在"已归档项目"区展示项目本身
+    // 项目归档只是把整个项目挪到"已归档项目"区，其下会话按各自归档状态照常展示
     const archivedPaths = new Set(workspaces.filter((w) => !!w.archived).map((w) => w.path));
     const map = new Map<string, Group>();
 
     threads.forEach((t) => {
       const dir = (t.project_dir || '').trim();
-      if (dir && archivedPaths.has(dir)) return;
       const key = dir || UNASSIGNED;
       let g = map.get(key);
       if (!g) {
@@ -183,6 +184,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
           label: dir ? (nameByPath.get(dir) || basename(dir)) : '未指定工作区',
           items: [],
           archivedItems: [],
+          archived: dir ? archivedPaths.has(dir) : false,
         };
         map.set(key, g);
       }
@@ -196,10 +198,16 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
       }
     });
 
-    // 空工作区也要显示（用户选了目录但还没建会话）；已归档项目不在此区渲染
+    // 空项目也要显示（用户选了目录但还没建会话）
     workspaces.forEach((w) => {
-      if (!w.archived && !map.has(w.path)) {
-        map.set(w.path, { key: w.path, label: w.name || basename(w.path), items: [], archivedItems: [] });
+      if (!map.has(w.path)) {
+        map.set(w.path, {
+          key: w.path,
+          label: w.name || basename(w.path),
+          items: [],
+          archivedItems: [],
+          archived: !!w.archived,
+        });
       }
     });
 
@@ -213,10 +221,8 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
     return list;
   }, [threads, workspaces, threadIds, archivedThreadIds]);
 
-  const archivedProjects = useMemo(
-    () => workspaces.filter((w) => !!w.archived),
-    [workspaces],
-  );
+  const activeGroups = useMemo(() => groups.filter((g) => !g.archived), [groups]);
+  const archivedGroups = useMemo(() => groups.filter((g) => g.archived), [groups]);
 
   const toggle = (key: string) => {
     setCollapsed((prev) => {
@@ -236,104 +242,107 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
     });
   };
 
-  return (
-    <div className="flex flex-col gap-1">
-      {groups.map((g) => {
-        const isCollapsed = collapsed.has(g.key);
-        const isUnassigned = g.key === UNASSIGNED;
-        const isRenaming = renamingKey === g.key;
-        return (
-          <div key={g.key} className="flex flex-col">
-            <div
-              className={cn(
-                'group relative flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
-                activeWorkspacePath && activeWorkspacePath === g.key && 'text-foreground',
-              )}
-            >
-              {isRenaming ? (
-                <ProjectRenameInput
-                  initial={g.label}
-                  onDone={async (name) => {
-                    setRenamingKey(null);
-                    if (name && !isUnassigned && onRenameWorkspace) {
-                      await onRenameWorkspace(g.key, name);
-                    }
-                  }}
+  const renderGroup = (g: Group) => {
+    const isCollapsed = collapsed.has(g.key);
+    const isUnassigned = g.key === UNASSIGNED;
+    const isRenaming = renamingKey === g.key;
+    return (
+      <div key={g.key} className="flex flex-col">
+        <div
+          className={cn(
+            'group relative flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
+            activeWorkspacePath && activeWorkspacePath === g.key && 'text-foreground',
+          )}
+        >
+          {isRenaming ? (
+            <ProjectRenameInput
+              initial={g.label}
+              onDone={async (name) => {
+                setRenamingKey(null);
+                if (name && !isUnassigned && onRenameWorkspace) {
+                  await onRenameWorkspace(g.key, name);
+                }
+              }}
+            />
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => toggle(g.key)}
+                title={isUnassigned ? undefined : g.key}
+                className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+              >
+                <ChevronRightIcon
+                  className={cn('size-3.5 shrink-0 transition-transform', !isCollapsed && 'rotate-90')}
                 />
-              ) : (
-                <>
+                <FolderIcon className={cn('size-3.5 shrink-0', g.archived ? 'opacity-50' : 'opacity-70')} />
+                <span className="min-w-0 flex-1 truncate">{g.label}</span>
+                <span className="shrink-0 tabular-nums opacity-60 group-hover:opacity-0">
+                  {g.items.length}
+                </span>
+              </button>
+              {!isUnassigned && (
+                <ProjectMenu
+                  onRename={() => setRenamingKey(g.key)}
+                  onOpenFolder={() => onOpenWorkspaceFolder?.(g.key)}
+                  onNewThread={() => onNewThreadInWorkspace?.(g.key)}
+                  onArchive={() => onArchiveWorkspace?.(g.key, !!g.archived)}
+                  archived={!!g.archived}
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {!isCollapsed && (
+          <div className="ms-2 flex flex-col gap-0.5 border-s border-border/40 ps-1.5 pt-0.5">
+            {g.items.length === 0 && g.archivedItems.length === 0 ? (
+              <div className="px-2 py-1 text-xs text-muted-foreground/60">暂无会话</div>
+            ) : (
+              g.items.map((it) => (
+                <ThreadListItemByIndexProvider key={it.id} index={it.index} archived={false}>
+                  <ThreadListItem />
+                </ThreadListItemByIndexProvider>
+              ))
+            )}
+
+            {g.archivedItems.length > 0 && (() => {
+              const archivedOpen = !collapsedArchived.has(g.key);
+              return (
+                <div className="flex flex-col">
                   <button
                     type="button"
-                    onClick={() => toggle(g.key)}
-                    title={isUnassigned ? undefined : g.key}
-                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    onClick={() => toggleArchivedSessions(g.key)}
+                    className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs text-muted-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
                   >
                     <ChevronRightIcon
-                      className={cn('size-3.5 shrink-0 transition-transform', !isCollapsed && 'rotate-90')}
+                      className={cn('size-3 shrink-0 transition-transform', archivedOpen && 'rotate-90')}
                     />
-                    <FolderIcon className="size-3.5 shrink-0 opacity-70" />
-                    <span className="min-w-0 flex-1 truncate">{g.label}</span>
-                    <span className="shrink-0 tabular-nums opacity-60 group-hover:opacity-0">
-                      {g.items.length}
-                    </span>
+                    <span className="flex-1 truncate">已归档 ({g.archivedItems.length})</span>
                   </button>
-                  {!isUnassigned && (
-                    <ProjectMenu
-                      onRename={() => setRenamingKey(g.key)}
-                      onOpenFolder={() => onOpenWorkspaceFolder?.(g.key)}
-                      onNewThread={() => onNewThreadInWorkspace?.(g.key)}
-                      onArchive={() => onArchiveWorkspace?.(g.key, false)}
-                    />
-                  )}
-                </>
-              )}
-            </div>
-
-            {!isCollapsed && (
-              <div className="ms-2 flex flex-col gap-0.5 border-s border-border/40 ps-1.5 pt-0.5">
-                {g.items.length === 0 && g.archivedItems.length === 0 ? (
-                  <div className="px-2 py-1 text-xs text-muted-foreground/60">暂无会话</div>
-                ) : (
-                  g.items.map((it) => (
-                    <ThreadListItemByIndexProvider key={it.id} index={it.index} archived={false}>
-                      <ThreadListItem />
-                    </ThreadListItemByIndexProvider>
-                  ))
-                )}
-
-                {g.archivedItems.length > 0 && (() => {
-                  const archivedOpen = !collapsedArchived.has(g.key);
-                  return (
-                    <div className="flex flex-col">
-                      <button
-                        type="button"
-                        onClick={() => toggleArchivedSessions(g.key)}
-                        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-xs text-muted-foreground/70 transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-                      >
-                        <ChevronRightIcon
-                          className={cn('size-3 shrink-0 transition-transform', archivedOpen && 'rotate-90')}
-                        />
-                        <span className="flex-1 truncate">已归档 ({g.archivedItems.length})</span>
-                      </button>
-                      {archivedOpen && (
-                        <div className="ms-2 flex flex-col gap-0.5 border-s border-border/30 ps-1.5">
-                          {g.archivedItems.map((it) => (
-                            <ThreadListItemByIndexProvider key={it.id} index={it.index} archived={true}>
-                              <ThreadListItem />
-                            </ThreadListItemByIndexProvider>
-                          ))}
-                        </div>
-                      )}
+                  {archivedOpen && (
+                    <div className="ms-2 flex flex-col gap-0.5 border-s border-border/30 ps-1.5">
+                      {g.archivedItems.map((it) => (
+                        <ThreadListItemByIndexProvider key={it.id} index={it.index} archived={true}>
+                          <ThreadListItem />
+                        </ThreadListItemByIndexProvider>
+                      ))}
                     </div>
-                  );
-                })()}
-              </div>
-            )}
+                  )}
+                </div>
+              );
+            })()}
           </div>
-        );
-      })}
+        )}
+      </div>
+    );
+  };
 
-      {archivedProjects.length > 0 && (
+  return (
+    <div className="flex flex-col gap-1">
+      {activeGroups.map(renderGroup)}
+
+      {archivedGroups.length > 0 && (
         <div className="mt-2 flex flex-col border-t border-border/40 pt-2">
           <button
             type="button"
@@ -343,28 +352,11 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
             <ChevronRightIcon
               className={cn('size-3.5 shrink-0 transition-transform', archivedProjectsOpen && 'rotate-90')}
             />
-            <span className="flex-1 truncate">已归档项目 ({archivedProjects.length})</span>
+            <span className="flex-1 truncate">已归档项目 ({archivedGroups.length})</span>
           </button>
           {archivedProjectsOpen && (
-            <div className="ms-2 flex flex-col gap-0.5 border-s border-border/40 ps-1.5">
-              {archivedProjects.map((w) => (
-                <div
-                  key={w.path}
-                  className="group relative flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-                >
-                  <FolderIcon className="size-3.5 shrink-0 opacity-50" />
-                  <span className="min-w-0 flex-1 truncate opacity-70" title={w.path}>
-                    {w.name || basename(w.path)}
-                  </span>
-                  <ProjectMenu
-                    onRename={() => {}}
-                    onOpenFolder={() => onOpenWorkspaceFolder?.(w.path)}
-                    onNewThread={() => onNewThreadInWorkspace?.(w.path)}
-                    onArchive={() => onArchiveWorkspace?.(w.path, true)}
-                    archived={true}
-                  />
-                </div>
-              ))}
+            <div className="ms-2 flex flex-col gap-1 border-s border-border/40 ps-1.5">
+              {archivedGroups.map(renderGroup)}
             </div>
           )}
         </div>
