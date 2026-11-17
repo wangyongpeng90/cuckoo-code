@@ -443,7 +443,11 @@ const ThreadListItemMore: FC<{ onRename: () => void }> = ({ onRename }) => {
         <ThreadListItemMorePrimitive.Item
           data-slot="aui_thread-list-item-more-item"
           className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
-          onSelect={onRename}
+          onSelect={() => {
+            // radix 关闭菜单时会把焦点还给 trigger，与 rename 输入的 autoFocus 冲突，
+            // 导致 onBlur 立刻提交、编辑态闪一下就消失。延后到焦点归位后再进入编辑态。
+            setTimeout(onRename, 0);
+          }}
         >
           <PencilIcon className="size-4" />
           Rename

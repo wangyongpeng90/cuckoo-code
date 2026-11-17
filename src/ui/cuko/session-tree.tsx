@@ -168,10 +168,13 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
 
   const groups = useMemo<Group[]>(() => {
     const nameByPath = new Map(workspaces.map((w) => [w.path, w.name]));
+    // 已归档项目：其下会话不再出现在正常工作区，只在"已归档项目"区展示项目本身
+    const archivedPaths = new Set(workspaces.filter((w) => !!w.archived).map((w) => w.path));
     const map = new Map<string, Group>();
 
     threads.forEach((t) => {
       const dir = (t.project_dir || '').trim();
+      if (dir && archivedPaths.has(dir)) return;
       const key = dir || UNASSIGNED;
       let g = map.get(key);
       if (!g) {
