@@ -437,6 +437,11 @@ function ChatApp() {
   // 会话状态
   const [threads, setThreads] = useState<Array<{ id: string; title: string; provider_id: string; model_id: string; project_dir?: string; provider_session_id?: string; updated_at: string }>>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string>('');
+  const currentThreadIdRef = useRef<string>('');
+  const setThreadId = useCallback((id: string) => {
+    currentThreadIdRef.current = id;
+    setCurrentThreadId(id);
+  }, []);
   const [providerSessionId, setProviderSessionId] = useState<string>('');
   
   // 消息状态
@@ -539,7 +544,7 @@ function ChatApp() {
   const refreshThreads = async () => {
     const list = await window.cukoAPI.listSessions();
     setThreads(list);
-    if (list.length > 0 && !currentThreadId) {
+    if (list.length > 0 && !currentThreadIdRef.current) {
       switchThread(list[0].id);
     } else if (list.length === 0) {
       switchNewThread();
@@ -548,7 +553,7 @@ function ChatApp() {
 
   // 切换会话
   const switchThread = async (id: string) => {
-    setCurrentThreadId(id);
+    setThreadId(id);
     const dbMsgs = await window.cukoAPI.getMessages(id);
     const loadedMsgs: Msg[] = dbMsgs.map(m => {
       // 工具卡片消息：content 是 JSON 数组（tool-call part）
@@ -572,12 +577,21 @@ function ChatApp() {
     });
     setMessages(loadedMsgs);
     
-    // 读取该会话绑定的模型
+    // 读取该会话绑定的模型与所属工作区
     const session = threads.find(t => t.id === id) || (await window.cukoAPI.listSessions()).find(x => x.id === id);
     if (session) {
       setProviderSessionId(session.provider_session_id || '');
       if (session.provider_id && session.model_id) {
         setConfig({ providerId: session.provider_id, modelId: session.model_id });
+      }
+      // 同步输入框下方的工作区展示，避免显示上一个会话的工作区
+      const dir = (session as any).project_dir || '';
+      if (dir) {
+        const ws = workspaces.find((w) => w.path === dir);
+        setActiveWorkspace(ws || { path: dir, name: dir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || dir });
+        try { await (window.cukoAPI as any).setActiveWorkspace(dir); } catch (e) { console.error(e); }
+      } else {
+        setActiveWorkspace(null);
       }
     }
   };
@@ -592,7 +606,7 @@ function ChatApp() {
       if (ws) setActiveWorkspace(ws);
       try { await (window.cukoAPI as any).setActiveWorkspace(projectDir); } catch (e) { console.error(e); }
     }
-    setCurrentThreadId(newId);
+    setThreadId(newId);
     setMessages([]);
     setProviderSessionId('');
     await refreshThreads();
@@ -601,8 +615,8 @@ function ChatApp() {
   // 删除会话
   const deleteThread = async (id: string) => {
     await window.cukoAPI.deleteSession(id);
-    if (currentThreadId === id) {
-      setCurrentThreadId('');
+    if (currentThreadIdRef.current === id) {
+      setThreadId('');
       setMessages([]);
     }
     await refreshThreads();
@@ -624,7 +638,7 @@ function ChatApp() {
       activeThreadId = crypto.randomUUID();
       try {
         await (window.cukoAPI as any).createSession(activeThreadId, config.providerId, config.modelId, activeWorkspace?.path || undefined);
-        setCurrentThreadId(activeThreadId);
+        setThreadId(activeThreadId);
         refreshThreads();
       } catch (e: any) {
         setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ 创建会话失败: ' + e.message, id: crypto.randomUUID() }]);
