@@ -61,6 +61,13 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - 执行完成后，将结果拼装成下一轮的 `input` 数组：`[0]` 为随机回复语（从回复语池抽取），`[1..n]` 为每个代码块的执行结果。
 - 不设轮数上限：只要 AI 继续输出 `cuckoo` 代码块就一直执行（原 10 轮上限已移除）。
 
+### 修改会话 ID（providerSessionId）
+
+- 入口：Cuko 侧边栏会话菜单「会话 ID」（`ThreadListItem` 的可选 `onEditSessionId` 插槽，主界面不传即不显示）。
+- 行为（方案 A）：只更新 `cuko_sessions.provider_session_id`，下一次请求生效；历史消息、当前上下文都不变。
+- 留空 = 下次请求重新开始：因为 `onNew` 用空的 providerSessionId 判定首轮，会重新注入系统提示词。
+- 同一个值也用于续接对话（`body.providerSessionId`），所以手动填入别的会话 ID 即可续接那段服务端状态。
+
 ### 附件持久化（方案 C：原文件落盘 + 消息记路径）
 
 - 发送时主进程把附件原文件写到 `<userData>/cuko-attachments/<sessionId>/<messageId>/<index>.<ext>`，
@@ -110,6 +117,7 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
   - [x] 工具卡片折叠时多行展示 `await xxx` 参数解析，展开后代码/结果限高滚动。
   - [x] 多个工具调用合并到同一消息，消除巨大间距。
 - [x] 支持传入多模态文件（Base64 随 `input` 发送，原文件落盘用于历史回看）。
+- [x] **修改会话 ID**：会话右键菜单可编辑 `provider_session_id`，只改库值、下次请求生效；留空则下次请求重新注入系统提示词。
 - [x] `typecheck / test / lint / compile` 全绿。
 
 ## 遗留 / 后续
@@ -118,5 +126,4 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 2. **大图缩略图**：当前用原图 + CSS 缩放，后续可在 `cuko:save-attachments` 里用 `nativeImage.resize` 生成缩略图，降低读盘体积。
 3. **会话标题智能生成**：当前使用前 15 个字符作为标题，未来可接入 AI 自动起标题。
 4. **同名会话去重**：侧边栏常出现多个「你好」，仅在切换时才改标题，未做去重。
-5. **修改 providerSessionId**：用户原始清单最后一项，行为待定（只改库值 vs 清空上下文）。
-6. **多 Provider 同时激活**：目前同时只有一个 Provider 处于激活状态，未来若需并行调用多个 Provider，需要扩展 `cuko_config` 的激活状态模型。
+5. **多 Provider 同时激活**：目前同时只有一个 Provider 处于激活状态，未来若需并行调用多个 Provider，需要扩展 `cuko_config` 的激活状态模型。

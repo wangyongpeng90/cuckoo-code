@@ -15,6 +15,7 @@ import {
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
+  KeyRoundIcon,
   Loader2Icon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -311,7 +312,10 @@ const ThreadListSkeleton: FC = () => {
   );
 };
 
-export const ThreadListItem: FC = () => {
+export const ThreadListItem: FC<{
+  /** 传入时才显示「会话 ID」菜单项（Cuko 窗口用，主界面不传） */
+  onEditSessionId?: (() => void) | undefined;
+}> = ({ onEditSessionId }) => {
   const isRunning = useAuiState((s) => s.threadListItem.isRunning);
   const [isRenaming, setIsRenaming] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -357,7 +361,7 @@ export const ThreadListItem: FC = () => {
           {isRunning && <span className="sr-only">Running</span>}
         </ThreadListItemPrimitive.Trigger>
       )}
-      <ThreadListItemMore onRename={() => setIsRenaming(true)} />
+      <ThreadListItemMore onRename={() => setIsRenaming(true)} onEditSessionId={onEditSessionId} />
     </ThreadListItemPrimitive.Root>
   );
 };
@@ -428,7 +432,10 @@ const ThreadListItemRename: FC<{
   );
 };
 
-const ThreadListItemMore: FC<{ onRename: () => void }> = ({ onRename }) => {
+const ThreadListItemMore: FC<{
+  onRename: () => void;
+  onEditSessionId?: (() => void) | undefined;
+}> = ({ onRename, onEditSessionId }) => {
   const isArchived = useAuiState((s) => s.threadListItem.status === "archived");
   return (
     <ThreadListItemMorePrimitive.Root sharedFocusGroup>
@@ -452,6 +459,19 @@ const ThreadListItemMore: FC<{ onRename: () => void }> = ({ onRename }) => {
           <PencilIcon className="size-4" />
           Rename
         </ThreadListItemMorePrimitive.Item>
+        {onEditSessionId && (
+          <ThreadListItemMorePrimitive.Item
+            data-slot="aui_thread-list-item-more-item"
+            className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
+            onSelect={() => {
+              // 菜单关闭后焦点会归位，延后一拍再弹窗，避免遮罩与焦点打架
+              setTimeout(onEditSessionId, 0);
+            }}
+          >
+            <KeyRoundIcon className="size-4" />
+            会话 ID
+          </ThreadListItemMorePrimitive.Item>
+        )}
         {isArchived ? (
           <ThreadListItemPrimitive.Unarchive render={<ThreadListItemMorePrimitive.Item data-slot="aui_thread-list-item-more-item" className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none" />}><ArchiveRestoreIcon className="size-4" />Unarchive
                         </ThreadListItemPrimitive.Unarchive>

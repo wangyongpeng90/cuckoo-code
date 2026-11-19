@@ -341,9 +341,11 @@ export function registerCukoIpc(): void {
 
   ipcMain.handle('cuko:update-provider-id', (_event: any, sessionId: string, providerSessionId: string) => {
     const db = getDb();
-    if (!db) return { success: false };
+    if (!db || !sessionId) return { success: false };
+    // 前端允许留空（下次请求重新开始），这里只做去空白与长度兜底
+    const value = String(providerSessionId ?? '').trim().slice(0, 512);
     const now = new Date().toISOString();
-    db.prepare('UPDATE cuko_sessions SET provider_session_id = ?, updated_at = ? WHERE id = ?').run(providerSessionId, now, sessionId);
+    db.prepare('UPDATE cuko_sessions SET provider_session_id = ?, updated_at = ? WHERE id = ?').run(value, now, sessionId);
     return { success: true };
   });
 

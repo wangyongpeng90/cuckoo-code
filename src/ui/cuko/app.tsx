@@ -28,6 +28,7 @@ import { AttachmentUI } from '@/components/assistant-ui/elements/attachment.aui'
 import { useAttachmentState } from '@/components/assistant-ui/elements/attachment-state';
 import { Thread } from '@/components/assistant-ui/elements/thread.aui';
 import { SessionTree } from '@/ui/cuko/session-tree';
+import { SessionIdDialog } from '@/ui/cuko/session-id-dialog';
 import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
 import {
@@ -541,6 +542,8 @@ function ChatApp() {
     setCurrentThreadId(id);
   }, []);
   const [providerSessionId, setProviderSessionId] = useState<string>('');
+  // 修改会话 ID 弹窗（方案 A：只改库里的值，下次请求生效）
+  const [sessionIdEditing, setSessionIdEditing] = useState<{ threadId: string; title: string; value: string } | null>(null);
   
   // 消息状态
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -732,6 +735,27 @@ function ChatApp() {
   // 重命名会话
   const renameThread = async (id: string, title: string) => {
     await window.cukoAPI.renameSession(id, title);
+    await refreshThreads();
+  };
+
+  // 打开「修改会话 ID」弹窗
+  const openSessionIdDialog = (id: string) => {
+    const t = threads.find((x) => x.id === id);
+    setSessionIdEditing({
+      threadId: id,
+      title: t?.title || '未命名会话',
+      value: t?.provider_session_id || '',
+    });
+  };
+
+  // 保存 providerSessionId：只改库值，当前会话同步内存态，下一次请求生效
+  const saveSessionId = async (value: string) => {
+    const editing = sessionIdEditing;
+    if (!editing) return;
+    const res = await window.cukoAPI.updateProviderId(editing.threadId, value);
+    if (res && res.success === false) throw new Error('写入数据库失败');
+    if (currentThreadIdRef.current === editing.threadId) setProviderSessionId(value);
+    setSessionIdEditing(null);
     await refreshThreads();
   };
 
@@ -1180,6 +1204,7 @@ function ChatApp() {
               onOpenWorkspaceFolder={handleOpenWorkspaceFolder}
               onNewThreadInWorkspace={switchNewThread}
               onArchiveWorkspace={handleArchiveWorkspace}
+              onEditSessionId={openSessionIdDialog}
             />
           </div>
           <div className="border-t p-2">
@@ -1209,6 +1234,14 @@ function ChatApp() {
         </div>
       </div>
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {sessionIdEditing && (
+        <SessionIdDialog
+          sessionTitle={sessionIdEditing.title}
+          initialValue={sessionIdEditing.value}
+          onCancel={() => setSessionIdEditing(null)}
+          onSave={saveSessionId}
+        />
+      )}
     </AssistantRuntimeProvider>
   );
 }

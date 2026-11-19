@@ -39,6 +39,7 @@ interface SessionTreeProps {
   onOpenWorkspaceFolder?: (path: string) => Promise<void> | void;
   onNewThreadInWorkspace?: (path: string) => Promise<void> | void;
   onArchiveWorkspace?: (path: string, archived: boolean) => Promise<void> | void;
+  onEditSessionId?: (threadId: string) => Promise<void> | void;
 }
 
 const UNASSIGNED = '__unassigned__';
@@ -159,6 +160,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
   onOpenWorkspaceFolder,
   onNewThreadInWorkspace,
   onArchiveWorkspace,
+  onEditSessionId,
 }) => {
   // threadIds 与 adapter.threads 顺序一致，索引即 ByIndexProvider 需要的 index
   const threadIds = useAuiState((s) => s.threads.threadIds);
@@ -301,7 +303,9 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
             ) : (
               g.items.map((it) => (
                 <ThreadListItemByIndexProvider key={it.id} index={it.index} archived={false}>
-                  <ThreadListItem />
+                  <ThreadListItem
+                    onEditSessionId={onEditSessionId ? () => onEditSessionId(it.id) : undefined}
+                  />
                 </ThreadListItemByIndexProvider>
               ))
             )}
@@ -324,7 +328,9 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
                     <div className="ms-2 flex flex-col gap-0.5 border-s border-border/30 ps-1.5">
                       {g.archivedItems.map((it) => (
                         <ThreadListItemByIndexProvider key={it.id} index={it.index} archived={true}>
-                          <ThreadListItem />
+                          <ThreadListItem
+                            onEditSessionId={onEditSessionId ? () => onEditSessionId(it.id) : undefined}
+                          />
                         </ThreadListItemByIndexProvider>
                       ))}
                     </div>
