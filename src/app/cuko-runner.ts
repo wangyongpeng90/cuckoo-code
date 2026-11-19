@@ -142,18 +142,38 @@ function persistProviderSessionId(sessionId: string, providerSessionId: string):
   }
 }
 
+interface BuiltFirstInput {
+  input: CukoRunInputPart[];
+  /** 本轮实际注入的完整系统提示词（空串表示没有注入） */
+  promptText: string;
+}
+
 /** 首次对话（无 providerSessionId）时把系统提示词按 # 分段拼到 input 前面 */
-function withSystemPrompt(input: CukoRunInputPart[], projectDir: string, providerSessionId: string): CukoRunInputPart[] {
-  if (providerSessionId || !projectDir) return input;
+function withSystemPrompt(input: CukoRunInputPart[], projectDir: string, providerSessionId: string): BuiltFirstInput {
+  if (providerSessionId || !projectDir) return { input, promptText: '' };
   try {
     const built = buildPrompt({ providerId: 'cuko', selectedDir: projectDir });
-    if (built.error || !built.prompt) return input;
+    if (built.error || !built.prompt) return { input, promptText: '' };
     const segments = splitPromptByH1(built.prompt).filter((s) => s && s.trim());
-    if (segments.length === 0) return input;
-    return [...segments.map((text) => ({ type: 'text', text })), ...input];
+    if (segments.length === 0) return { input, promptText: '' };
+    return {
+      input: [...segments.map((text) => ({ type: 'text', text })), ...input],
+      promptText: built.prompt,
+    };
   } catch (err: any) {
     console.error('[Cuko] 组装系统提示词失败:', err?.message || err);
-    return input;
+    return { input, promptText: '' };
+  }
+}
+
+/** 首轮注入的完整提示词留档，便于事后核对 / 手动恢复 */
+function persistSystemPrompt(sessionId: string, prompt: string): void {
+  const db = getDb();
+  if (!db) return;
+  try {
+    db.prepare('UPDATE cuko_sessions SET system_prompt = ? WHERE id = ?').run(prompt, sessionId);
+  } catch (err: any) {
+    console.error('[Cuko] 系统提示词落库失败:', err?.message || err);
   }
 }
 
@@ -416,7 +436,9 @@ export function startCukoRun(params: StartRunParams): { success: boolean; runId?
 
   const providerSessionId = session.provider_session_id || '';
   const projectDir = session.project_dir || '';
-  const firstInput = withSystemPrompt(input, projectDir, providerSessionId);
+  const first = withSystemPrompt(input, projectDir, providerSessionId);
+  const firstInput = first.input;
+  if (first.promptText) persistSystemPrompt(sessionId, first.promptText);
 
   const run: CukoRun = {
     sessionId,

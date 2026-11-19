@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   setActive: (providerId: string, modelId: string) => ipcRenderer.invoke('cuko:set-active', providerId, modelId),
   
   listSessions: () => ipcRenderer.invoke('cuko:list-sessions'),
+  getSystemPrompt: (sessionId: string) => ipcRenderer.invoke('cuko:get-system-prompt', sessionId),
   createSession: (sessionId: string, providerId?: string, modelId?: string, projectDir?: string) => ipcRenderer.invoke('cuko:create-session', sessionId, providerId, modelId, projectDir),
   renameSession: (sessionId: string, title: string) => ipcRenderer.invoke('cuko:rename-session', sessionId, title),
   deleteSession: (sessionId: string) => ipcRenderer.invoke('cuko:delete-session', sessionId),

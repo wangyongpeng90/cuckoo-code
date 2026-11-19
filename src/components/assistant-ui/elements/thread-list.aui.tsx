@@ -17,6 +17,7 @@ import {
   ArchiveRestoreIcon,
   KeyRoundIcon,
   Loader2Icon,
+  ScrollTextIcon,
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
@@ -317,7 +318,9 @@ export const ThreadListItem: FC<{
   onEditSessionId?: (() => void) | undefined;
   /** Cuko 的后台任务在别的会话里跑时，也能显示转圈 */
   running?: boolean | undefined;
-}> = ({ onEditSessionId, running }) => {
+  /** 传入时才显示「系统提示词」菜单项（Cuko 窗口用） */
+  onViewSystemPrompt?: (() => void) | undefined;
+}> = ({ onEditSessionId, running, onViewSystemPrompt }) => {
   const isRunning = useAuiState((s) => s.threadListItem.isRunning) || !!running;
   const [isRenaming, setIsRenaming] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -363,7 +366,11 @@ export const ThreadListItem: FC<{
           {isRunning && <span className="sr-only">Running</span>}
         </ThreadListItemPrimitive.Trigger>
       )}
-      <ThreadListItemMore onRename={() => setIsRenaming(true)} onEditSessionId={onEditSessionId} />
+      <ThreadListItemMore
+        onRename={() => setIsRenaming(true)}
+        onEditSessionId={onEditSessionId}
+        onViewSystemPrompt={onViewSystemPrompt}
+      />
     </ThreadListItemPrimitive.Root>
   );
 };
@@ -437,7 +444,8 @@ const ThreadListItemRename: FC<{
 const ThreadListItemMore: FC<{
   onRename: () => void;
   onEditSessionId?: (() => void) | undefined;
-}> = ({ onRename, onEditSessionId }) => {
+  onViewSystemPrompt?: (() => void) | undefined;
+}> = ({ onRename, onEditSessionId, onViewSystemPrompt }) => {
   const isArchived = useAuiState((s) => s.threadListItem.status === "archived");
   return (
     <ThreadListItemMorePrimitive.Root sharedFocusGroup>
@@ -461,6 +469,18 @@ const ThreadListItemMore: FC<{
           <PencilIcon className="size-4" />
           Rename
         </ThreadListItemMorePrimitive.Item>
+        {onViewSystemPrompt && (
+          <ThreadListItemMorePrimitive.Item
+            data-slot="aui_thread-list-item-more-item"
+            className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm outline-none select-none"
+            onSelect={() => {
+              setTimeout(onViewSystemPrompt, 0);
+            }}
+          >
+            <ScrollTextIcon className="size-4" />
+            系统提示词
+          </ThreadListItemMorePrimitive.Item>
+        )}
         {onEditSessionId && (
           <ThreadListItemMorePrimitive.Item
             data-slot="aui_thread-list-item-more-item"

@@ -82,6 +82,8 @@ const CUKO_SESSIONS_DDL = `
     provider_session_id TEXT,
     provider_id TEXT,
     model_id TEXT,
+    project_dir TEXT,
+    system_prompt TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
@@ -191,6 +193,8 @@ function initDatabase(userDataDir: string): DatabaseSync {
     if (!colNames.includes('model_id')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN model_id TEXT');
     if (!colNames.includes('project_dir')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN project_dir TEXT');
     if (!colNames.includes('archived')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN archived INTEGER DEFAULT 0');
+    // 首轮注入的完整系统提示词（保留现场，便于事后核对 / 重新注入）
+    if (!colNames.includes('system_prompt')) db.exec('ALTER TABLE cuko_sessions ADD COLUMN system_prompt TEXT');
   } catch (e) {
     console.error('[db] 补充 cuko_sessions 列失败:', e);
   }

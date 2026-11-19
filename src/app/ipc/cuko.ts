@@ -150,6 +150,18 @@ export function registerCukoIpc(): void {
     return db.prepare('SELECT * FROM cuko_sessions ORDER BY updated_at DESC').all();
   });
 
+  // 首轮注入的系统提示词（留档在 cuko_sessions.system_prompt）
+  ipcMain.handle('cuko:get-system-prompt', (_event: any, sessionId: string) => {
+    const db = getDb();
+    if (!db) return { success: false, error: '数据库未就绪' };
+    try {
+      const row = db.prepare('SELECT system_prompt FROM cuko_sessions WHERE id = ?').get(sessionId) as any;
+      return { success: true, prompt: (row && row.system_prompt) || '' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || '读取失败' };
+    }
+  });
+
   ipcMain.handle('cuko:create-session', (_event: any, sessionId: string, providerId?: string, modelId?: string, projectDir?: string) => {
     const db = getDb();
     if (!db) return { success: false };

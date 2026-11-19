@@ -29,6 +29,7 @@ import { useAttachmentState } from '@/components/assistant-ui/elements/attachmen
 import { Thread } from '@/components/assistant-ui/elements/thread.aui';
 import { SessionTree } from '@/ui/cuko/session-tree';
 import { SessionIdDialog } from '@/ui/cuko/session-id-dialog';
+import { SystemPromptDialog } from '@/ui/cuko/system-prompt-dialog';
 import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
 import {
@@ -93,6 +94,7 @@ declare global {
       executeJs: (code: string, projectDir: string) => Promise<{ success: boolean; output?: string; error?: string }>;
       pickResultPhrase: (n: number) => Promise<{ success: boolean; phrase?: string; error?: string }>;
       getMessages: (sessionId: string) => Promise<Array<{ id: string; role: string; content: string; think: string; usage_json: string }>>;
+      getSystemPrompt: (sessionId: string) => Promise<{ success: boolean; prompt?: string; error?: string }>;
       saveMessage: (msg: any) => Promise<{ success: boolean }>;
       saveAttachments: (sessionId: string, messageId: string, files: any[]) => Promise<{ success: boolean; attachments?: any[]; error?: string }>;
       readAttachment: (relPath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
@@ -522,6 +524,8 @@ function ChatApp() {
   }, []);
   // 修改会话 ID 弹窗（方案 A：只改库里的值，下次请求生效）
   const [sessionIdEditing, setSessionIdEditing] = useState<{ threadId: string; title: string; value: string } | null>(null);
+  // 查看首轮注入的系统提示词
+  const [systemPromptView, setSystemPromptView] = useState<{ threadId: string; title: string } | null>(null);
   
   // 消息状态
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -740,6 +744,12 @@ function ChatApp() {
   const renameThread = async (id: string, title: string) => {
     await window.cukoAPI.renameSession(id, title);
     await refreshThreads();
+  };
+
+  // 打开「系统提示词」弹窗
+  const openSystemPrompt = (id: string) => {
+    const t = threads.find((x) => x.id === id);
+    setSystemPromptView({ threadId: id, title: t?.title || '未命名会话' });
   };
 
   // 打开「修改会话 ID」弹窗
@@ -1017,6 +1027,7 @@ function ChatApp() {
               onNewThreadInWorkspace={switchNewThread}
               onArchiveWorkspace={handleArchiveWorkspace}
               onEditSessionId={openSessionIdDialog}
+              onViewSystemPrompt={openSystemPrompt}
               runningSessionIds={runningSessions}
             />
           </div>
@@ -1053,6 +1064,13 @@ function ChatApp() {
           initialValue={sessionIdEditing.value}
           onCancel={() => setSessionIdEditing(null)}
           onSave={saveSessionId}
+        />
+      )}
+      {systemPromptView && (
+        <SystemPromptDialog
+          sessionId={systemPromptView.threadId}
+          sessionTitle={systemPromptView.title}
+          onClose={() => setSystemPromptView(null)}
         />
       )}
     </AssistantRuntimeProvider>

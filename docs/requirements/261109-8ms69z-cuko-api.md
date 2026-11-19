@@ -41,7 +41,8 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - `cuko_config`：杂项配置（当前激活的 providerId / modelId / active_workspace）。
 - `cuko_providers`：Provider 列表（id / name / base_url / api_key / protocol / created_at / updated_at）。
 - `cuko_models`：模型目录（provider_id + model_id 复合主键 / name / created_at / updated_at）。
-- `cuko_sessions`：会话，记录 `provider_id`、`model_id`、`project_dir`，实现会话级模型锁定和项目绑定。
+- `cuko_sessions`：会话，记录 `provider_id`、`model_id`、`project_dir`，实现会话级模型锁定和项目绑定；
+  首轮注入的系统提示词留档在 `system_prompt`（便于事后核对）。
 - `cuko_messages`：消息（含 think、usage_json 和 JSON 格式的 tool-call）。
 - `cuko_workspaces`：工作区目录（path / name）。
 
@@ -60,6 +61,14 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - 逐个调用主进程的 `cuko:execute-js` 执行代码。
 - 执行完成后，将结果拼装成下一轮的 `input` 数组：`[0]` 为随机回复语（从回复语池抽取），`[1..n]` 为每个代码块的执行结果。
 - 不设轮数上限：只要 AI 继续输出 `cuckoo` 代码块就一直执行（原 10 轮上限已移除）。
+
+### 首轮系统提示词留档
+
+- 首次对话（无 `provider_session_id` 且绑定了工作区）时，主进程 `buildPrompt` 组装完整提示词，
+  按 `# ` 分段注入 `input`；同时把**完整提示词**写入 `cuko_sessions.system_prompt`。
+- 会话菜单「系统提示词」可查看 / 复制留档；没有注入过的会话会说明原因。
+- 续接对话（已有 providerSessionId）不会重复注入，也不会覆盖已留档的内容；
+  手动清空会话 ID 后下一轮会重新注入并覆盖留档。
 
 ### 时间戳格式
 
@@ -157,6 +166,7 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - [x] **修改会话 ID**：会话右键菜单可编辑 `provider_session_id`，只改库值、下次请求生效；留空则下次请求重新注入系统提示词。
 - [x] **跟随主程序主题**：Cuko 窗口跟随主程序设置的 深色 / 浅色 / 跟随系统，主程序改主题时实时同步。
 - [x] **后台运行**：关掉 Cuko 窗口任务继续跑；多个会话可同时运行；窗口重开后恢复进行中的消息。
+- [x] **首轮系统提示词留档**：注入时写入 `cuko_sessions.system_prompt`，会话菜单可查看 / 复制。
 - [x] `typecheck / test / lint / compile` 全绿。
 
 ## 遗留 / 后续
