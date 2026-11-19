@@ -19,8 +19,7 @@ export interface CompressHistoryMessage {
 }
 
 export interface CompressInputPart {
-  /** user = 用户输入；tool = 工具调用/结果；assistant = 助手正文 */
-  type: 'user' | 'tool' | 'assistant';
+  type: 'text';
   text: string;
 }
 
@@ -89,12 +88,11 @@ export function buildCompressHistory(messages: CompressHistoryMessage[]): Compre
     if (message.role === 'system') continue;
     const text = messageToCompressText(message);
     if (!text) continue;
-    // 与实时请求保持一致：用户输入 user、工具调用 tool、助手正文 assistant
+    // input 元素统一 text，角色只体现在前缀里
     const isTool = Array.isArray(message.content)
       && message.content.some((part: any) => part && part.type === 'tool-call');
-    const kind = message.role === 'user' ? 'user' : isTool ? 'tool' : 'assistant';
-    const label = kind === 'user' ? '用户' : kind === 'tool' ? '工具' : '助手';
-    out.push({ type: kind, text: label + ':\n' + text });
+    const label = message.role === 'user' ? '用户' : isTool ? '工具' : '助手';
+    out.push({ type: 'text', text: label + ':\n' + text });
   }
   return out;
 }

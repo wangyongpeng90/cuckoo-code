@@ -26,14 +26,17 @@ export const CUKO_AI_PROMPT = [
   '     "providerSessionId": "prov_xxx",   // 首次请求不带',
   '     "model": "...",',
   '     "requestId": "req_xxx",            // 幂等键',
-  '     "input": [ ... ],',
-  '     "type": "compress"                 // 可选：切模型时的历史压缩',
+  '     "type": "user",                    // 顶层：user / tool / compress',
+  '     "input": [ ... ]',
   '   }',
   '',
-  '   input 元素类型（按来源区分）：',
-  '   - { "type": "user", "text": "..." }      用户自己输入',
-  '   - { "type": "tool", "text": "..." }      工具执行结果（回复语/脚本输出）',
-  '   - { "type": "text", "text": "..." }      系统提示词分段（首轮注入）',
+  '   顶层 type 区分请求来源（与 input 元素无关）：',
+  '   - "user"     用户自己输入',
+  '   - "tool"     工具执行结果（回复语/脚本输出）',
+  '   - "compress" 切换模型时的历史压缩',
+  '',
+  '   input 元素类型：',
+  '   - { "type": "text", "text": "..." }      文本（用户输入/工具结果/系统提示词分段都是 text）',
   '   - { "type": "file", "filename", "mimeType", "data": "base64" } 附件',
   '',
   '## 会话与事件',
@@ -46,7 +49,7 @@ export const CUKO_AI_PROMPT = [
   '',
   '## 历史压缩（type: "compress"）',
   '- 切换模型时 Cuckoo 会发一次 type: "compress" 请求，不携带 providerSessionId。',
-  '- input 是压缩后的历史：每条消息一个元素，type 为 user / tool / assistant，文本以「用户:」「助手:」「工具:」开头。',
+  '- input 是压缩后的历史：每条消息一个 text 元素，文本以「用户:」「助手:」「工具:」开头。',
   '- 请用这些内容为新模型重建上下文，并返回新的 providerSessionId；返回的正文会展示给用户。',
   '- 涉及 edit/deleteFile 的工具结果会保留；其它工具结果会被替换成占位文案。',
   '',
@@ -203,7 +206,7 @@ export function CukoIntegrationDialog({ onClose }: { onClose: () => void }) {
                 <div style={sectionTitleStyle}>接口速览</div>
                 <div style={mutedStyle}>
                   <div>· 首次请求不带 <code>providerSessionId</code>，服务端要在第一帧返回它；后续请求带上以续接会话。</div>
-                  <div>· <code>input</code> 元素按来源区分：<code>user</code>（用户输入）、<code>tool</code>（工具结果）、<code>text</code>（系统提示词分段）、<code>file</code>（附件）。</div>
+                  <div>· 请求外层 <code>type</code> 区分来源：<code>user</code>（用户输入）、<code>tool</code>（工具结果）、<code>compress</code>（历史压缩）；<code>input</code> 元素统一是 <code>text</code> / <code>file</code>。</div>
                   <div>· 切换模型时会发一次 <code>type: "compress"</code> 的历史压缩请求，用它为新模型重建上下文。</div>
                   <div>· 事件：<code>event: message</code> / <code>event: done</code>（带 usage）/ <code>event: error</code>。</div>
                   <div>· 完整协议见「接口文档」页签（源文件 <code>docs/protocols/cuko-api-v1.md</code>）。</div>

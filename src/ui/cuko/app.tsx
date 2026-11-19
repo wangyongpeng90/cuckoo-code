@@ -915,9 +915,9 @@ function ChatApp() {
     }
 
     // Provider 请求内容：系统提示词由主进程按需注入，这里只给文本 + 附件
-    // 用户自己输入的内容统一标 type: "user"（附件仍是 file），工具结果由主进程标 type: "tool"
+    // input 元素保持 text/file；用户输入 / 工具结果由主进程在请求外层标 type
     const inputParts: any[] = [];
-    if (text.trim()) inputParts.push({ type: 'user', text });
+    if (text.trim()) inputParts.push({ type: 'text', text });
     for (const p of fileParts) {
       inputParts.push({ type: 'file', filename: p.filename, mimeType: p.mimeType, data: p.data });
     }

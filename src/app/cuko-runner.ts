@@ -265,7 +265,12 @@ interface RoundResult {
 }
 
 /** 跑一轮请求：POST /v1/responses，解析 SSE，返回累计内容 */
-async function streamRound(run: CukoRun, input: CukoRunInputPart[], providerSessionId: string): Promise<RoundResult> {
+async function streamRound(
+  run: CukoRun,
+  input: CukoRunInputPart[],
+  providerSessionId: string,
+  requestType: 'user' | 'tool',
+): Promise<RoundResult> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
   if (run.apiKey) headers.Authorization = 'Bearer ' + run.apiKey;
 
@@ -273,6 +278,8 @@ async function streamRound(run: CukoRun, input: CukoRunInputPart[], providerSess
     cuckSessionId: run.sessionId,
     requestId: randomUUID(),
     model: run.modelId,
+    // 顶层 type 区分请求来源：user=用户输入，tool=工具执行结果（compress 用于切模型压缩）
+    type: requestType,
     input,
   };
   if (providerSessionId) body.providerSessionId = providerSessionId;
@@ -339,6 +346,7 @@ async function streamRound(run: CukoRun, input: CukoRunInputPart[], providerSess
     sessionId: run.sessionId,
     model: run.modelId,
     url,
+    type: requestType,
     input,
     providerSessionId: providerSessionId || undefined,
   });
@@ -388,6 +396,7 @@ async function streamRound(run: CukoRun, input: CukoRunInputPart[], providerSess
 /** 运行主循环：请求 → 落库 → 有 cuckoo 块则执行工具 → 下一轮 */
 async function runLoop(run: CukoRun): Promise<void> {
   let currentInput = run.initialInput;
+  let requestType: 'user' | 'tool' = 'user';
   try {
     for (;;) {
       if (run.aborted) break;
@@ -402,7 +411,7 @@ async function runLoop(run: CukoRun): Promise<void> {
       run.toolParts = undefined;
       emit({ type: 'run-start', sessionId: run.sessionId, runId: run.runId, assistantId, startedAt: run.startedAt });
 
-      const round = await streamRound(run, currentInput, run.providerSessionId);
+      const round = await streamRound(run, currentInput, run.providerSessionId, requestType);
 
       insertMessage({
         id: assistantId,
@@ -479,11 +488,12 @@ async function runLoop(run: CukoRun): Promise<void> {
         if (picked) phrase = picked;
       } catch { /* 用默认回复语 */ }
 
-      // 工具循环回传的内容统一标 type: "tool"，让 Provider 区分用户输入与工具结果
+      // 工具循环回传：input 元素仍是 text，靠外层 type: "tool" 区分
+      requestType = 'tool';
       currentInput = [
-        { type: 'tool', text: phrase },
+        { type: 'text', text: phrase },
         ...results.map((r) => ({
-          type: 'tool',
+          type: 'text',
           text: r.success ? (r.output || '(脚本执行完成，无输出)') : '错误原因: ' + (r.error || '未知错误'),
         })),
       ];
