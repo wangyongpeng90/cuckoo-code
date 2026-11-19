@@ -1146,11 +1146,15 @@ registerIpcHandlers();
 // ========== Cuko API 独立工作窗口 ==========
 let cukoWindow: any = null;
 
-function openCukoWindow(): void {
+function openCukoWindow(options?: { focus?: boolean }): void {
+  const shouldFocus = options?.focus !== false;
   if (cukoWindow && !cukoWindow.isDestroyed()) {
     if (cukoWindow.isMinimized()) cukoWindow.restore();
-    cukoWindow.show();
-    cukoWindow.focus();
+    if (!cukoWindow.isVisible()) cukoWindow.showInactive();
+    if (shouldFocus) {
+      cukoWindow.show();
+      cukoWindow.focus();
+    }
     return;
   }
 
@@ -1162,6 +1166,7 @@ function openCukoWindow(): void {
     minWidth: 760,
     minHeight: 560,
     title: 'Cuckoo Code - Cuko API',
+    show: false,
     webPreferences: {
       preload: path.join(import.meta.dirname, 'cuko-preload.js'),
       contextIsolation: true,
@@ -1183,6 +1188,17 @@ function openCukoWindow(): void {
 
   win.on('closed', () => {
     if (cukoWindow === win) cukoWindow = null;
+  });
+
+  // 启动自动打开时用 showInactive，避免抢走主窗口焦点
+  win.once('ready-to-show', () => {
+    if (win.isDestroyed()) return;
+    if (shouldFocus) {
+      win.show();
+      win.focus();
+    } else {
+      win.showInactive();
+    }
   });
 
   win.loadFile(pagePath).catch((err: any) => {
@@ -1532,6 +1548,16 @@ if (!gotSingleInstanceLock) {
     } else {
       createWindow(null);
     }
+
+    // 启动时自动打开 Cuko API 工作窗口（与主窗口并行，不抢焦点）
+    // 需要关闭时把下面的调用去掉即可
+    setTimeout(() => {
+      try {
+        openCukoWindow({ focus: false });
+      } catch (err: any) {
+        console.error('[Cuko API] 自动打开失败:', err?.message || err);
+      }
+    }, 800);
 
     });
 }
