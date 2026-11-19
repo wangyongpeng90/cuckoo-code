@@ -44,7 +44,7 @@ async function main() {
     target: 'es2020',
     minify: false,
     jsx: 'automatic',
-    loader: { '.tsx': 'tsx', '.svg': 'dataurl', '.css': 'empty' },
+    loader: { '.tsx': 'tsx', '.svg': 'dataurl', '.css': 'empty', '.md': 'text' },
     define: { 'process.env.NODE_ENV': '"production"' },
     alias: { '@': path.join(ROOT, 'src') },
   });

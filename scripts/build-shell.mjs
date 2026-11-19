@@ -80,7 +80,7 @@ async function main() {
     logLevel: 'warning',
     jsx: 'automatic',
     jsxImportSource: 'react',
-    loader: { '.tsx': 'tsx' },
+    loader: { '.tsx': 'tsx', '.md': 'text' },
     plugins: [tsJsResolve],
   });
   const js = bundle.outputFiles[0].text;

@@ -4,9 +4,12 @@
  * docs/requirements/261109-8ms69z-cuko-api.md
  *
  * 入口在 Cuko 设置页的 Provider 列表下方；内容包含协议速览、
- * 三步接入说明，以及一段可直接复制给 AI 的开发提示词。
+ * 三步接入说明、可直接复制给 AI 的开发提示词，以及完整的
+ * docs/protocols/cuko-api-v1.md（构建时以文本内联，随文档更新）。
  */
 import { useEffect, useState } from 'react';
+// @ts-expect-error .md 由 esbuild 的 text loader 处理（见 scripts/build-shell.mjs / build-cuko.mjs）
+import CUKO_PROTOCOL_DOC from '../../../../../docs/protocols/cuko-api-v1.md';
 
 export const CUKO_AI_PROMPT = [
   '你是 Stateful Provider 开发者。请实现一个兼容 Cuko API v1 的服务端（语言不限，推荐 Node.js + TypeScript 或 Python FastAPI），供 Cuckoo Code 的 Cuko 窗口连接。',
@@ -84,8 +87,36 @@ const mutedStyle: React.CSSProperties = {
   lineHeight: 1.7,
 };
 
+const codeBlockStyle: React.CSSProperties = {
+  margin: 0,
+  overflow: 'auto',
+  padding: '12px',
+  borderRadius: '8px',
+  border: '1px solid var(--ck-border)',
+  background: 'var(--ck-bg-2)',
+  color: 'var(--ck-text-2)',
+  fontSize: '11.5px',
+  lineHeight: 1.65,
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+};
+
+const copyButtonStyle: React.CSSProperties = {
+  height: '28px',
+  padding: '0 12px',
+  fontSize: '12px',
+  borderRadius: '6px',
+  border: '1px solid var(--ck-border)',
+  background: 'transparent',
+  color: 'var(--ck-text)',
+  cursor: 'pointer',
+  flex: '0 0 auto',
+};
+
 export function CukoIntegrationDialog({ onClose }: { onClose: () => void }) {
+  const [tab, setTab] = useState<'guide' | 'doc'>('guide');
   const [copied, setCopied] = useState(false);
+  const [copiedDoc, setCopiedDoc] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -96,12 +127,12 @@ export function CukoIntegrationDialog({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const copyPrompt = async () => {
+  const copyText = async (text: string, onDone: (v: boolean) => void) => {
     setError('');
     try {
-      await navigator.clipboard.writeText(CUKO_AI_PROMPT);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      await navigator.clipboard.writeText(text);
+      onDone(true);
+      setTimeout(() => onDone(false), 1500);
     } catch {
       setError('复制失败，请手动选择文本');
     }
@@ -131,67 +162,77 @@ export function CukoIntegrationDialog({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
-        <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px', paddingRight: '4px' }}>
-          <div>
-            <div style={sectionTitleStyle}>三步接入</div>
-            <ol style={{ ...mutedStyle, margin: 0, paddingLeft: '18px' }}>
-              <li>实现 <code>GET /v1/models</code> 与 <code>POST /v1/responses</code>（SSE）两个接口；</li>
-              <li>启动服务，确认监听地址（示例：<code>http://127.0.0.1:3000</code>）；</li>
-              <li>回到本页 →「添加模型提供商」→ 填 API 地址 →「获取可用模型」→ 保存。</li>
-            </ol>
-          </div>
-
-          <div>
-            <div style={sectionTitleStyle}>接口速览</div>
-            <div style={mutedStyle}>
-              <div>· 首次请求不带 <code>providerSessionId</code>，服务端要在第一帧返回它；后续请求带上以续接会话。</div>
-              <div>· <code>input</code> 元素按来源区分：<code>user</code>（用户输入）、<code>tool</code>（工具结果）、<code>text</code>（系统提示词分段）、<code>file</code>（附件）。</div>
-              <div>· 切换模型时会发一次 <code>type: "compress"</code> 的历史压缩请求，用它为新模型重建上下文。</div>
-              <div>· 事件：<code>event: message</code> / <code>event: done</code>（带 usage）/ <code>event: error</code>。</div>
-              <div>· 完整协议见仓库 <code>docs/protocols/cuko-api-v1.md</code>。</div>
-            </div>
-          </div>
-
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <div style={sectionTitleStyle}>给 AI 的开发提示词</div>
-              <button
-                type="button"
-                onClick={copyPrompt}
-                style={{
-                  height: '28px',
-                  padding: '0 12px',
-                  fontSize: '12px',
-                  borderRadius: '6px',
-                  border: '1px solid var(--ck-border)',
-                  background: 'transparent',
-                  color: 'var(--ck-text)',
-                  cursor: 'pointer',
-                }}
-              >
-                {copied ? '已复制' : '复制提示词'}
-              </button>
-            </div>
-            <pre
+        <div style={{ display: 'flex', gap: '4px', background: 'var(--ck-bg-3)', borderRadius: '8px', padding: '4px', alignSelf: 'flex-start' }}>
+          {[
+            { key: 'guide' as const, label: '接入说明' },
+            { key: 'doc' as const, label: '接口文档' },
+          ].map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setTab(item.key)}
               style={{
-                margin: 0,
-                maxHeight: '34vh',
-                overflow: 'auto',
-                padding: '12px',
-                borderRadius: '8px',
-                border: '1px solid var(--ck-border)',
-                background: 'var(--ck-bg-2)',
-                color: 'var(--ck-text-2)',
-                fontSize: '11.5px',
-                lineHeight: 1.65,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'break-word',
+                padding: '6px 14px',
+                borderRadius: '6px',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '12.5px',
+                background: tab === item.key ? 'var(--ck-bg)' : 'transparent',
+                color: tab === item.key ? 'var(--ck-text)' : 'var(--ck-text-2)',
+                fontWeight: tab === item.key ? 600 : 400,
               }}
             >
-              {CUKO_AI_PROMPT}
-            </pre>
-            {error && <div style={{ color: 'var(--ck-danger)', fontSize: '12px', marginTop: '4px' }}>{error}</div>}
-          </div>
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '14px', paddingRight: '4px' }}>
+          {tab === 'guide' ? (
+            <>
+              <div>
+                <div style={sectionTitleStyle}>三步接入</div>
+                <ol style={{ ...mutedStyle, margin: 0, paddingLeft: '18px' }}>
+                  <li>实现 <code>GET /v1/models</code> 与 <code>POST /v1/responses</code>（SSE）两个接口；</li>
+                  <li>启动服务，确认监听地址（示例：<code>http://127.0.0.1:3000</code>）；</li>
+                  <li>回到本页 →「添加模型提供商」→ 填 API 地址 →「获取可用模型」→ 保存。</li>
+                </ol>
+              </div>
+
+              <div>
+                <div style={sectionTitleStyle}>接口速览</div>
+                <div style={mutedStyle}>
+                  <div>· 首次请求不带 <code>providerSessionId</code>，服务端要在第一帧返回它；后续请求带上以续接会话。</div>
+                  <div>· <code>input</code> 元素按来源区分：<code>user</code>（用户输入）、<code>tool</code>（工具结果）、<code>text</code>（系统提示词分段）、<code>file</code>（附件）。</div>
+                  <div>· 切换模型时会发一次 <code>type: "compress"</code> 的历史压缩请求，用它为新模型重建上下文。</div>
+                  <div>· 事件：<code>event: message</code> / <code>event: done</code>（带 usage）/ <code>event: error</code>。</div>
+                  <div>· 完整协议见「接口文档」页签（源文件 <code>docs/protocols/cuko-api-v1.md</code>）。</div>
+                </div>
+              </div>
+
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <div style={sectionTitleStyle}>给 AI 的开发提示词</div>
+                  <button type="button" onClick={() => copyText(CUKO_AI_PROMPT, setCopied)} style={copyButtonStyle}>
+                    {copied ? '已复制' : '复制提示词'}
+                  </button>
+                </div>
+                <pre style={{ ...codeBlockStyle, maxHeight: '34vh' }}>{CUKO_AI_PROMPT}</pre>
+                {error && <div style={{ color: 'var(--ck-danger)', fontSize: '12px', marginTop: '4px' }}>{error}</div>}
+              </div>
+            </>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={sectionTitleStyle}>Cuko API v1 接口文档</div>
+                <button type="button" onClick={() => copyText(CUKO_PROTOCOL_DOC, setCopiedDoc)} style={copyButtonStyle}>
+                  {copiedDoc ? '已复制' : '复制文档'}
+                </button>
+              </div>
+              <div style={mutedStyle}>来自仓库 docs/protocols/cuko-api-v1.md（构建时内联，随文档更新）。</div>
+              <pre style={{ ...codeBlockStyle, maxHeight: '52vh', minHeight: '38vh' }}>{CUKO_PROTOCOL_DOC}</pre>
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>

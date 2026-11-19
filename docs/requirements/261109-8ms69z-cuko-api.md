@@ -214,7 +214,7 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - [x] **请求日志**：页面内可查看主进程发出的最近 100 次请求（DevTools Network 看不到）。
 - [x] **长会话虚拟列表**：Cuko 消息列表按视口渲染，300 条消息只保留约 13 个节点。
 - [x] **input 来源标记**：用户输入 `type:"user"`、工具结果 `type:"tool"`、系统提示词分段 `type:"text"`。
-- [x] **接入说明**：设置 → Cuko API 底部「如何接入 Cuko API」，含协议速览、三步接入与可复制的 AI 开发提示词。
+- [x] **接入说明**：设置 → Cuko API 底部「如何接入 Cuko API」，含三步接入、协议速览、可复制的 AI 开发提示词，以及构建时内联的完整接口文档（`docs/protocols/cuko-api-v1.md`）。
 - [x] `typecheck / test / lint / compile` 全绿。
 
 ## 遗留 / 后续
