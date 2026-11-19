@@ -59,7 +59,20 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - SSE 流式接收结束后（且收到 `done` 事件），提取回复中的 cuckoo 代码块。
 - 逐个调用主进程的 `cuko:execute-js` 执行代码。
 - 执行完成后，将结果拼装成下一轮的 `input` 数组：`[0]` 为随机回复语（从回复语池抽取），`[1..n]` 为每个代码块的执行结果。
-- 最多执行 10 轮，防止死循环。
+- 不设轮数上限：只要 AI 继续输出 `cuckoo` 代码块就一直执行（原 10 轮上限已移除）。
+
+### 附件持久化（方案 C：原文件落盘 + 消息记路径）
+
+- 发送时主进程把附件原文件写到 `<userData>/cuko-attachments/<sessionId>/<messageId>/<index>.<ext>`，
+  消息里只保存相对路径（换模型 / 换供应商后历史附件仍可读）。
+- 附件不塞进 `message.content`：assistant-ui 的用户消息附件只认 `message.attachments`，
+  且 `content` 里的 `file` part 会被 `UserFilePart` 当成 data URL 渲染成坏图。
+- 落库的 `cuko_messages.content` 形如 `{ v:1, text, attachments:[{filename,mimeType,path}] }`；
+  无附件的消息仍存纯文本，历史消息不回填。
+- 前端 `useAttachmentSrc` 通过 `cukoAPI.readAttachment` 异步读盘 → base64 → data URL，
+  内存里做 40 条 LRU 缓存；图片按 `mimeType` 判定（file part 会被映射成 `type:"document"`）。
+- 渲染：图片 = 96px 缩略图（点开看原图），其他文件 = 文件名卡片（Cuko 通过 `Thread` 的
+  `UserAttachment` 插槽注入，不影响主界面）。
 
 ### UI 交互定制
 
@@ -82,11 +95,11 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - [x] 能够配置 Provider 地址、Token，并成功拉取模型列表。
 - [x] 能够通过 `assistant-ui` 发送消息，并正确解析 SSE 流式事件（包含新建和续接对话）。
 - [x] 支持多 Provider、多模型切换，并在会话内锁定模型。
-- [x] 支持思维链（think）折叠展示和 token 用量（usage）记录。
+- [x] 支持思维链（think）折叠展示；token 用量写入库并在输入框下方显示「上下文 x.xx k」。
 - [x] 多会话持久化，切换会话时恢复历史消息和绑定模型。
 - [x] **工作区绑定**：支持选择工作区目录，新建会话时绑定 `project_dir`。
 - [x] **系统提示词注入**：首次对话自动按 `# ` 分段注入系统提示词。
-- [x] **工具执行循环**：自动提取 `cuckoo` 代码块并执行，将结果回传，最多 10 轮。
+- [x] **工具执行循环**：自动提取 `cuckoo` 代码块并执行，将结果回传（不设轮数上限）。
 - [x] **UI 深度定制**：
   - [x] 去除冗余的 `1 tool call` 外层分组。
   - [x] 去除纯工具消息底部的复制/重试操作栏。
@@ -94,12 +107,14 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
   - [x] cuckoo 代码块默认折叠，带复制按钮。
   - [x] 工具卡片折叠时多行展示 `await xxx` 参数解析，展开后代码/结果限高滚动。
   - [x] 多个工具调用合并到同一消息，消除巨大间距。
-- [ ] 支持传入多模态文件（Base64）。
+- [x] 支持传入多模态文件（Base64 随 `input` 发送，原文件落盘用于历史回看）。
 - [x] `typecheck / test / lint / compile` 全绿。
 
 ## 遗留 / 后续
 
-1. **多模态附件上传**：协议已定义 `{ type: "file", filename, mimeType, data }`，前端附件按钮（`ComposerAddAttachment`）已由官方 `Thread` 提供，缺的是 `AttachmentAdapter` 把文件转 Base64 并拼入 `input` 数组。
-2. **usage 展示**：数据已存入数据库，但官方气泡没有位置展示，需定制 `AssistantMessage` 组件或使用 `assistant-ui` 的自定义插槽。
+1. **附件目录清理**：删除会话时暂不清理 `<userData>/cuko-attachments/<sessionId>/`，长期使用会积累孤儿文件（用户已确认暂不做）。
+2. **大图缩略图**：当前用原图 + CSS 缩放，后续可在 `cuko:save-attachments` 里用 `nativeImage.resize` 生成缩略图，降低读盘体积。
 3. **会话标题智能生成**：当前使用前 15 个字符作为标题，未来可接入 AI 自动起标题。
-4. **多 Provider 同时激活**：目前同时只有一个 Provider 处于激活状态，未来若需并行调用多个 Provider，需要扩展 `cuko_config` 的激活状态模型。
+4. **同名会话去重**：侧边栏常出现多个「你好」，仅在切换时才改标题，未做去重。
+5. **修改 providerSessionId**：用户原始清单最后一项，行为待定（只改库值 vs 清空上下文）。
+6. **多 Provider 同时激活**：目前同时只有一个 Provider 处于激活状态，未来若需并行调用多个 Provider，需要扩展 `cuko_config` 的激活状态模型。

@@ -140,6 +140,8 @@ export type ThreadComponents = {
   ComposerExtra?: ComponentType | undefined;
   /** 渲染在输入框下方（如用量统计），与 ComposerExtra 不同，它位于 Composer 之后。 */
   ComposerFooter?: ComponentType | undefined;
+  /** 用户消息里单个附件的渲染组件。默认走 AttachmentUI；Cuko 换成文件名卡片。 */
+  UserAttachment?: ComponentType | undefined;
 };
 
 const messageGroupBy = groupPartByType({
@@ -767,13 +769,14 @@ const UserImagePart: ImageMessagePartComponent = (part) => (
 );
 
 const UserMessage: FC = () => {
+  const { UserAttachment } = useContext(ThreadComponentsContext);
   return (
     <MessagePrimitive.Root
       data-slot="aui_user-message-root"
       className="fade-in slide-in-from-bottom-1 animate-in grid auto-rows-auto grid-cols-[minmax(72px,1fr)_auto] content-start gap-y-2 px-2 duration-150 [contain-intrinsic-size:auto_200px] [content-visibility:auto] [&:where(>*)]:col-start-2"
       data-role="user"
     >
-      <UserMessageAttachments />
+      <UserMessageAttachments renderItem={UserAttachment} />
 
       <div className="aui-user-message-content-wrapper relative col-start-2 min-w-0">
         <div className="aui-user-message-content peer bg-muted text-foreground rounded-(--composer-radius) px-4 py-2 wrap-break-word empty:hidden">

@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   
   getMessages: (sessionId: string) => ipcRenderer.invoke('cuko:get-messages', sessionId),
   saveMessage: (msg: any) => ipcRenderer.invoke('cuko:save-message', msg),
+  saveAttachments: (sessionId: string, messageId: string, files: any[]) => ipcRenderer.invoke('cuko:save-attachments', sessionId, messageId, files),
+  readAttachment: (relPath: string) => ipcRenderer.invoke('cuko:read-attachment', relPath),
 });
 
 const shellAPI = {

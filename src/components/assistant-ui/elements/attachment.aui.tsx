@@ -4,6 +4,7 @@ import {
   type PropsWithChildren,
   useState,
   type FC,
+  type ComponentType,
   isValidElement,
 } from "react";
 import {
@@ -109,7 +110,7 @@ const AttachmentThumb: FC<{ src: string | undefined }> = ({ src }) => {
   );
 };
 
-const AttachmentUI: FC = () => {
+export const AttachmentUI: FC = () => {
   const {
     isComposer,
     src,
@@ -206,11 +207,15 @@ const AttachmentRemove: FC<{ name: string }> = ({ name }) => {
   );
 };
 
-export const UserMessageAttachments: FC = () => {
+export const UserMessageAttachments: FC<{
+  /** 自定义消息附件项（Cuko 用它把非图片附件渲染成文件名卡片） */
+  renderItem?: ComponentType | undefined;
+}> = ({ renderItem }) => {
+  const Item = renderItem ?? AttachmentUI;
   return (
-    <div className="aui-user-message-attachments-end col-span-full col-start-1 row-start-1 flex w-full flex-row justify-end gap-2 empty:hidden">
+    <div className="aui-user-message-attachments-end col-span-full col-start-1 row-start-1 flex w-full flex-row flex-wrap justify-end gap-2 empty:hidden">
       <MessagePrimitive.Attachments>
-        {() => <AttachmentUI />}
+        {() => <Item />}
       </MessagePrimitive.Attachments>
     </div>
   );

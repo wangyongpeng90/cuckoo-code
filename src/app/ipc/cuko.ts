@@ -347,6 +347,54 @@ export function registerCukoIpc(): void {
     return { success: true };
   });
 
+  // ====== 附件管理 ======
+  // 原文件落盘：<userData>/cuko-attachments/<sessionId>/<messageId>/<index>.<ext>
+  // 消息里只存相对路径，换模型 / 换供应商后历史附件依然可读（见需求档案 261109-8ms69z）
+  const attachmentsRoot = () => require('node:path').join(require('electron').app.getPath('userData'), 'cuko-attachments');
+  const safeSegment = (v: string) => String(v || '').replace(/[^a-zA-Z0-9_-]/g, '');
+
+  ipcMain.handle('cuko:save-attachments', async (_event: any, sessionId: string, messageId: string, files: Array<{ filename: string; mimeType: string; data: string }>) => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const sid = safeSegment(sessionId);
+    const mid = safeSegment(messageId);
+    if (!sid || !mid || !Array.isArray(files) || files.length === 0) {
+      return { success: false, error: 'invalid arguments' };
+    }
+    const baseDir = path.join(attachmentsRoot(), sid, mid);
+    try {
+      fs.mkdirSync(baseDir, { recursive: true });
+      const saved: Array<{ filename: string; mimeType: string; path: string }> = [];
+      files.forEach((f, i) => {
+        const ext = (/\.([a-zA-Z0-9]+)$/.exec(f.filename || '') || ['', ''])[1];
+        const fileName = String(i) + (ext ? '.' + ext.toLowerCase() : '');
+        fs.writeFileSync(path.join(baseDir, fileName), Buffer.from(String(f.data || ''), 'base64'));
+        saved.push({
+          filename: f.filename || fileName,
+          mimeType: f.mimeType || 'application/octet-stream',
+          path: sid + '/' + mid + '/' + fileName,
+        });
+      });
+      return { success: true, attachments: saved };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
+  ipcMain.handle('cuko:read-attachment', async (_event: any, relPath: string) => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    try {
+      const root = attachmentsRoot();
+      const abs = path.resolve(root, String(relPath || ''));
+      const rel = path.relative(root, abs);
+      // 防止 ../ 越权读到附件目录之外的文件
+      if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+        return { success: false, error: 'invalid path' };
+      }
+      const buf = fs.readFileSync(abs);
+      return { success: true, data: buf.toString('base64') };
+    } catch (err: any) { return { success: false, error: err.message }; }
+  });
+
   // ====== 消息管理 ======
   ipcMain.handle('cuko:get-messages', (_event: any, sessionId: string) => {
     const db = getDb();

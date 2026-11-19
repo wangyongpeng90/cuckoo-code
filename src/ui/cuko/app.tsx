@@ -24,6 +24,8 @@ import {
   ReasoningText,
 } from '@/components/assistant-ui/elements/reasoning.aui';
 import { MarkdownText } from '@/components/assistant-ui/elements/markdown-text';
+import { AttachmentUI } from '@/components/assistant-ui/elements/attachment.aui';
+import { useAttachmentState } from '@/components/assistant-ui/elements/attachment-state';
 import { Thread } from '@/components/assistant-ui/elements/thread.aui';
 import { SessionTree } from '@/ui/cuko/session-tree';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
@@ -36,7 +38,7 @@ import {
   ToolFallback,
 } from '@/components/assistant-ui/elements/tool-fallback.aui';
 import { CollapsibleTrigger } from '@/components/assistant-ui/elements/collapsible-root';
-import { ChevronDownIcon, CheckIcon, XCircleIcon, LoaderIcon } from 'lucide-react';
+import { ChevronDownIcon, CheckIcon, XCircleIcon, LoaderIcon, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // ============ 类型定义 ============
@@ -168,6 +170,28 @@ const CukoAttachmentAdapter: AttachmentAdapter = {
 function extractText(content: AppendMessage['content']): string {
   const parts = Array.isArray(content) ? content : [];
   return parts.filter((p: any) => p && p.type === 'text' && typeof p.text === 'string').map((p: any) => p.text).join('\n');
+}
+
+/** Cuko 附件存的是相对路径；data:/blob:/http(s) 都不是本地路径 */
+const isDiskAttachPath = (data: unknown): data is string =>
+  typeof data === 'string' && !/^(?:data|blob):/i.test(data) && !/^(?:https?:)?\/\//i.test(data);
+
+/**
+ * 把一条附件元数据转成 assistant-ui 的 CompleteAttachment。
+ * 注意：图片必须看 mimeType 判定（file part 会被映射成 type: "document"），
+ * 否则缩略图尺寸与预览弹窗都不会按图片处理。
+ */
+function toUserAttachment(msgId: string, index: number, part: { filename?: string; mimeType?: string; data: string }) {
+  const mimeType = part.mimeType || 'application/octet-stream';
+  const filename = part.filename || 'attachment-' + (index + 1);
+  return {
+    id: msgId + '-att-' + index,
+    type: mimeType.startsWith('image/') ? ('image' as const) : ('document' as const),
+    name: filename,
+    contentType: mimeType,
+    content: [{ type: 'file' as const, filename, mimeType, data: part.data }],
+    status: { type: 'complete' as const },
+  };
 }
 
 /** 从代码块里提取所有被调用的工具名（去重） */
@@ -442,6 +466,24 @@ const CukoUsage: React.FC = () => {
   );
 };
 
+/**
+ * 用户消息里的附件项（Cuko 专用，通过 Thread 的 UserAttachment 插槽注入）：
+ * 图片显示缩略图（点开可看原图），其他文件显示文件名卡片。
+ */
+const CukoUserAttachment: React.FC = () => {
+  const { isImage, src, name } = useAttachmentState();
+  if (isImage || src) return <AttachmentUI />;
+  return (
+    <div
+      className="bg-muted/70 border-border/60 flex max-w-[240px] items-center gap-2 rounded-lg border px-2.5 py-1.5"
+      title={name}
+    >
+      <FileText className="text-muted-foreground size-4 shrink-0" />
+      <span className="truncate text-xs">{name}</span>
+    </div>
+  );
+};
+
 const CukoToolFallback: ToolCallMessagePartComponent = ({
   toolName,
   argsText,
@@ -649,20 +691,43 @@ function ChatApp() {
     setThreadId(id);
     const dbMsgs = await window.cukoAPI.getMessages(id);
     const loadedMsgs: Msg[] = dbMsgs.map(m => {
-      // 工具卡片消息：content 是 JSON 数组（tool-call part）
       let content: any = m.content;
+      let attachments: ReturnType<typeof toUserAttachment>[] | undefined;
+      // 工具卡片消息：content 是 JSON 数组（tool-call part）
       if (typeof m.content === 'string' && m.content.trim().startsWith('[')) {
         try {
           const parsed = JSON.parse(m.content);
-          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.type === 'tool-call') {
+          if (Array.isArray(parsed) && parsed.length > 0) {
             content = parsed;
           }
         } catch { /* 非 JSON，保留原文本 */ }
+      } else if (typeof m.content === 'string' && m.content.trim().startsWith('{')) {
+        // 带附件的用户消息：{ v:1, text, attachments:[{filename,mimeType,path}] }
+        try {
+          const parsed = JSON.parse(m.content);
+          if (parsed && parsed.v === 1 && Array.isArray(parsed.attachments)) {
+            content = typeof parsed.text === 'string' && parsed.text.trim() ? parsed.text : [];
+            attachments = parsed.attachments
+              .filter((a: any) => isDiskAttachPath(a?.path))
+              .map((a: any, i: number) => toUserAttachment(m.id, i, { filename: a.filename, mimeType: a.mimeType, data: a.path }));
+          }
+        } catch { /* 普通文本恰好像 JSON，忽略 */ }
+      }
+      // 兼容中间格式：content 数组里直接混着 file part（data 是相对路径）
+      if (!attachments && Array.isArray(content)) {
+        const stored = content.filter((p: any) => p && p.type === 'file' && isDiskAttachPath(p.data));
+        if (stored.length > 0) {
+          attachments = stored.map((p: any, i: number) => toUserAttachment(m.id, i, {
+            filename: p.filename, mimeType: p.mimeType, data: p.data,
+          }));
+          content = content.filter((p: any) => p && p.type !== 'file');
+        }
       }
       return {
         id: m.id,
         role: m.role as any,
         content,
+        ...(attachments ? { attachments } : {}),
         think: m.think || undefined,
         usage: m.usage_json ? JSON.parse(m.usage_json) : undefined,
         ...(m.role === 'assistant' ? { status: { type: 'complete' as const, reason: 'stop' } } : {}),
@@ -755,10 +820,64 @@ function ChatApp() {
     const activeModel = config.modelId;
 
     const userId = crypto.randomUUID();
-    const userMsg: Msg = { role: 'user', content: text, id: userId };
+    // 附件先落盘：<userData>/cuko-attachments/<会话id>/<消息id>/<序号>.<ext>
+    // 消息里只记相对路径，图片由 useAttachmentSrc 异步读盘渲染缩略图
+    const fileParts: Array<{ filename: string; mimeType: string; data: string }> = [];
+    const appendAtts = (append as any).attachments;
+    if (Array.isArray(appendAtts)) {
+      for (const att of appendAtts) {
+        if (!att || !Array.isArray(att.content)) continue;
+        for (const p of att.content) {
+          if (!p) continue;
+          if (p.type === 'file' && typeof p.data === 'string') {
+            fileParts.push({
+              filename: p.filename || att.name || 'attachment',
+              mimeType: p.mimeType || att.contentType || 'application/octet-stream',
+              data: p.data,
+            });
+          } else if (p.type === 'image' && typeof p.image === 'string') {
+            const m = /^data:([^;]+);base64,(.*)$/.exec(p.image);
+            if (m) fileParts.push({ filename: p.filename || 'image', mimeType: m[1], data: m[2] });
+          }
+        }
+      }
+    }
+
+    const savedAttachments: ReturnType<typeof toUserAttachment>[] = [];
+    if (fileParts.length > 0) {
+      try {
+        const res = await (window.cukoAPI as any).saveAttachments(activeThreadId, userId, fileParts);
+        if (res?.success && Array.isArray(res.attachments)) {
+          res.attachments.forEach((a: any, i: number) => {
+            savedAttachments.push(toUserAttachment(userId, i, { filename: a.filename, mimeType: a.mimeType, data: a.path }));
+          });
+        } else {
+          console.error('保存附件失败', res?.error || '未知错误');
+        }
+      } catch (e) { console.error('保存附件失败', e); }
+    }
+
+    // 有附件时 content 存 JSON（text + 附件相对路径），无附件保持纯文本以兼容历史消息
+    const persistedContent = savedAttachments.length > 0
+      ? JSON.stringify({
+          v: 1,
+          text,
+          attachments: savedAttachments.map((a) => ({
+            filename: a.name,
+            mimeType: a.contentType || '',
+            path: (a.content[0] as any).data,
+          })),
+        })
+      : text;
+    const userMsg: Msg = {
+      role: 'user',
+      content: text.trim() ? text : [],
+      id: userId,
+      ...(savedAttachments.length > 0 ? { attachments: savedAttachments } : {}),
+    };
     setMessages((prev) => [...prev, userMsg]);
     setIsRunning(true);
-    window.cukoAPI.saveMessage({ id: userId, sessionId: activeThreadId, role: 'user', content: text });
+    window.cukoAPI.saveMessage({ id: userId, sessionId: activeThreadId, role: 'user', content: persistedContent });
 
     // 如果当前标题是 New Chat，顺便改个名
     const currentThread = threads.find(t => t.id === activeThreadId);
@@ -1134,6 +1253,7 @@ function ChatApp() {
           <Thread components={{
             Reasoning: CukoReasoning,
             ComposerFooter: CukoUsage,
+            UserAttachment: CukoUserAttachment,
             ToolFallback: CukoToolFallback,
             ComposerExtra: () => (
               <div className="flex items-center gap-1">
