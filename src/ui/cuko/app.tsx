@@ -1121,6 +1121,7 @@ function ChatApp() {
             Reasoning: CukoReasoning,
             ComposerFooter: CukoUsage,
             UserAttachment: CukoUserAttachment,
+            virtualize: true,
             ToolFallback: CukoToolFallback,
             ComposerExtra: () => (
               <div className="flex items-center gap-1">

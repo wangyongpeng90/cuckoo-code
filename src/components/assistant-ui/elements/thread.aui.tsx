@@ -23,6 +23,7 @@ import {
   ReasoningTrigger,
 } from "@/components/assistant-ui/elements/reasoning.aui";
 import { ToolFallback } from "@/components/assistant-ui/elements/tool-fallback.aui";
+import { VirtualizedThreadMessages } from "@/components/assistant-ui/elements/virtualized-messages.aui";
 import {
   ToolGroupContent,
   ToolGroupRoot,
@@ -142,6 +143,8 @@ export type ThreadComponents = {
   ComposerFooter?: ComponentType | undefined;
   /** 用户消息里单个附件的渲染组件。默认走 AttachmentUI；Cuko 换成文件名卡片。 */
   UserAttachment?: ComponentType | undefined;
+  /** 是否用虚拟列表渲染消息（长会话用；Cuko 开启，主界面保持原样）。 */
+  virtualize?: boolean | undefined;
 };
 
 const messageGroupBy = groupPartByType({
@@ -235,7 +238,8 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
   isEmpty,
   autoFocus,
 }) => {
-  const { Welcome = ThreadWelcome, ComposerFooter } = useContext(ThreadComponentsContext);
+  const { Welcome = ThreadWelcome, ComposerFooter, virtualize } = useContext(ThreadComponentsContext);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   return (
     <ThreadPrimitive.Root
@@ -247,6 +251,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
       }}
     >
       <ThreadPrimitive.Viewport
+        ref={viewportRef}
         turnAnchor="top"
         data-slot="aui_thread-viewport"
         className="relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth"
@@ -268,11 +273,21 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
 
           <div
             data-slot="aui_message-group"
-            className="mb-14 flex flex-col gap-y-6 empty:hidden"
+            className={cn(
+              "mb-14 flex flex-col empty:hidden",
+              virtualize ? "gap-y-0" : "gap-y-6",
+            )}
           >
-            <ThreadPrimitive.Messages>
-              {() => <ThreadMessage />}
-            </ThreadPrimitive.Messages>
+            {virtualize ? (
+              <VirtualizedThreadMessages
+                scrollRef={viewportRef}
+                components={{ Message: ThreadMessage }}
+              />
+            ) : (
+              <ThreadPrimitive.Messages>
+                {() => <ThreadMessage />}
+              </ThreadPrimitive.Messages>
+            )}
           </div>
 
           <ThreadPrimitive.ViewportFooter

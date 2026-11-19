@@ -62,6 +62,17 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - 执行完成后，将结果拼装成下一轮的 `input` 数组：`[0]` 为随机回复语（从回复语池抽取），`[1..n]` 为每个代码块的执行结果。
 - 不设轮数上限：只要 AI 继续输出 `cuckoo` 代码块就一直执行（原 10 轮上限已移除）。
 
+### 长会话虚拟列表
+
+- assistant-ui 0.15.34 **没有内置虚拟列表组件**，但提供了给外部虚拟化用的
+  `ThreadPrimitive.Unstable_MessageById` + `unstable_useThreadMessageIds`
+  （官方注释明确说用于 virtualized list）。
+- Cuko 接 `@tanstack/react-virtual`：按消息 id 渲染、`measureElement` 动态测高、
+  `overscan: 6`，只渲染视口附近的消息。
+- `ThreadComponents.virtualize` 开关，**只有 Cuko 打开**，主界面仍走原来的
+  `ThreadPrimitive.Messages`。
+- 实测 300 条消息时 DOM 里只保留 13 条消息节点，自动滚动到底部正常。
+
 ### 请求日志（页面内）
 
 - 运行循环搬到主进程后，`/v1/responses` 由 Node 发起，渲染进程 DevTools 的 Network 里看不到。
@@ -200,6 +211,7 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - [x] **首轮系统提示词留档**：注入时写入 `cuko_sessions.system_prompt` 与 `cuko_messages`（role=system），聊天页折叠展示。
 - [x] **切换模型**：有历史时确认后压缩历史（去 think、非写操作工具结果替换）以 `type:"compress"` 发给新模型，成功后才切换；请求返回的正文同样落库并显示。
 - [x] **请求日志**：页面内可查看主进程发出的最近 100 次请求（DevTools Network 看不到）。
+- [x] **长会话虚拟列表**：Cuko 消息列表按视口渲染，300 条消息只保留约 13 个节点。
 - [x] `typecheck / test / lint / compile` 全绿。
 
 ## 遗留 / 后续
