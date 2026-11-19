@@ -11,7 +11,8 @@
 Cuko API 是专为 **Stateful Provider** 设计的业务协议，区别于传统的无状态 LLM API（如 OpenAI Chat Completions）。
 
 **核心特征：**
-1. **增量输入**：客户端（Cuckoo）每次**只发送当前的用户提示词**，不发送历史上下文、不发送 System Prompt、不发送 Tools。
+1. **增量输入**：普通轮次客户端（Cuckoo）**只发送当前的用户提示词**，不发送历史上下文、不发送 Tools；
+   System Prompt 仅在首轮（未带 `providerSessionId`）可选携带，切模型时按 3.3 发送一次压缩历史。
 2. **状态黑盒**：Provider 负责维护外部服务的上下文状态。
 3. **通用抽象**：Provider 可以是任何形式的实现（本地服务、远端服务器等）。
 
@@ -72,6 +73,50 @@ Authorization: Bearer <token>
 - `input` (必需): 输入内容数组，支持多模态。
   - 文本对象: `{ "type": "text", "text": "..." }`
   - 文件对象: `{ "type": "file", "filename": "...", "mimeType": "...", "data": "base64..." }`
+  - 首轮请求（未带 `providerSessionId`）时，Cuckoo 会在用户输入前追加按 `# ` 分段的系统提示词，
+    每段一个 `text` 元素。
+- `type` (可选): 请求类型。缺省为普通增量对话；`"compress"` 表示历史压缩请求，
+  详见 [3.3](#33-历史压缩type-compress)。
+
+### 3.3 历史压缩（`type: "compress"`）
+
+当用户在对话中切换模型时，新模型没有旧的 Provider 会话状态。Cuckoo 会先把历史对话压缩成一次
+`type: "compress"` 的请求发给新模型，让它重建上下文，成功后才把模型绑定切到新模型。
+
+请求体在 3.2 的基础上增加一个顶层字段 `type`：
+
+```json
+{
+  "cuckSessionId": "cuck_uuid_123",
+  "model": "kimi",
+  "requestId": "req_uuid_789",
+  "type": "compress",
+  "input": [
+    { "type": "text", "text": "# 角色\n你是……" },
+    { "type": "text", "text": "用户:\n帮我看看这份文档" },
+    { "type": "text", "text": "助手:\n好的，我先读一下。" }
+  ]
+}
+```
+
+**字段与语义：**
+
+- `type` (可选): 缺省表示普通增量对话；`"compress"` 表示这是一次历史压缩请求。
+- 压缩请求 **不携带 `providerSessionId`**（新模型尚无状态，传了也没有意义）。
+- `input` 为数组，**每条历史消息一个元素**；元素均为 `{ "type": "text" }`，
+  以「用户:」「助手:」前缀区分角色。
+- 系统提示词（若 Cuckoo 有留档）会作为前置元素一并发送。
+- **AI 的思考内容（think）不发送。**
+- **工具调用：** 不涉及 `edit` / `deleteFile` 的工具调用，不发送真实执行结果，
+  统一替换为固定文案：
+  `(该工具调用不涉及edit或delete,如需调用结果请重新调用)`；
+  涉及写操作（edit / deleteFile）的工具结果必须保留，否则新模型不知道文件已被改动。
+- 响应格式与 3.2 完全一致（SSE）。**必须在 `event: message` 或 `event: done` 中返回新的
+  `providerSessionId`**，Cuckoo 保存它用于后续续接。
+- 响应中的正文 / think / usage 会作为一条助手消息展示并落库；为空则忽略。
+- 若返回 `event: error`，Cuckoo **保持原模型绑定不变**，用户可重试。
+
+> 这是协议中唯一会发送历史上下文的场景；普通增量对话仍然只发送当前输入。
 
 ## 4. 流式响应 (SSE)
 
@@ -142,4 +187,6 @@ HTTP 请求层面及 `event: error` 中的错误对象结构：
 - **首次对话**：用户发送 prompt -> Cuckoo 生成 `requestId`、`cuckSessionId` -> 携带 `input` 请求 `POST /v1/responses`。
 - **流式展示**：解析 `event: message` -> 提取 `output[0]` -> 渲染到 `assistant-ui` 气泡中。
 - **续接对话**：用户再次发送 -> Cuckoo 取出上次存下的 `providerSessionId` -> 发起请求。
+- **切换模型**：确认后以 `type: "compress"` 发送压缩后的历史 -> 成功保存新的 `providerSessionId`
+  并切换模型；失败保持原绑定。
 - **异常处理**：解析 `event: error` -> 检查 `code` -> UI 弹窗提示。
