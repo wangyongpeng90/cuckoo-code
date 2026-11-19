@@ -30,6 +30,8 @@ import { Thread } from '@/components/assistant-ui/elements/thread.aui';
 import { SessionTree } from '@/ui/cuko/session-tree';
 import { SessionIdDialog } from '@/ui/cuko/session-id-dialog';
 import { SystemPromptDialog } from '@/ui/cuko/system-prompt-dialog';
+import { ModelSwitchDialog } from '@/ui/cuko/model-switch-dialog';
+import { buildCompressHistory } from '@/ui/cuko/compress-history';
 import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
 import {
@@ -100,6 +102,7 @@ declare global {
       readAttachment: (relPath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
       // 后台运行（主进程执行，窗口关掉也继续）
       startRun: (params: { sessionId: string; input: any[] }) => Promise<{ success: boolean; runId?: string; error?: string }>;
+      switchModel: (params: { sessionId: string; providerId: string; modelId: string; history: Array<{ type: string; text: string }> }) => Promise<{ success: boolean; error?: string; providerSessionId?: string }>;
       cancelRun: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
       getRuns: () => Promise<Array<any>>;
       subscribeRuns: () => Promise<{ success: boolean; runs?: any[] }>;
@@ -526,6 +529,8 @@ function ChatApp() {
   const [sessionIdEditing, setSessionIdEditing] = useState<{ threadId: string; title: string; value: string } | null>(null);
   // 查看首轮注入的系统提示词
   const [systemPromptView, setSystemPromptView] = useState<{ threadId: string; title: string } | null>(null);
+  // 切换模型确认（有历史消息时需要先把历史压缩发给新模型）
+  const [pendingModelSwitch, setPendingModelSwitch] = useState<Config | null>(null);
   
   // 消息状态
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -597,18 +602,49 @@ function ChatApp() {
     } catch (e) { console.error('重命名工作区失败', e); }
   };
 
-  // 更新模型选择并保存为全局默认，同时更新当前空会话的绑定
-  const handleConfigUpdate = async (newConfig: Config) => {
+  // 应用模型配置（无历史 / 确认切换成功后）
+  const applyModelConfig = async (newConfig: Config) => {
     setConfig(newConfig);
     if (window.cukoAPI) {
-      await window.cukoAPI.setActive(newConfig.providerId, newConfig.modelId);
-      // 如果当前会话是空的，顺便把它的绑定也更新了
-      if (currentThreadId && messages.length === 0) {
-        // 因为 updateSessionModel 在 preload 暴露了，直接用
-        await (window.cukoAPI as any).updateSessionModel(currentThreadId, newConfig.providerId, newConfig.modelId);
-        refreshThreads();
-      }
+      try { await window.cukoAPI.setActive(newConfig.providerId, newConfig.modelId); } catch { /* ignore */ }
     }
+  };
+
+  // 更新模型选择：空会话直接切；有历史消息先弹窗确认
+  const handleConfigUpdate = async (newConfig: Config) => {
+    if (!newConfig || !newConfig.providerId || !newConfig.modelId) return;
+    if (newConfig.providerId === config.providerId && newConfig.modelId === config.modelId) return;
+    if (messages.length > 0) {
+      setPendingModelSwitch(newConfig);
+      return;
+    }
+    await applyModelConfig(newConfig);
+    if (window.cukoAPI && currentThreadId) {
+      await (window.cukoAPI as any).updateSessionModel(currentThreadId, newConfig.providerId, newConfig.modelId);
+      refreshThreads();
+    }
+  };
+
+  // 确认切换：压缩历史 → 发给新模型（type: compress）→ 成功后才落新绑定
+  const confirmModelSwitch = async () => {
+    const next = pendingModelSwitch;
+    if (!next) return;
+    if (!currentThreadId) {
+      await applyModelConfig(next);
+      setPendingModelSwitch(null);
+      return;
+    }
+    const history = buildCompressHistory(messages as any);
+    const res = await window.cukoAPI.switchModel({
+      sessionId: currentThreadId,
+      providerId: next.providerId,
+      modelId: next.modelId,
+      history,
+    });
+    if (!res || !res.success) throw new Error(res?.error || '切换失败');
+    await applyModelConfig(next);
+    setPendingModelSwitch(null);
+    refreshThreads();
   };
 
   // 设置面板关闭时重新加载 Provider 列表
@@ -1002,8 +1038,16 @@ function ChatApp() {
     },
   });
 
-  // 只要会话里有消息，就禁止切换模型
-  const isModelLocked = messages.length > 0 || isRunning;
+  // 只在进行中禁止切模型（有历史时会弹窗确认并压缩发送）
+  const modelSwitchLocked = isRunning;
+  // 弹窗里展示的目标模型名
+  const pendingSwitchTarget = pendingModelSwitch
+    ? (() => {
+        const provider = providers.find((p) => p.id === pendingModelSwitch.providerId);
+        const model = provider?.models.find((m) => m.id === pendingModelSwitch.modelId);
+        return [provider?.name, model ? (model.name || model.id) : pendingModelSwitch.modelId].filter(Boolean).join(' / ');
+      })()
+    : '';
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -1051,7 +1095,7 @@ function ChatApp() {
                   onSelect={handleSelectWorkspace}
                   onAdd={handleAddWorkspace}
                 />
-                <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={isModelLocked} />
+                <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={modelSwitchLocked} />
               </div>
             )
           }} />
@@ -1071,6 +1115,14 @@ function ChatApp() {
           sessionId={systemPromptView.threadId}
           sessionTitle={systemPromptView.title}
           onClose={() => setSystemPromptView(null)}
+        />
+      )}
+      {pendingModelSwitch && (
+        <ModelSwitchDialog
+          targetLabel={pendingSwitchTarget}
+          messageCount={messages.length}
+          onCancel={() => setPendingModelSwitch(null)}
+          onConfirm={confirmModelSwitch}
         />
       )}
     </AssistantRuntimeProvider>

@@ -478,6 +478,121 @@ export function cancelCukoRun(sessionId: string): { success: boolean; error?: st
   return { success: true };
 }
 
+export interface SwitchModelParams {
+  sessionId: string;
+  providerId: string;
+  modelId: string;
+  /** 已压缩好的历史（每条消息一个 text 元素），由渲染层按规则生成 */
+  history: Array<{ type: string; text: string }>;
+}
+
+/**
+ * 切换模型：把历史对话以 type: "compress" 发给新模型，建立新的 Provider 会话状态，
+ * 成功后才更新库里的 provider/model/provider_session_id。
+ * 失败不改任何绑定，让用户可以重试或留在旧模型上。
+ */
+export async function switchModelWithHistory(params: SwitchModelParams): Promise<{
+  success: boolean;
+  error?: string;
+  providerSessionId?: string;
+  inputCount?: number;
+}> {
+  const sessionId = String(params?.sessionId || '');
+  const providerId = String(params?.providerId || '');
+  const modelId = String(params?.modelId || '');
+  if (!sessionId || !providerId || !modelId) return { success: false, error: '参数不完整' };
+  if (runs.has(sessionId)) return { success: false, error: '该会话正在运行，请先停止再切换模型' };
+
+  const db = getDb();
+  if (!db) return { success: false, error: '数据库未就绪' };
+
+  let session: any;
+  let provider: any;
+  try {
+    session = db.prepare('SELECT * FROM cuko_sessions WHERE id = ?').get(sessionId);
+    provider = db.prepare('SELECT * FROM cuko_providers WHERE id = ?').get(providerId);
+  } catch (err: any) {
+    return { success: false, error: err?.message || '读取配置失败' };
+  }
+  if (!session) return { success: false, error: '会话不存在' };
+  if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在' };
+
+  const history = Array.isArray(params.history)
+    ? params.history.filter((p) => p && p.type === 'text' && typeof p.text === 'string' && p.text.trim())
+    : [];
+  if (history.length === 0) return { success: false, error: '没有可同步的历史内容' };
+
+  // 新模型没有旧的会话状态，系统提示词要重新给一遍，否则它不知道工具怎么用
+  const systemPrompt = String(session.system_prompt || '').trim();
+  const systemParts = systemPrompt
+    ? splitPromptByH1(systemPrompt).filter((s) => s && s.trim()).map((text) => ({ type: 'text', text }))
+    : [];
+  const input = [...systemParts, ...history];
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
+  if (provider.api_key) headers.Authorization = 'Bearer ' + provider.api_key;
+
+  const body: Record<string, any> = {
+    cuckSessionId: sessionId,
+    requestId: randomUUID(),
+    model: modelId,
+    input,
+    type: 'compress',
+  };
+
+  let providerSessionId = '';
+  let remoteError = '';
+  const decoder = createSseDecoder((eventName, data) => {
+    if (eventName === 'message' || eventName === 'done') {
+      try {
+        const payload = JSON.parse(data);
+        if (payload && payload.providerSessionId) providerSessionId = String(payload.providerSessionId);
+      } catch { /* 非 JSON 帧忽略 */ }
+    } else if (eventName === 'error') {
+      try {
+        const payload = JSON.parse(data);
+        remoteError = friendlyError(payload.code || 'internal_error', payload.message || '');
+      } catch {
+        remoteError = data;
+      }
+    }
+  });
+
+  try {
+    const response = await fetch(String(provider.base_url).replace(/\/+$/, '') + '/v1/responses', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (!response.ok || !response.body) {
+      let errText = 'HTTP ' + response.status;
+      try { const t = await response.text(); if (t) errText += ': ' + t; } catch { /* ignore */ }
+      return { success: false, error: errText };
+    }
+    const reader = response.body.getReader();
+    const textDecoder = new TextDecoder();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      decoder.push(textDecoder.decode(value, { stream: true }));
+    }
+  } catch (err: any) {
+    return { success: false, error: err?.message || '历史同步请求失败' };
+  }
+
+  if (remoteError) return { success: false, error: remoteError };
+
+  try {
+    const now = nowLocalIso();
+    db.prepare('UPDATE cuko_sessions SET provider_id = ?, model_id = ?, provider_session_id = ?, updated_at = ? WHERE id = ?')
+      .run(providerId, modelId, providerSessionId || null, now, sessionId);
+  } catch (err: any) {
+    return { success: false, error: err?.message || '保存模型绑定失败' };
+  }
+
+  return { success: true, providerSessionId, inputCount: input.length };
+}
+
 /** 进程退出前停掉所有运行 */
 export function cancelAllCukoRuns(): void {
   for (const run of runs.values()) {

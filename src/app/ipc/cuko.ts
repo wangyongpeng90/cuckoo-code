@@ -20,6 +20,7 @@ import {
   cancelAllCukoRuns,
   listCukoRuns,
   subscribeCukoRuns,
+  switchModelWithHistory,
 } from '../cuko-runner.js';
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -421,6 +422,9 @@ export function registerCukoIpc(): void {
   });
 
   // ====== 后台运行（运行循环在主进程，关窗后继续；每个会话可并行） ======
+  // 切换模型：把压缩后的历史发给新模型（type: "compress"），成功后才改绑定
+  ipcMain.handle('cuko:switch-model', (_event: any, params: any) => switchModelWithHistory(params));
+
   ipcMain.handle('cuko:start-run', (event: any, params: any) => {
     // 把发起窗口的 id 传给运行器：nameConversation / runAgent 这类工具需要窗口上下文
     let windowId: number | null = null;
