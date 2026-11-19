@@ -108,6 +108,13 @@ declare global {
         error?: string;
         providerSessionId?: string;
         reply?: { id: string; content: string; think?: string; usage?: any };
+        hasToolBlocks?: boolean;
+      }>;
+      continueAfterSwitch: (params: { sessionId: string; assistantId: string }) => Promise<{
+        success: boolean;
+        runId?: string;
+        skipped?: boolean;
+        error?: string;
       }>;
       cancelRun: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
       getRuns: () => Promise<Array<any>>;
@@ -670,6 +677,31 @@ function ChatApp() {
     await applyModelConfig(next);
     setPendingModelSwitch(null);
     refreshThreads();
+    // 压缩回复里可能带 cuckoo 工具块：继续执行工具，并把结果发给新模型
+    if (reply && res.hasToolBlocks && currentThreadId) {
+      const sid = currentThreadId;
+      setRunningSessions((prev) => (prev.includes(sid) ? prev : [...prev, sid]));
+      try {
+        const cont = await window.cukoAPI.continueAfterSwitch({ sessionId: sid, assistantId: reply.id });
+        if (!cont || !cont.success || cont.skipped) {
+          setRunningSessions((prev) => prev.filter((id) => id !== sid));
+          if (!cont?.success) {
+            setMessages((prev) => [...prev, {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: '⚠️ 工具执行启动失败: ' + (cont?.error || '未知错误'),
+            } as Msg]);
+          }
+        }
+      } catch (e: any) {
+        setRunningSessions((prev) => prev.filter((id) => id !== sid));
+        setMessages((prev) => [...prev, {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content: '⚠️ 工具执行启动失败: ' + (e?.message || '未知错误'),
+        } as Msg]);
+      }
+    }
   };
 
   // 设置面板关闭时重新加载 Provider 列表

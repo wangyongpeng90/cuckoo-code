@@ -393,11 +393,96 @@ async function streamRound(
   return { content, think, usage, sawDone, aborted, error };
 }
 
-/** 运行主循环：请求 → 落库 → 有 cuckoo 块则执行工具 → 下一轮 */
-async function runLoop(run: CukoRun): Promise<void> {
+interface ToolExecResult {
+  success: boolean;
+  output?: string;
+  error?: string;
+}
+
+/** 执行一组 cuckoo 代码块：发 tool-* 事件、落工具消息，返回每个脚本的结果 */
+async function executeToolBlocks(run: CukoRun, blocks: string[]): Promise<ToolExecResult[]> {
+  run.phase = 'tools';
+  run.toolMessageId = randomUUID();
+  run.toolParts = [];
+  emit({ type: 'tool-start', sessionId: run.sessionId, toolMessageId: run.toolMessageId, parts: run.toolParts });
+
+  const results: ToolExecResult[] = [];
+  for (const code of blocks) {
+    if (run.aborted) break;
+    const toolCallId = randomUUID();
+    const toolNames = extractToolNames(code);
+    const part: any = {
+      type: 'tool-call',
+      toolCallId,
+      toolName: toolNames.length ? toolNames.join(' + ') : 'cuckoo',
+      args: {},
+      argsText: code,
+      result: undefined,
+    };
+    run.toolParts = [...(run.toolParts || []), part];
+    emit({ type: 'tool-update', sessionId: run.sessionId, toolMessageId: run.toolMessageId, parts: run.toolParts });
+
+    let r: ToolExecResult;
+    try {
+      r = await jsRunner.run(code, run.projectDir || null, run.windowId, {});
+    } catch (err: any) {
+      r = { success: false, error: err?.message || '执行失败' };
+    }
+    results.push(r);
+    run.toolParts = (run.toolParts || []).map((p: any) =>
+      p.toolCallId === toolCallId
+        ? { ...p, result: r.success ? (r.output || '') : (r.error || ''), isError: !r.success }
+        : p,
+    );
+    emit({ type: 'tool-update', sessionId: run.sessionId, toolMessageId: run.toolMessageId, parts: run.toolParts });
+  }
+
+  insertMessage({
+    id: run.toolMessageId,
+    sessionId: run.sessionId,
+    role: 'assistant',
+    content: JSON.stringify(run.toolParts || []),
+  });
+  emit({ type: 'tool-complete', sessionId: run.sessionId, toolMessageId: run.toolMessageId, parts: run.toolParts });
+  return results;
+}
+
+/** 工具执行结果 → 下一轮 input（回复语 + 每个结果） */
+function buildToolInput(results: ToolExecResult[]): CukoRunInputPart[] {
+  let phrase = '执行了 ' + results.length + ' 个脚本';
+  try {
+    const picked = pickJsResultPhrase(results.length || 1);
+    if (picked) phrase = picked;
+  } catch { /* 用默认回复语 */ }
+  return [
+    { type: 'text', text: phrase },
+    ...results.map((r) => ({
+      type: 'text',
+      text: r.success ? (r.output || '(脚本执行完成，无输出)') : '错误原因: ' + (r.error || '未知错误'),
+    })),
+  ];
+}
+
+/** 运行主循环：请求 → 落库 → 有 cuckoo 块则执行工具 → 下一轮
+ *  initialContent：切模型压缩的回复里已有 cuckoo 块时，先执行它们再继续 */
+async function runLoop(run: CukoRun, initialContent?: string): Promise<void> {
   let currentInput = run.initialInput;
   let requestType: 'user' | 'tool' = 'user';
   try {
+    if (initialContent) {
+      const blocks = extractCuckooBlocks(initialContent);
+      if (blocks.length === 0) {
+        finishRun(run, 'complete');
+        return;
+      }
+      const results = await executeToolBlocks(run, blocks);
+      if (run.aborted) {
+        finishRun(run, 'cancelled');
+        return;
+      }
+      requestType = 'tool';
+      currentInput = buildToolInput(results);
+    }
     for (;;) {
       if (run.aborted) break;
 
@@ -437,66 +522,11 @@ async function runLoop(run: CukoRun): Promise<void> {
       const blocks = extractCuckooBlocks(round.content);
       if (blocks.length === 0) break;
 
-      run.phase = 'tools';
-      run.toolMessageId = randomUUID();
-      run.toolParts = [];
-      emit({ type: 'tool-start', sessionId: run.sessionId, toolMessageId: run.toolMessageId, parts: run.toolParts });
-
-      const results: Array<{ success: boolean; output?: string; error?: string }> = [];
-      for (const code of blocks) {
-        if (run.aborted) break;
-        const toolCallId = randomUUID();
-        const toolNames = extractToolNames(code);
-        const part: any = {
-          type: 'tool-call',
-          toolCallId,
-          toolName: toolNames.length ? toolNames.join(' + ') : 'cuckoo',
-          args: {},
-          argsText: code,
-          result: undefined,
-        };
-        run.toolParts = [...(run.toolParts || []), part];
-        emit({ type: 'tool-update', sessionId: run.sessionId, toolMessageId: run.toolMessageId, parts: run.toolParts });
-
-        let r: { success: boolean; output?: string; error?: string };
-        try {
-          r = await jsRunner.run(code, run.projectDir || null, run.windowId, {});
-        } catch (err: any) {
-          r = { success: false, error: err?.message || '执行失败' };
-        }
-        results.push(r);
-        run.toolParts = (run.toolParts || []).map((p: any) =>
-          p.toolCallId === toolCallId
-            ? { ...p, result: r.success ? (r.output || '') : (r.error || ''), isError: !r.success }
-            : p,
-        );
-        emit({ type: 'tool-update', sessionId: run.sessionId, toolMessageId: run.toolMessageId, parts: run.toolParts });
-      }
-
-      insertMessage({
-        id: run.toolMessageId,
-        sessionId: run.sessionId,
-        role: 'assistant',
-        content: JSON.stringify(run.toolParts || []),
-      });
-      emit({ type: 'tool-complete', sessionId: run.sessionId, toolMessageId: run.toolMessageId, parts: run.toolParts });
+      const results = await executeToolBlocks(run, blocks);
       if (run.aborted) break;
-
-      let phrase = '执行了 ' + results.length + ' 个脚本';
-      try {
-        const picked = pickJsResultPhrase(results.length || 1);
-        if (picked) phrase = picked;
-      } catch { /* 用默认回复语 */ }
-
       // 工具循环回传：input 元素仍是 text，靠外层 type: "tool" 区分
       requestType = 'tool';
-      currentInput = [
-        { type: 'text', text: phrase },
-        ...results.map((r) => ({
-          type: 'text',
-          text: r.success ? (r.output || '(脚本执行完成，无输出)') : '错误原因: ' + (r.error || '未知错误'),
-        })),
-      ];
+      currentInput = buildToolInput(results);
     }
   } catch (err: any) {
     finishRun(run, run.aborted ? 'cancelled' : 'error', err?.message || String(err));
@@ -576,6 +606,88 @@ export function startCukoRun(params: StartRunParams): { success: boolean; runId?
   return { success: true, runId: run.runId };
 }
 
+export interface ContinueAfterSwitchParams {
+  sessionId: string;
+  assistantId: string;
+  windowId?: number | null;
+}
+
+/**
+ * 切模型压缩的回复里如果带 cuckoo 工具块，从这条助手消息继续：
+ * 先执行工具，再把结果以顶层 type:"tool" 发给新模型，进入正常循环。
+ */
+export function continueAfterSwitch(params: ContinueAfterSwitchParams): {
+  success: boolean;
+  runId?: string;
+  skipped?: boolean;
+  error?: string;
+} {
+  const sessionId = String(params?.sessionId || '');
+  const assistantId = String(params?.assistantId || '');
+  if (!sessionId || !assistantId) return { success: false, error: '参数不完整' };
+  if (runs.has(sessionId)) return { success: false, error: '该会话正在运行' };
+
+  const db = getDb();
+  if (!db) return { success: false, error: '数据库未就绪' };
+
+  let session: any;
+  try {
+    session = db.prepare('SELECT * FROM cuko_sessions WHERE id = ?').get(sessionId);
+  } catch (err: any) {
+    return { success: false, error: err?.message || '读取会话失败' };
+  }
+  if (!session) return { success: false, error: '会话不存在' };
+  if (!session.provider_id || !session.model_id) return { success: false, error: '尚未选择模型，请先配置' };
+  if (!session.provider_session_id) return { success: false, error: '缺少 Provider 会话状态，请重新切换模型' };
+
+  let provider: any;
+  try {
+    provider = db.prepare('SELECT * FROM cuko_providers WHERE id = ?').get(session.provider_id);
+  } catch (err: any) {
+    return { success: false, error: err?.message || '读取 Provider 失败' };
+  }
+  if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在，请重新配置' };
+
+  let msg: any;
+  try {
+    msg = db.prepare("SELECT content FROM cuko_messages WHERE id = ? AND session_id = ? AND role = 'assistant'").get(assistantId, sessionId);
+  } catch (err: any) {
+    return { success: false, error: err?.message || '读取回复失败' };
+  }
+  if (!msg) return { success: false, error: '找不到切模型回复' };
+
+  const content = String(msg.content || '');
+  if (extractCuckooBlocks(content).length === 0) return { success: true, skipped: true };
+
+  const run: CukoRun = {
+    sessionId,
+    runId: randomUUID(),
+    phase: 'tools',
+    assistantId: '',
+    content: '',
+    think: '',
+    usage: undefined,
+    toolMessageId: undefined,
+    toolParts: undefined,
+    startedAt: Date.now(),
+    abort: new AbortController(),
+    aborted: false,
+    finished: false,
+    providerSessionId: session.provider_session_id,
+    projectDir: session.project_dir || '',
+    baseUrl: provider.base_url,
+    apiKey: provider.api_key || '',
+    modelId: session.model_id,
+    initialInput: [],
+    windowId: typeof params.windowId === 'number' ? params.windowId : null,
+  };
+
+  runs.set(sessionId, run);
+  void runLoop(run, content);
+  return { success: true, runId: run.runId };
+}
+
+
 /** 停止某个会话的后台运行 */
 export function cancelCukoRun(sessionId: string): { success: boolean; error?: string } {
   const run = runs.get(String(sessionId || ''));
@@ -605,6 +717,8 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
   inputCount?: number;
   /** 压缩请求本身也是一次 /v1/responses，模型返回的正文要展示并落库 */
   reply?: { id: string; content: string; think?: string; usage?: any };
+  /** 回复里是否带 cuckoo 工具块（需要继续执行工具） */
+  hasToolBlocks?: boolean;
 }> {
   const sessionId = String(params?.sessionId || '');
   const providerId = String(params?.providerId || '');
@@ -750,7 +864,13 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
     providerSessionId: providerSessionId || undefined,
     durationMs: Date.now() - startedAt,
   });
-  return { success: true, providerSessionId, inputCount: input.length, reply };
+  return {
+    success: true,
+    providerSessionId,
+    inputCount: input.length,
+    reply,
+    hasToolBlocks: !!reply && extractCuckooBlocks(reply.content).length > 0,
+  };
 }
 
 /** 进程退出前停掉所有运行 */

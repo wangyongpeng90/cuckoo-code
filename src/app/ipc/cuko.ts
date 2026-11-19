@@ -21,6 +21,7 @@ import {
   listCukoRuns,
   subscribeCukoRuns,
   switchModelWithHistory,
+  continueAfterSwitch,
   listCukoRequestLogs,
   clearCukoRequestLogs,
 } from '../cuko-runner.js';
@@ -427,6 +428,16 @@ export function registerCukoIpc(): void {
   // ====== 后台运行（运行循环在主进程，关窗后继续；每个会话可并行） ======
   // 切换模型：把压缩后的历史发给新模型（type: "compress"），成功后才改绑定
   ipcMain.handle('cuko:switch-model', (_event: any, params: any) => switchModelWithHistory(params));
+
+  // 切模型压缩的回复里带工具块：从这条回复继续执行工具 + 后续对话循环
+  ipcMain.handle('cuko:continue-after-switch', (event: any, params: any) => {
+    let windowId: number | null = null;
+    try {
+      const win = require('electron').BrowserWindow.fromWebContents(event.sender);
+      windowId = win && !win.isDestroyed() ? win.id : null;
+    } catch { /* ignore */ }
+    return continueAfterSwitch({ ...(params || {}), windowId });
+  });
 
   // 请求日志（请求由主进程发出，渲染进程 DevTools Network 看不到）
   ipcMain.handle('cuko:get-request-logs', () => listCukoRequestLogs());
