@@ -68,6 +68,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -76,6 +79,25 @@ jobs:
 
       - name: List files
         run: ls -la dist/
+
+      # 测试版（tag 含 -beta）：创建 GitHub prerelease，正文用 release-notes/<tag>.md
+      # 不设为 Latest，正式客户端的自动更新不会收到 beta
+      - name: Publish Beta Prerelease
+        if: ${{ contains(github.ref_name, '-beta') }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: release-notes/${{ github.ref_name }}.md
+          prerelease: true
+          draft: false
+          make_latest: false
+          files: |
+            dist/*.exe
+            dist/*.blockmap
+            dist/*.zip
+            dist/*.dmg
+            dist/latest*.yml
 
       # 正式版（tag 不含 -beta）：创建正式 Release
       - name: Publish Release
