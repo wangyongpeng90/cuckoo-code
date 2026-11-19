@@ -10,11 +10,19 @@
  * 就是给外部虚拟列表用的。这里接 @tanstack/react-virtual：
  * 只渲染视口附近的消息，消息高度靠 measureElement 动态测量。
  */
-import { type ComponentProps, type FC, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type ComponentProps,
+  type FC,
+  type RefObject,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   ThreadPrimitive,
   unstable_useThreadMessageIds,
+  useAuiState,
 } from "@assistant-ui/react";
 
 type MessageListComponents = ComponentProps<
@@ -37,6 +45,44 @@ export const VirtualizedThreadMessages: FC<VirtualizedThreadMessagesProps> = ({
   overscan = 6,
 }) => {
   const messageIds = unstable_useThreadMessageIds();
+  const messageCount = messageIds.length;
+  const lastRole = useAuiState(
+    (s) => s.thread.messages[s.thread.messages.length - 1]?.role,
+  );
+
+  // 用户是否停在底部（虚拟列表下 auto-scroll 依赖真实 DOM 高度，容易和测量打架）
+  const stickToBottomRef = useRef(true);
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    const onScroll = () => {
+      stickToBottomRef.current =
+        element.scrollHeight - element.scrollTop - element.clientHeight <= 120;
+    };
+    element.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => element.removeEventListener("scroll", onScroll);
+  }, [scrollRef]);
+
+  // 新消息追加后贴底：用户消息强制贴底，其他消息只在原本贴底时跟随
+  useLayoutEffect(() => {
+    if (lastRole !== "user" && !stickToBottomRef.current) return;
+    const element = scrollRef.current;
+    if (!element) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        const viewport = scrollRef.current;
+        if (!viewport) return;
+        viewport.scrollTop = viewport.scrollHeight;
+        stickToBottomRef.current = true;
+      });
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [messageCount, lastRole, scrollRef]);
 
   const virtualizer = useVirtualizer({
     count: messageIds.length,
