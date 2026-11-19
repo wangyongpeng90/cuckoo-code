@@ -103,7 +103,12 @@ declare global {
       readAttachment: (relPath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
       // 后台运行（主进程执行，窗口关掉也继续）
       startRun: (params: { sessionId: string; input: any[] }) => Promise<{ success: boolean; runId?: string; error?: string }>;
-      switchModel: (params: { sessionId: string; providerId: string; modelId: string; history: Array<{ type: string; text: string }> }) => Promise<{ success: boolean; error?: string; providerSessionId?: string }>;
+      switchModel: (params: { sessionId: string; providerId: string; modelId: string; history: Array<{ type: string; text: string }> }) => Promise<{
+        success: boolean;
+        error?: string;
+        providerSessionId?: string;
+        reply?: { id: string; content: string; think?: string; usage?: any };
+      }>;
       cancelRun: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
       getRuns: () => Promise<Array<any>>;
       getRequestLogs: () => Promise<Array<any>>;
@@ -648,6 +653,20 @@ function ChatApp() {
       history,
     });
     if (!res || !res.success) throw new Error(res?.error || '切换失败');
+    // 压缩请求也是一次 /v1/responses：模型返回的正文要显示出来
+    const reply = res.reply;
+    if (reply && (reply.content || reply.think)) {
+      setMessages((prev) => (prev.some((m) => m.id === reply.id)
+        ? prev
+        : [...prev, {
+            id: reply.id,
+            role: 'assistant',
+            content: reply.content,
+            think: reply.think || undefined,
+            usage: reply.usage,
+            status: { type: 'complete', reason: 'stop' },
+          } as Msg]));
+    }
     await applyModelConfig(next);
     setPendingModelSwitch(null);
     refreshThreads();

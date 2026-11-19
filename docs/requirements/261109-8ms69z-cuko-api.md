@@ -84,6 +84,8 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
   - 请求体带 `type: "compress"`，不带旧的 `providerSessionId`
 - 请求成功后才更新 `provider_id` / `model_id` / `provider_session_id`；
   失败保持旧绑定并弹窗内联报错，可重试。
+- 压缩请求本身也是一次正常的 `/v1/responses`：模型返回的正文 / think / usage
+  与普通回复一样写入 `cuko_messages`，并在切换完成后显示在聊天页（空回复不落库）。
 - 历史压缩规则在 `src/ui/cuko/compress-history.ts`，由 `test/cuko-compress-history.test.js` 覆盖。
 
 ### 首轮系统提示词留档
@@ -196,7 +198,7 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - [x] **跟随主程序主题**：Cuko 窗口跟随主程序设置的 深色 / 浅色 / 跟随系统，主程序改主题时实时同步。
 - [x] **后台运行**：关掉 Cuko 窗口任务继续跑；多个会话可同时运行；窗口重开后恢复进行中的消息。
 - [x] **首轮系统提示词留档**：注入时写入 `cuko_sessions.system_prompt` 与 `cuko_messages`（role=system），聊天页折叠展示。
-- [x] **切换模型**：有历史时确认后压缩历史（去 think、非写操作工具结果替换）以 `type:"compress"` 发给新模型，成功后才切换。
+- [x] **切换模型**：有历史时确认后压缩历史（去 think、非写操作工具结果替换）以 `type:"compress"` 发给新模型，成功后才切换；请求返回的正文同样落库并显示。
 - [x] **请求日志**：页面内可查看主进程发出的最近 100 次请求（DevTools Network 看不到）。
 - [x] `typecheck / test / lint / compile` 全绿。
 

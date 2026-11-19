@@ -592,6 +592,8 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
   error?: string;
   providerSessionId?: string;
   inputCount?: number;
+  /** 压缩请求本身也是一次 /v1/responses，模型返回的正文要展示并落库 */
+  reply?: { id: string; content: string; think?: string; usage?: any };
 }> {
   const sessionId = String(params?.sessionId || '');
   const providerId = String(params?.providerId || '');
@@ -638,11 +640,26 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
 
   let providerSessionId = '';
   let remoteError = '';
+  let replyContent = '';
+  let replyThink = '';
+  let replyUsage: any;
   const decoder = createSseDecoder((eventName, data) => {
     if (eventName === 'message' || eventName === 'done') {
       try {
         const payload = JSON.parse(data);
         if (payload && payload.providerSessionId) providerSessionId = String(payload.providerSessionId);
+        if (eventName === 'message') {
+          let delta = '';
+          if (Array.isArray(payload.output)) {
+            delta = payload.output.map((x: any) => (typeof x === 'string' ? x : x && x.text ? x.text : '')).join('');
+          } else if (typeof payload.output === 'string') {
+            delta = payload.output;
+          }
+          replyContent += delta;
+          if (typeof payload.think === 'string') replyThink += payload.think;
+        } else {
+          replyUsage = payload.usage;
+        }
       } catch { /* 非 JSON 帧忽略 */ }
     } else if (eventName === 'error') {
       try {
@@ -702,12 +719,27 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
     return fail(err?.message || '保存模型绑定失败');
   }
 
+  // 压缩请求的返回正文同样落库 + 回传渲染层展示（它也是一次正常的 responses 请求）
+  let reply: { id: string; content: string; think?: string; usage?: any } | undefined;
+  if (replyContent.trim() || replyThink.trim()) {
+    const replyId = randomUUID();
+    insertMessage({
+      id: replyId,
+      sessionId,
+      role: 'assistant',
+      content: replyContent,
+      think: replyThink,
+      usage: replyUsage,
+    });
+    reply = { id: replyId, content: replyContent, think: replyThink || undefined, usage: replyUsage };
+  }
+
   finishRequestLog(logId, {
     status: 'ok',
     providerSessionId: providerSessionId || undefined,
     durationMs: Date.now() - startedAt,
   });
-  return { success: true, providerSessionId, inputCount: input.length };
+  return { success: true, providerSessionId, inputCount: input.length, reply };
 }
 
 /** 进程退出前停掉所有运行 */
