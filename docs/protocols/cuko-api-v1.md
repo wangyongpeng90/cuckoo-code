@@ -59,7 +59,7 @@ Authorization: Bearer <token>
   "model": "deepseek",
   "requestId": "req_uuid_456",
   "input": [
-    { "type": "text", "text": "帮我看看这份文档" },
+    { "type": "user", "text": "帮我看看这份文档" },
     { "type": "file", "filename": "a.pdf", "mimeType": "application/pdf", "data": "base64..." }
   ]
 }
@@ -70,9 +70,11 @@ Authorization: Bearer <token>
 - `providerSessionId` (可选): Provider 侧的会话标识。**首次请求不携带（表示新建对话）；后续请求携带上一次返回的 ID（表示续接对话）。**
 - `model` (必需): 指定的模型 ID。
 - `requestId` (必需): Cuckoo 侧生成的请求唯一标识，用于幂等控制。
-- `input` (必需): 输入内容数组，支持多模态。
-  - 文本对象: `{ "type": "text", "text": "..." }`
-  - 文件对象: `{ "type": "file", "filename": "...", "mimeType": "...", "data": "base64..." }`
+- `input` (必需): 输入内容数组，按**来源**区分 `type`：
+  - `{ "type": "user", "text": "..." }`：**用户自己输入**的内容
+  - `{ "type": "tool", "text": "..." }`：**工具执行结果**（工具循环回传的回复语与每个脚本结果）
+  - `{ "type": "text", "text": "..." }`：系统提示词分段（首轮注入，不是用户输入）
+  - `{ "type": "file", ... }`：附件
   - 首轮请求（未带 `providerSessionId`）时，Cuckoo 会在用户输入前追加按 `# ` 分段的系统提示词，
     每段一个 `text` 元素。
 - `type` (可选): 请求类型。缺省为普通增量对话；`"compress"` 表示历史压缩请求，
@@ -93,8 +95,9 @@ Authorization: Bearer <token>
   "type": "compress",
   "input": [
     { "type": "text", "text": "# 角色\n你是……" },
-    { "type": "text", "text": "用户:\n帮我看看这份文档" },
-    { "type": "text", "text": "助手:\n好的，我先读一下。" }
+    { "type": "user", "text": "用户:\n帮我看看这份文档" },
+    { "type": "assistant", "text": "助手:\n好的，我先读一下。" },
+    { "type": "tool", "text": "工具:\n[工具调用] read\n……" }
   ]
 }
 ```
@@ -103,8 +106,11 @@ Authorization: Bearer <token>
 
 - `type` (可选): 缺省表示普通增量对话；`"compress"` 表示这是一次历史压缩请求。
 - 压缩请求 **不携带 `providerSessionId`**（新模型尚无状态，传了也没有意义）。
-- `input` 为数组，**每条历史消息一个元素**；元素均为 `{ "type": "text" }`，
-  以「用户:」「助手:」前缀区分角色。
+- `input` 为数组，**每条历史消息一个元素**；类型与实时请求一致：
+  - `user`：用户消息
+  - `tool`：工具调用/结果消息
+  - `assistant`：助手正文消息
+  - 文本里仍保留「用户:」「助手:」「工具:」前缀便于阅读。
 - 系统提示词（若 Cuckoo 有留档）会作为前置元素一并发送。
 - **AI 的思考内容（think）不发送。**
 - **工具调用：** 不涉及 `edit` / `deleteFile` 的工具调用，不发送真实执行结果，

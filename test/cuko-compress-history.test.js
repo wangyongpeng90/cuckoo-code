@@ -84,22 +84,24 @@ describe('messageToCompressText', () => {
 });
 
 describe('buildCompressHistory', () => {
-  it('每条消息一个 text 元素，带角色前缀', () => {
+  it('每条消息一个元素，并按来源标记 user / assistant', () => {
     const input = buildCompressHistory([
       { role: 'user', content: '你好' },
       { role: 'assistant', content: '你好，有什么可以帮你？' },
     ]);
     expect(input).toEqual([
-      { type: 'text', text: '用户:\n你好' },
-      { type: 'text', text: '助手:\n你好，有什么可以帮你？' },
+      { type: 'user', text: '用户:\n你好' },
+      { type: 'assistant', text: '助手:\n你好，有什么可以帮你？' },
     ]);
   });
 
-  it('工具消息独立成一个元素，结果按规则处理', () => {
+  it('工具消息标记 tool，结果按规则处理', () => {
     const input = buildCompressHistory([
       { role: 'assistant', content: [toolPart()] },
     ]);
     expect(input).toHaveLength(1);
+    expect(input[0].type).toBe('tool');
+    expect(input[0].text.startsWith('工具:')).toBe(true);
     expect(input[0].text).toContain('工具结果: (该工具调用不涉及edit或delete,如需调用结果请重新调用)');
   });
 

@@ -479,10 +479,11 @@ async function runLoop(run: CukoRun): Promise<void> {
         if (picked) phrase = picked;
       } catch { /* 用默认回复语 */ }
 
+      // 工具循环回传的内容统一标 type: "tool"，让 Provider 区分用户输入与工具结果
       currentInput = [
-        { type: 'text', text: phrase },
+        { type: 'tool', text: phrase },
         ...results.map((r) => ({
-          type: 'text',
+          type: 'tool',
           text: r.success ? (r.output || '(脚本执行完成，无输出)') : '错误原因: ' + (r.error || '未知错误'),
         })),
       ];
