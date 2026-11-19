@@ -53,9 +53,11 @@ export const SessionIdDialog: React.FC<SessionIdDialogProps> = ({
     }
   };
 
+  // 注意：这个弹窗渲染在 `text-foreground` 根容器之外（与 SettingsModal 同级），
+  // 必须自己带上 text-foreground，否则深色模式下会继承浏览器默认的黑色文字。
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      className="text-foreground fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => {
         if (e.target === e.currentTarget && !saving) onCancel();
       }}
@@ -85,7 +87,7 @@ export const SessionIdDialog: React.FC<SessionIdDialogProps> = ({
           }}
           placeholder="留空 = 下次请求重新开始"
           spellCheck={false}
-          className="bg-background focus-visible:ring-ring/50 mt-4 h-9 w-full rounded-md border px-3 font-mono text-xs outline-none focus-visible:ring-1"
+          className="bg-background text-foreground placeholder:text-muted-foreground border-border focus-visible:ring-ring/50 mt-4 h-9 w-full rounded-md border px-3 font-mono text-xs outline-none focus-visible:ring-1"
         />
 
         <p className="text-muted-foreground/80 mt-2 text-xs leading-relaxed">
@@ -100,7 +102,7 @@ export const SessionIdDialog: React.FC<SessionIdDialogProps> = ({
             type="button"
             disabled={saving}
             onClick={onCancel}
-            className="hover:bg-muted h-8 rounded-md border px-3 text-xs transition-colors disabled:opacity-50"
+            className="border-border text-foreground hover:bg-muted h-8 rounded-md border bg-transparent px-3 text-xs transition-colors disabled:opacity-50"
           >
             取消
           </button>
