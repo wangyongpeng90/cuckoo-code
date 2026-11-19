@@ -11,6 +11,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { buildPrompt } from '../session/prompt-builder.js';
+import { nowLocalIso } from '../infra/time.js';
 import { jsRunner } from '../tools/index.js';
 import { pickJsResultPhrase } from '../overlay/js-result-phrases.js';
 import {
@@ -120,7 +121,7 @@ function insertMessage(msg: {
   const db = getDb();
   if (!db) return;
   try {
-    const now = new Date().toISOString();
+    const now = nowLocalIso();
     db.prepare('INSERT INTO cuko_messages (id, session_id, role, content, think, usage_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(msg.id, msg.sessionId, msg.role, msg.content, msg.think || null, msg.usage ? JSON.stringify(msg.usage) : null, now);
     db.prepare('UPDATE cuko_sessions SET updated_at = ? WHERE id = ?').run(now, msg.sessionId);
@@ -133,7 +134,7 @@ function persistProviderSessionId(sessionId: string, providerSessionId: string):
   const db = getDb();
   if (!db) return;
   try {
-    const now = new Date().toISOString();
+    const now = nowLocalIso();
     db.prepare('UPDATE cuko_sessions SET provider_session_id = ?, updated_at = ? WHERE id = ?')
       .run(providerSessionId, now, sessionId);
   } catch (err: any) {

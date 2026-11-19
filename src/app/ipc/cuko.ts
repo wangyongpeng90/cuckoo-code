@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import { buildPrompt } from '../../session/prompt-builder.js';
 import { jsRunner } from '../../tools/index.js';
 import { pickJsResultPhrase } from '../../overlay/js-result-phrases.js';
+import { nowLocalIso } from '../../infra/time.js';
 import { splitPromptByH1 } from '../cuko-run-protocol.js';
 import {
   startCukoRun,
@@ -75,7 +76,7 @@ export function registerCukoIpc(): void {
     const db = getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
     try {
-      const now = new Date().toISOString();
+      const now = nowLocalIso();
       const existing = db.prepare('SELECT id FROM cuko_providers WHERE id = ?').get(provider.id);
       
       if (existing) {
@@ -152,7 +153,7 @@ export function registerCukoIpc(): void {
   ipcMain.handle('cuko:create-session', (_event: any, sessionId: string, providerId?: string, modelId?: string, projectDir?: string) => {
     const db = getDb();
     if (!db) return { success: false };
-    const now = new Date().toISOString();
+    const now = nowLocalIso();
     db.prepare('INSERT INTO cuko_sessions (id, title, provider_id, model_id, project_dir, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(sessionId, 'New Chat', providerId || null, modelId || null, projectDir || null, now, now);
     return { success: true };
@@ -161,7 +162,7 @@ export function registerCukoIpc(): void {
   ipcMain.handle('cuko:rename-session', (_event: any, sessionId: string, title: string) => {
     const db = getDb();
     if (!db) return { success: false };
-    const now = new Date().toISOString();
+    const now = nowLocalIso();
     db.prepare('UPDATE cuko_sessions SET title = ?, updated_at = ? WHERE id = ?').run(title, now, sessionId);
     return { success: true };
   });
@@ -216,7 +217,7 @@ export function registerCukoIpc(): void {
     const db = getDb();
     if (!db) return { success: false };
     try {
-      db.prepare('INSERT OR IGNORE INTO cuko_workspaces (path, name) VALUES (?, ?)').run(path, name);
+      db.prepare('INSERT OR IGNORE INTO cuko_workspaces (path, name, created_at) VALUES (?, ?, ?)').run(path, name, nowLocalIso());
       return { success: true };
     } catch (err: any) { return { success: false, error: err.message }; }
   });
@@ -279,7 +280,7 @@ export function registerCukoIpc(): void {
   ipcMain.handle('cuko:update-session-model', (_event: any, sessionId: string, providerId: string, modelId: string) => {
     const db = getDb();
     if (!db) return { success: false };
-    const now = new Date().toISOString();
+    const now = nowLocalIso();
     db.prepare('UPDATE cuko_sessions SET provider_id = ?, model_id = ?, updated_at = ? WHERE id = ?').run(providerId, modelId, now, sessionId);
     return { success: true };
   });
@@ -288,7 +289,7 @@ export function registerCukoIpc(): void {
     const db = getDb();
     if (!db) return { success: false };
     try {
-      db.prepare('UPDATE cuko_sessions SET archived = 1, updated_at = ? WHERE id = ?').run(new Date().toISOString(), sessionId);
+      db.prepare('UPDATE cuko_sessions SET archived = 1, updated_at = ? WHERE id = ?').run(nowLocalIso(), sessionId);
       return { success: true };
     } catch (err: any) { return { success: false, error: err.message }; }
   });
@@ -297,7 +298,7 @@ export function registerCukoIpc(): void {
     const db = getDb();
     if (!db) return { success: false };
     try {
-      db.prepare('UPDATE cuko_sessions SET archived = 0, updated_at = ? WHERE id = ?').run(new Date().toISOString(), sessionId);
+      db.prepare('UPDATE cuko_sessions SET archived = 0, updated_at = ? WHERE id = ?').run(nowLocalIso(), sessionId);
       return { success: true };
     } catch (err: any) { return { success: false, error: err.message }; }
   });
@@ -324,7 +325,7 @@ export function registerCukoIpc(): void {
     const db = getDb();
     if (!db) return { success: false };
     try {
-      const now = new Date().toISOString();
+      const now = nowLocalIso();
       db.prepare('UPDATE cuko_sessions SET project_dir = ?, updated_at = ? WHERE id = ?').run(projectDir || null, now, sessionId);
       return { success: true };
     } catch (err: any) { return { success: false, error: err.message }; }
@@ -335,7 +336,7 @@ export function registerCukoIpc(): void {
     if (!db || !sessionId) return { success: false };
     // 前端允许留空（下次请求重新开始），这里只做去空白与长度兜底
     const value = String(providerSessionId ?? '').trim().slice(0, 512);
-    const now = new Date().toISOString();
+    const now = nowLocalIso();
     db.prepare('UPDATE cuko_sessions SET provider_session_id = ?, updated_at = ? WHERE id = ?').run(value, now, sessionId);
     return { success: true };
   });
@@ -399,7 +400,7 @@ export function registerCukoIpc(): void {
   ipcMain.handle('cuko:save-message', (_event: any, msg: any) => {
     const db = getDb();
     if (!db) return { success: false };
-    const now = new Date().toISOString();
+    const now = nowLocalIso();
     db.prepare('INSERT INTO cuko_messages (id, session_id, role, content, think, usage_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
       .run(msg.id, msg.sessionId, msg.role, msg.content, msg.think || null, msg.usage ? JSON.stringify(msg.usage) : null, now);
     
