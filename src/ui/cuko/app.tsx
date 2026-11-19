@@ -527,8 +527,47 @@ const CukoToolFallback: ToolCallMessagePartComponent = ({
   );
 };
 
+/** 把主程序的明暗主题投影到 Cuko 页面（Tailwind 变量 + 壳层 --ck-* 变量） */
+const applyCukoTheme = (dark: boolean) => {
+  const root = document.documentElement;
+  root.classList.toggle('dark', dark);
+  root.style.colorScheme = dark ? 'dark' : 'light';
+  // 设置弹窗等壳层组件用的是 --ck-* 变量，由 body[data-ck-dark] 切换
+  document.body.toggleAttribute('data-ck-dark', dark);
+};
+
+/**
+ * 跟随主程序的 深色 / 浅色 / 跟随系统 设置。
+ * Cuko 窗口不在主窗口上下文里，收不到主题广播，需要自己 theme-subscribe；
+ * 首帧由 index.html 里的内联脚本按 prefers-color-scheme 处理。
+ */
+function useCukoTheme() {
+  useEffect(() => {
+    const shell = (window as any).shellAPI;
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const applySnapshot = (snap: any) => {
+      if (!snap || !snap.active) return;
+      applyCukoTheme(snap.active.colorScheme === 'dark');
+    };
+    const onMediaChange = (e: MediaQueryListEvent) => applyCukoTheme(e.matches);
+
+    try { shell?.themeSubscribe?.(); } catch { /* ignore */ }
+    try { shell?.onThemeChanged?.(applySnapshot); } catch { /* ignore */ }
+    Promise.resolve(shell?.themeGet?.())
+      .then((r: any) => { if (r && r.success && r.snapshot) applySnapshot(r.snapshot); })
+      .catch(() => {});
+    mq.addEventListener('change', onMediaChange);
+
+    return () => {
+      mq.removeEventListener('change', onMediaChange);
+    };
+  }, []);
+}
+
 // ============ 主应用 ============
 function ChatApp() {
+  useCukoTheme();
   const [providers, setProviders] = useState<CukoProvider[]>([]);
   const [config, setConfig] = useState<Config>({ providerId: '', modelId: '' });
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1185,7 +1224,7 @@ function ChatApp() {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <div className="grid h-dvh max-h-dvh grid-cols-[260px_1fr] bg-background text-foreground dark overflow-hidden">
+      <div className="grid h-dvh max-h-dvh grid-cols-[260px_1fr] bg-background text-foreground overflow-hidden">
         <div className="flex flex-col min-h-0 border-r bg-sidebar overflow-hidden">
           <div className="p-2 pb-0">
             <button

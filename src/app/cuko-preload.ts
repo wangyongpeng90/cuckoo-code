@@ -53,6 +53,7 @@ const shellAPI = {
   resetSharedSettings: (keys: string[]) => ipcRenderer.invoke('reset-shared-settings', { keys }),
   getLogInfo: () => ipcRenderer.invoke('get-log-info'),
   themeGet: () => ipcRenderer.invoke('theme-get'),
+  themeSubscribe: () => ipcRenderer.invoke('theme-subscribe'),
   onThemeChanged: (cb: (snapshot: any) => void) => {
     ipcRenderer.on('theme-changed', (_e: any, snap: any) => cb(snap));
   },

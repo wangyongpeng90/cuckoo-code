@@ -61,6 +61,17 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - 执行完成后，将结果拼装成下一轮的 `input` 数组：`[0]` 为随机回复语（从回复语池抽取），`[1..n]` 为每个代码块的执行结果。
 - 不设轮数上限：只要 AI 继续输出 `cuckoo` 代码块就一直执行（原 10 轮上限已移除）。
 
+### 跟随主程序主题
+
+- 主程序设置里的 深色 / 浅色 / 跟随系统 由主进程 `theme-manager` 权威维护，变化时广播 `theme-changed`。
+- Cuko 窗口不在 `windowState` 的窗口上下文里，收不到兜底广播，所以：
+  - preload 暴露 `themeSubscribe`（新增，走 `theme-subscribe` IPC 订阅到当前 webContents）；
+  - `app.tsx` 的 `useCukoTheme` 先 `themeGet` 取当前快照，再监听 `onThemeChanged` 实时切换。
+- 投影到 DOM：`html.dark`（Tailwind 变量）、`html[style.color-scheme]`（原生控件）、
+  `body[data-ck-dark]`（设置弹窗用的 `--ck-*` 变量）。
+- `index.html` 里保留一段首帧内联脚本，按 `prefers-color-scheme` 预先决定明暗，避免深色闪白色。
+- 原来的硬编码 `dark`（`body class="dark"` 与根 div 的 `dark`）已移除。
+
 ### 修改会话 ID（providerSessionId）
 
 - 入口：Cuko 侧边栏会话菜单「会话 ID」（`ThreadListItem` 的可选 `onEditSessionId` 插槽，主界面不传即不显示）。
@@ -118,6 +129,7 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
   - [x] 多个工具调用合并到同一消息，消除巨大间距。
 - [x] 支持传入多模态文件（Base64 随 `input` 发送，原文件落盘用于历史回看）。
 - [x] **修改会话 ID**：会话右键菜单可编辑 `provider_session_id`，只改库值、下次请求生效；留空则下次请求重新注入系统提示词。
+- [x] **跟随主程序主题**：Cuko 窗口跟随主程序设置的 深色 / 浅色 / 跟随系统，主程序改主题时实时同步。
 - [x] `typecheck / test / lint / compile` 全绿。
 
 ## 遗留 / 后续

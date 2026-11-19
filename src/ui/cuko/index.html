@@ -9,8 +9,20 @@
   </style>
   <!--@css-->
 </head>
-<body class="dark">
+<body>
   <div id="root"></div>
+  <script>
+    // 首帧前先按当前系统 / 应用配色决定明暗，避免从深色闪到浅色。
+    // 运行时的精确同步由 app.tsx 的 useCukoTheme（theme-get / theme-changed）负责。
+    (function () {
+      try {
+        var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.classList.toggle('dark', dark);
+        document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        document.body.toggleAttribute('data-ck-dark', dark);
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
   <!--@bundle-->
 </body>
 </html>
