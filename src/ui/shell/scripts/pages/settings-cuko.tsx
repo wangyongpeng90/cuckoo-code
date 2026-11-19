@@ -1,5 +1,6 @@
 import { createElement, useState, useEffect } from 'react';
 import { Select } from '../components/select.js';
+import { CukoIntegrationDialog } from './cuko-integration.js';
 
 export function CukoSettings() {
   const [cukoProviders, setCukoProviders] = useState<any[]>([]);
@@ -7,6 +8,7 @@ export function CukoSettings() {
   const [cukoLoading, setCukoLoading] = useState(false);
   const [cukoErr, setCukoErr] = useState('');
   const [tip, setTip] = useState('');
+  const [showGuide, setShowGuide] = useState(false);
 
   // 当前正在编辑的表单数据
   const [editProvider, setEditProvider] = useState<any>({
@@ -118,7 +120,16 @@ export function CukoSettings() {
       createElement('div', {
         style: { ...cardStyle, alignItems: 'center', justifyContent: 'center', borderStyle: 'dashed', cursor: 'pointer', color: 'var(--ck-text-2)', fontSize: '13px', background: 'transparent', marginBottom: 0 },
         onClick: () => openEdit()
-      }, '+ 添加模型提供商')
+      }, '+ 添加模型提供商'),
+      createElement('button', {
+        style: {
+          width: '100%', height: '40px', marginTop: '16px', borderRadius: '10px',
+          border: '1px solid var(--ck-border)', background: 'var(--ck-bg-2)',
+          color: 'var(--ck-text)', fontSize: '13px', cursor: 'pointer'
+        },
+        onClick: () => setShowGuide(true)
+      }, '如何接入 Cuko API'),
+      showGuide ? createElement(CukoIntegrationDialog, { onClose: () => setShowGuide(false) }) : null
     );
   }
 
