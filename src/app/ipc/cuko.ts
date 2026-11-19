@@ -21,6 +21,8 @@ import {
   listCukoRuns,
   subscribeCukoRuns,
   switchModelWithHistory,
+  listCukoRequestLogs,
+  clearCukoRequestLogs,
 } from '../cuko-runner.js';
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -424,6 +426,13 @@ export function registerCukoIpc(): void {
   // ====== 后台运行（运行循环在主进程，关窗后继续；每个会话可并行） ======
   // 切换模型：把压缩后的历史发给新模型（type: "compress"），成功后才改绑定
   ipcMain.handle('cuko:switch-model', (_event: any, params: any) => switchModelWithHistory(params));
+
+  // 请求日志（请求由主进程发出，渲染进程 DevTools Network 看不到）
+  ipcMain.handle('cuko:get-request-logs', () => listCukoRequestLogs());
+  ipcMain.handle('cuko:clear-request-logs', () => {
+    clearCukoRequestLogs();
+    return { success: true };
+  });
 
   ipcMain.handle('cuko:start-run', (event: any, params: any) => {
     // 把发起窗口的 id 传给运行器：nameConversation / runAgent 这类工具需要窗口上下文

@@ -32,6 +32,7 @@ import { SessionIdDialog } from '@/ui/cuko/session-id-dialog';
 import { SystemPromptDialog } from '@/ui/cuko/system-prompt-dialog';
 import { ModelSwitchDialog } from '@/ui/cuko/model-switch-dialog';
 import { buildCompressHistory } from '@/ui/cuko/compress-history';
+import { RequestLogDialog } from '@/ui/cuko/request-log-dialog';
 import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
 import {
@@ -105,6 +106,8 @@ declare global {
       switchModel: (params: { sessionId: string; providerId: string; modelId: string; history: Array<{ type: string; text: string }> }) => Promise<{ success: boolean; error?: string; providerSessionId?: string }>;
       cancelRun: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
       getRuns: () => Promise<Array<any>>;
+      getRequestLogs: () => Promise<Array<any>>;
+      clearRequestLogs: () => Promise<{ success: boolean }>;
       subscribeRuns: () => Promise<{ success: boolean; runs?: any[] }>;
       onRunEvent: (cb: (event: any) => void) => void;
     };
@@ -531,6 +534,8 @@ function ChatApp() {
   const [systemPromptView, setSystemPromptView] = useState<{ threadId: string; title: string } | null>(null);
   // 切换模型确认（有历史消息时需要先把历史压缩发给新模型）
   const [pendingModelSwitch, setPendingModelSwitch] = useState<Config | null>(null);
+  // 主进程请求日志（DevTools 里看不到）
+  const [requestLogOpen, setRequestLogOpen] = useState(false);
   
   // 消息状态
   const [messages, setMessages] = useState<Msg[]>([]);
@@ -1076,6 +1081,12 @@ function ChatApp() {
             />
           </div>
           <div className="border-t p-2">
+            <button
+              onClick={() => setRequestLogOpen(true)}
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <span className="text-muted-foreground">🧾</span> 请求日志
+            </button>
             <button onClick={() => setSettingsOpen(true)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
               <span className="text-muted-foreground">⚙️</span> 设置
             </button>
@@ -1125,6 +1136,7 @@ function ChatApp() {
           onConfirm={confirmModelSwitch}
         />
       )}
+      {requestLogOpen && <RequestLogDialog onClose={() => setRequestLogOpen(false)} />}
     </AssistantRuntimeProvider>
   );
 }

@@ -47,6 +47,8 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   // ====== 后台运行（主进程跑，窗口关掉也继续） ======
   startRun: (params: any) => ipcRenderer.invoke('cuko:start-run', params),
   switchModel: (params: any) => ipcRenderer.invoke('cuko:switch-model', params),
+  getRequestLogs: () => ipcRenderer.invoke('cuko:get-request-logs'),
+  clearRequestLogs: () => ipcRenderer.invoke('cuko:clear-request-logs'),
   cancelRun: (sessionId: string) => ipcRenderer.invoke('cuko:cancel-run', sessionId),
   getRuns: () => ipcRenderer.invoke('cuko:get-runs'),
   subscribeRuns: () => ipcRenderer.invoke('cuko:subscribe-runs'),

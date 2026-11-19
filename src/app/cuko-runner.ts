@@ -65,6 +65,69 @@ interface CukoRun extends CukoRunSnapshot {
 /** 当前正在运行的会话（sessionId → run） */
 const runs = new Map<string, CukoRun>();
 
+// ====== 请求日志（页面里可见；主进程发请求后 DevTools Network 看不到） ======
+export interface CukoRequestLogEntry {
+  id: string;
+  ts: string;
+  kind: 'run' | 'compress';
+  sessionId: string;
+  model: string;
+  url: string;
+  /** 请求体里的 type（普通对话轮次为空，切模型压缩是 compress） */
+  type?: string;
+  inputCount: number;
+  inputChars: number;
+  /** 每条 input 的截断预览（最多 10 条，每条 300 字） */
+  inputPreview: Array<{ type: string; text: string }>;
+  providerSessionId?: string;
+  status: 'pending' | 'ok' | 'error';
+  httpStatus?: number;
+  error?: string;
+  durationMs?: number;
+}
+
+const REQUEST_LOG_MAX = 100;
+const requestLogs: CukoRequestLogEntry[] = [];
+
+const truncate = (text: string, max: number): string =>
+  text.length > max ? text.slice(0, max) + '…' : text;
+
+function pushRequestLog(entry: Omit<CukoRequestLogEntry, 'id' | 'ts' | 'status' | 'inputCount' | 'inputChars' | 'inputPreview'> & {
+  input: any[];
+}): string {
+  const id = randomUUID();
+  const input = Array.isArray(entry.input) ? entry.input : [];
+  requestLogs.unshift({
+    id,
+    ts: nowLocalIso(),
+    status: 'pending',
+    inputCount: input.length,
+    inputChars: input.reduce((sum, p) => sum + (typeof p?.text === 'string' ? p.text.length : 0), 0),
+    inputPreview: input.slice(0, 10).map((p) => ({
+      type: String(p?.type || ''),
+      text: truncate(String(p?.text ?? p?.filename ?? ''), 300),
+    })),
+    ...entry,
+  });
+  if (requestLogs.length > REQUEST_LOG_MAX) requestLogs.length = REQUEST_LOG_MAX;
+  return id;
+}
+
+function finishRequestLog(id: string, patch: Partial<CukoRequestLogEntry>): void {
+  const index = requestLogs.findIndex((item) => item.id === id);
+  if (index < 0) return;
+  requestLogs[index] = { ...requestLogs[index], ...patch };
+}
+
+/** 页面里的请求日志列表（最新在前） */
+export function listCukoRequestLogs(): CukoRequestLogEntry[] {
+  return requestLogs.map((item) => ({ ...item }));
+}
+
+export function clearCukoRequestLogs(): void {
+  requestLogs.length = 0;
+}
+
 /** 订阅运行事件的 webContents（Cuko 窗口） */
 const subscribers = new Set<any>();
 
@@ -254,13 +317,25 @@ async function streamRound(run: CukoRun, input: CukoRunInputPart[], providerSess
     }
   });
 
+  const url = run.baseUrl.replace(/\/+$/, '') + '/v1/responses';
+  const startedAt = Date.now();
+  const logId = pushRequestLog({
+    kind: 'run',
+    sessionId: run.sessionId,
+    model: run.modelId,
+    url,
+    input,
+    providerSessionId: providerSessionId || undefined,
+  });
+
   try {
-    const response = await fetch(run.baseUrl.replace(/\/+$/, '') + '/v1/responses', {
+    const response = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       signal: run.abort.signal,
     });
+    finishRequestLog(logId, { httpStatus: response.status });
     if (!response.ok || !response.body) {
       let errText = 'HTTP ' + response.status;
       try { const t = await response.text(); if (t) errText += ': ' + t; } catch { /* ignore */ }
@@ -286,6 +361,12 @@ async function streamRound(run: CukoRun, input: CukoRunInputPart[], providerSess
   run.content = content;
   run.think = think;
   run.usage = usage;
+  finishRequestLog(logId, {
+    status: error || aborted ? 'error' : 'ok',
+    error: error || (aborted ? '已停止' : undefined),
+    providerSessionId: run.providerSessionId || undefined,
+    durationMs: Date.now() - startedAt,
+  });
   return { content, think, usage, sawDone, aborted, error };
 }
 
@@ -558,16 +639,32 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
     }
   });
 
+  const url = String(provider.base_url).replace(/\/+$/, '') + '/v1/responses';
+  const startedAt = Date.now();
+  const logId = pushRequestLog({
+    kind: 'compress',
+    sessionId,
+    model: modelId,
+    url,
+    type: 'compress',
+    input,
+  });
+  const fail = (message: string) => {
+    finishRequestLog(logId, { status: 'error', error: message, durationMs: Date.now() - startedAt });
+    return { success: false, error: message };
+  };
+
   try {
-    const response = await fetch(String(provider.base_url).replace(/\/+$/, '') + '/v1/responses', {
+    const response = await fetch(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
     });
+    finishRequestLog(logId, { httpStatus: response.status });
     if (!response.ok || !response.body) {
       let errText = 'HTTP ' + response.status;
       try { const t = await response.text(); if (t) errText += ': ' + t; } catch { /* ignore */ }
-      return { success: false, error: errText };
+      return fail(errText);
     }
     const reader = response.body.getReader();
     const textDecoder = new TextDecoder();
@@ -577,19 +674,24 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
       decoder.push(textDecoder.decode(value, { stream: true }));
     }
   } catch (err: any) {
-    return { success: false, error: err?.message || '历史同步请求失败' };
+    return fail(err?.message || '历史同步请求失败');
   }
 
-  if (remoteError) return { success: false, error: remoteError };
+  if (remoteError) return fail(remoteError);
 
   try {
     const now = nowLocalIso();
     db.prepare('UPDATE cuko_sessions SET provider_id = ?, model_id = ?, provider_session_id = ?, updated_at = ? WHERE id = ?')
       .run(providerId, modelId, providerSessionId || null, now, sessionId);
   } catch (err: any) {
-    return { success: false, error: err?.message || '保存模型绑定失败' };
+    return fail(err?.message || '保存模型绑定失败');
   }
 
+  finishRequestLog(logId, {
+    status: 'ok',
+    providerSessionId: providerSessionId || undefined,
+    durationMs: Date.now() - startedAt,
+  });
   return { success: true, providerSessionId, inputCount: input.length };
 }
 
