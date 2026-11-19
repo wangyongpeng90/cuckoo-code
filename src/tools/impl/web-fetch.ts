@@ -11,20 +11,12 @@ export const apiMetas: ToolApiMeta[] = [
     order: 12,
     category: 'WebFetch',
     name: 'webFetch',
-    usage: '使用 webFetch 工具获取指定 HTTP(S) URL 的内容。返回解码为文本的页面内容（HTML 转 Markdown）。内容超过约 20000 字符会截断并附 footer。使用其内容时，请以 markdown 链接形式引用 URL。',
     doc: [
-      '获取指定 HTTP(S) URL 的内容并解码为文本。',
-      'HTML 会转换为 Markdown（turndown + GFM）。',
-      '返回纯文本：Fetched <url> (HTTP <status>) + 正文。',
-      '内容超过上限（约 20000 字符）会截断并附 footer。',
-      '出于安全考虑，可在设置里开启"拒绝访问内网地址"（默认关闭）。',
+      '获取 HTTP(S) URL 内容并解码为文本（HTML→Markdown），返回 Fetched <url> (HTTP <status>) + 正文。',
+      '超过约 20000 字符会截断并附 footer；引用内容时用 markdown 链接标注 URL。',
     ].join('\n'),
     params: 'url: string',
     returns: 'Promise<string>',
-    paramDocs: {
-      url: '要获取的 HTTP(S) URL',
-    },
-    throws: 'URL 为空、非 http/https、指向内网/保留地址、请求超时或失败时抛出异常',
   },
 ];
 

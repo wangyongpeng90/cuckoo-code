@@ -11,7 +11,6 @@ export const apiMetas: ToolApiMeta[] = [
     order: 6,
     category: '搜索',
     name: 'grep',
-    usage: '使用 grep 工具（而不是 shell grep 或 rg）搜索文件内容。需要查看匹配行的上下文时，对匹配文件使用 read。',
     types: [
       '/** grep 的选项 */',
       'interface GrepOptions {',
@@ -22,17 +21,11 @@ export const apiMetas: ToolApiMeta[] = [
       '}',
     ].join('\n'),
     doc: [
-      '用 ripgrep 正则表达式搜索文件内容。',
-      '返回纯文本：header（Found N matches）+ 按文件分组的 "Line N: 内容"。',
-      '无匹配返回 "No matches found"。',
+      '用 ripgrep 正则搜索文件内容，返回按文件分组的「Line N: 内容」；无匹配返回 No matches found。',
+      '用 grep 而不是 shell grep/rg；需要上下文时对匹配文件用 read。',
     ].join('\n'),
     params: 'pattern: string, options?: GrepOptions',
     returns: 'Promise<string>',
-    paramDocs: {
-      pattern: 'ripgrep 正则表达式',
-      options: '可选，path/include',
-    },
-    throws: 'pattern 为空、include 非法、ripgrep 执行失败时抛出异常',
   },
 ];
 

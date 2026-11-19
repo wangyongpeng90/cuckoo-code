@@ -10,16 +10,9 @@ export const apiMetas: ToolApiMeta[] = [
     order: 14,
     category: 'Agent',
     name: 'runAgent',
-    usage: '使用 runAgent(name, task) 把任务委派给子代理。子代理在独立上下文中完成，只把结果摘要返回。',
-    doc: '把任务委派给一个子代理（独立上下文的 AI 对话）执行，返回子代理的最终结果摘要。适合大范围搜索/分析、独立子任务，避免污染当前上下文。',
+    doc: '把任务委派给子代理（独立上下文）执行，只返回最终结果摘要；适合大范围搜索/分析等独立子任务，避免污染当前上下文。',
     params: 'name: string, task: string',
     returns: 'Promise<string>',
-    paramDocs: {
-      name: '子代理名称（见系统提示词「可用子代理」章节）',
-      task: '要委派的任务描述',
-    },
-    returnsDoc: '子代理的最终文本结果',
-    throws: '代理不存在、父窗口上下文缺失或执行超时时抛出异常',
   },
 ];
 

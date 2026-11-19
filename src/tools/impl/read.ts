@@ -39,7 +39,6 @@ export const apiMetas: ToolApiMeta[] = [
     order: 1,
     category: '文件读写',
     name: 'read',
-    usage: '使用 read 工具（而不是 cat 等 shell 命令）来查看文本文件。结果包含行号。使用 offset 和 limit 继续读取大文件。',
     types: [
       '/** read 的选项 */',
       'interface ReadOptions {',
@@ -50,18 +49,11 @@ export const apiMetas: ToolApiMeta[] = [
       '}',
     ].join('\n'),
     doc: [
-      '读取 UTF-8 文本文件并返回带行号的内容窗口。',
-      '通过 offset 和 limit 分段读取大文件。输出为：',
-      '首行是文件信息（路径 + 行号范围，模板可在设置里自定义），空行，',
-      '然后正文是「行号: 内容」，最后一行是续读提示。',
+      '读取 UTF-8 文本文件并返回带行号的内容窗口（首行文件信息，正文「行号: 内容」，末行续读提示）。',
+      '大文件用 offset/limit 分段；查看文本用 read，不要用 cat 等 shell 命令。',
     ].join('\n'),
     params: 'filePath: string, options?: ReadOptions',
     returns: 'Promise<string>',
-    paramDocs: {
-      filePath: '相对（基于项目根目录）或绝对路径',
-      options: '可选，offset/limit',
-    },
-    throws: '文件不存在、不是文件、offset 越界或读取失败时抛出异常',
   },
 ];
 

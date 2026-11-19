@@ -12,30 +12,13 @@ export const apiMetas: ToolApiMeta[] = [
     order: 4,
     category: '文件读写',
     name: 'edit',
-    usage: [
-      '使用 edit 工具对现有 UTF-8 文本文件做定向修改：用 newString 替换字面量 oldString。',
-      'oldString 应是一行或多行【连续】的原文（可跨行，不必逐行改）；【务必注意空白与缩进】——',
-      '缩进、空格不一致是替换失败的最常见原因，请直接复制 read 到的原文。',
-      '默认 oldString 必须唯一匹配：若出现多次，请提供更长的上下文使其唯一，或设置 replaceAll: true 全部替换。',
-      '批量替换同一文本时优先用 replaceAll: true 一次完成，避免读全文后整体写回。',
-      '批量修改前可用 dryRun: true 预览，确认无误后再真实写入。',
-      '除非你刚在本会话中创建或编辑过该文件，否则先 read 文件。',
-      '注意：read 输出的内容带行号，oldString/newString 必须是文件原始文本，不要包含行号或 footer 提示。',
-    ].join('\n'),
     doc: [
-      '在现有 UTF-8 文本文件中精确替换 oldString 为 newString。',
-      '默认 oldString 必须唯一匹配；多匹配需设置 replaceAll。',
+      '在现有 UTF-8 文本文件中用 newString 替换字面量 oldString。',
+      'oldString 必须是文件原文（可跨行），注意空白与缩进；默认要求唯一匹配，多次出现时提供更长上下文或 replaceAll: true。',
+      '局部修改优先用 edit，不要整文件重写；批量替换前可用 dryRun 预览。',
     ].join('\n'),
     params: 'filePath: string, oldString: string, newString: string, replaceAll?: boolean, dryRun?: boolean',
     returns: 'Promise<string>',
-    paramDocs: {
-      filePath: '相对或绝对路径',
-      oldString: '要替换的字面文本',
-      newString: '替换后的字面文本（可空字符串删除匹配）',
-      replaceAll: '是否替换所有匹配，默认 false',
-      dryRun: '是否只预览不写入，默认 false；true 时返回将替换的处数和内容，不修改文件',
-    },
-    throws: '文件不存在、oldString 未找到、多匹配未设置 replaceAll、oldString===newString 时抛出异常',
   },
 ];
 

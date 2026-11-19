@@ -61,19 +61,12 @@ function render(metas, minimal) {
   L.push(' * - 工具出错时抛出异常（Error.message 为错误描述），可用 try/catch 处理；');
   L.push(' *   唯一例外是 bash()/pwsh()：非零退出不抛异常，通过返回文本中的 [exit code] 标记报告');
   L.push(' * - 用 log() 输出中间过程；脚本最后可用 return 返回结果值');
-  L.push(' *');
-  L.push(' * ⚠️ 本文件由 scripts/build-tool-api.mjs 自动生成，请勿手动编辑。');
-  L.push(' *    真相源：各工具的 apiMetas 元数据（src/tools/impl/*.ts）。');
   L.push(' */');
   L.push('');
   L.push('/** 当前项目根目录（初始化项目后由系统注入）。未初始化时为 null。 */');
   L.push('declare const projectDir: string | null;');
   L.push('');
-  L.push('/**');
-  L.push(' * 输出中间结果到执行日志（不中断脚本）。');
-  L.push(' * 日志内容随执行结果一起回传给 AI。');
-  L.push(' * 注意：log() 只在 cuckoo 代码块的 JS 层可用。不要在 bash()/pwsh() 的命令字符串内部调用它——那些命令是独立的 shell 脚本，无法访问 JS 函数。');
-  L.push(' */');
+  L.push('/** 向执行日志输出中间结果（随执行结果回传给 AI）；只在 cuckoo 代码块 JS 层可用，不要写进 bash/pwsh 命令字符串。 */');
   L.push('declare function log(...args: unknown[]): void;');
   } else {
     L.push('/**');

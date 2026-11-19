@@ -25,19 +25,12 @@ export function injectGoalDonePusher(fn: GoalDonePusher): void {
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
 export const apiMetas: ToolApiMeta[] = [
   {
-    order: 19,
+    order: 9.5,
     category: '任务管理',
     name: 'goalDone',
-    usage: '当 /goal 目标的所有要求都确实完成后，调用 goalDone() 结束目标的自动推进；调用前先在正文给出完成情况总结。目标未完成或遇到阻碍时不要调用，继续推进或说明原因。普通对话（非目标模式）不要调用本工具。',
-    doc: [
-      '宣告当前目标（/goal 设定的自动多轮任务）已全部完成，结束自动推进。',
-      '仅在目标的所有要求都确实完成后调用；调用前先在正文给出完成情况总结。',
-      '非目标模式的普通对话不需要调用本工具。',
-    ].join('\n'),
+    doc: '宣告 /goal 自动多轮任务已全部完成并结束推进；仅在目标所有要求确实完成后调用，调用前先在正文总结。普通对话不要调用。',
     params: '',
     returns: 'Promise<string>',
-    returnsDoc: '确认消息',
-    throws: '缺少窗口上下文、窗口已关闭或纯净对话模式未开启时抛出异常',
   },
 ];
 

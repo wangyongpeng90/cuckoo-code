@@ -9,7 +9,6 @@ export const apiMetas: ToolApiMeta[] = [
     order: 11,
     category: 'MySQL',
     name: 'mysql',
-    usage: '使用 mysql 工具执行 MySQL SQL 语句。传入 host/port/user/password/database 和 sql。SELECT/SHOW/DESCRIBE/EXPLAIN 返回纯文本表格，写操作返回 affectedRows。',
     types: [
       '/** MySQL 连接与查询参数 */',
       'interface MySQLOptions {',
@@ -29,18 +28,9 @@ export const apiMetas: ToolApiMeta[] = [
       '  limit?: number;',
       '}',
     ].join('\n'),
-    doc: [
-      '执行 MySQL SQL 语句。',
-      'SELECT/SHOW/DESCRIBE/EXPLAIN 等查询返回纯文本表格；',
-      'INSERT/UPDATE/DELETE/DDL 返回 affectedRows 等执行统计。',
-    ].join('\n'),
+    doc: '执行 MySQL 语句：查询（SELECT/SHOW/DESCRIBE/EXPLAIN）返回纯文本表格，写操作返回 affectedRows 等统计。',
     params: 'options: MySQLOptions',
     returns: 'Promise<string>',
-    paramDocs: {
-      options: '连接参数 + sql',
-    },
-    returnsDoc: '纯文本表格（查询）或执行统计（写操作）',
-    throws: '连接失败、SQL 错误时抛出异常',
   },
 ];
 

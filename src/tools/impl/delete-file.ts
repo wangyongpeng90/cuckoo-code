@@ -11,7 +11,6 @@ export const apiMetas: ToolApiMeta[] = [
     order: 10,
     category: '删除',
     name: 'deleteFile',
-    usage: '使用 deleteFile 工具永久删除文件。此操作不可撤销。返回 { message, path }，path 为被删除文件的绝对路径。删除前请仔细确认路径。',
     types: [
       '/** deleteFile 的返回值 */',
       'interface FileDeleteResult {',
@@ -20,13 +19,9 @@ export const apiMetas: ToolApiMeta[] = [
       '  path: string;',
       '}',
     ].join('\n'),
-    doc: '删除指定文件（不可恢复，请谨慎使用；只能删除文件，不能删除目录）。',
+    doc: '永久删除单个文件（不可恢复，不能删目录），返回 { message, path }；删除前确认路径。',
     params: 'filePath: string',
     returns: 'Promise<FileDeleteResult>',
-    paramDocs: {
-      filePath: '要删除的文件路径',
-    },
-    throws: '文件不存在或路径不是文件时抛出异常',
   },
 ];
 

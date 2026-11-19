@@ -33,15 +33,9 @@ export const apiMetas: ToolApiMeta[] = [
       '  truncatedByBytes: boolean;',
       '}',
     ].join('\n'),
-    doc: '读取 UTF-8 文本文件并返回结构化行数组，供 AI 在内存中精确处理。',
-    usage: '使用 readLines 工具读取文件的结构化行数据（数组，每个元素含 number 和 text 字段），适合在内存中批量处理（如 map/filter/join 后写回）。如果只是查看文件内容，用 read 即可。',
+    doc: '读取 UTF-8 文本文件并返回结构化行数组（number/text），适合在内存里批量处理；仅查看内容用 read。',
     params: 'filePath: string, options?: ReadOptions',
     returns: 'Promise<ReadLinesResult>',
-    paramDocs: {
-      filePath: '相对（基于项目根目录）或绝对路径',
-      options: '可选，offset/limit',
-    },
-    throws: '文件不存在、不是文件、offset 越界或读取失败时抛出异常',
   },
 ];
 

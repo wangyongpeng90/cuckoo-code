@@ -12,7 +12,6 @@ export const apiMetas: ToolApiMeta[] = [
     order: 8,
     category: '命令执行',
     name: 'pwsh',
-    usage: '执行 PowerShell 命令（powershell -NoProfile -Command）并返回 stdout/stderr。每次调用在全新 pwsh 进程中运行：状态不会跨调用保留——请用 workdir 参数而非 cd。路径使用 Windows 原生形式（C:\\\\...）；用 $env:NAME 读取环境变量。非零退出以 [exit code: N] 标记报告。读写文件请显式写 -Encoding UTF8（Get-Content / Set-Content / Out-File / Add-Content），系统会自动补但别名和变量拼接时可能失效。注意 PowerShell 5.1 的 -Encoding UTF8 会写 BOM（文件开头多 3 个隐形字节），写 JSON/脚本等对 BOM 敏感的格式时优先用 [IO.File]::WriteAllText(路径, 内容, [System.Text.UTF8Encoding]::new($false))。',
     types: [
       '/** pwsh 的选项 */',
       'interface PwshOptions {',
@@ -25,20 +24,12 @@ export const apiMetas: ToolApiMeta[] = [
       '}',
     ].join('\n'),
     doc: [
-      '执行 PowerShell 命令（powershell -NoProfile -Command）。',
-      '返回纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）。',
-      '必须用 log() 方法打印才能看到返回内容。',
-      '非零退出不抛异常，通过 [exit code] 标记报告。',
-      '危险命令会被安全策略拒绝并抛异常。',
+      '执行 PowerShell 命令（powershell -NoProfile -Command），返回 stdout + [stderr] + 状态标记。',
+      '每次调用是全新进程：状态不保留，用 workdir 而不是 cd；路径用 Windows 原生形式，环境变量用 $env:NAME；非零退出以 [exit code: N] 报告，长输出截断为尾部。',
+      '读写文件显式加 -Encoding UTF8；PowerShell 5.1 的 UTF8 带 BOM，对 BOM 敏感的内容用 [IO.File]::WriteAllText(路径, 内容, [System.Text.UTF8Encoding]::new($false))。',
     ].join('\n'),
     params: 'command: string, options?: PwshOptions',
     returns: 'Promise<string>',
-    paramDocs: {
-      command: '要执行的 PowerShell 命令',
-      options: '可选，{ description?: string, workdir?: string, timeoutMs?: number }',
-    },
-    returnsDoc: '纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）',
-    throws: '危险命令被安全策略拒绝时抛出异常',
   },
 ];
 

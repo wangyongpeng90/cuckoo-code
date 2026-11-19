@@ -8,31 +8,17 @@ export const apiMetas: ToolApiMeta[] = [
     order: 17,
     category: 'MCP',
     name: 'mcpListServers',
-    doc: [
-      '列出所有已配置的 MCP server（含启用状态、连接状态和工具数量）。',
-      '使用 MCP 前先调用此函数查看当前可用 server。',
-    ].join('\n'),
-    usage: 'mcpListServers() 列出已配置的 MCP server（含启用/连接状态）。',
+    doc: '列出已配置的 MCP server（启用/连接状态、工具数量）；使用 MCP 前先调用。',
     params: '',
     returns: 'Promise<string>',
-    returnsDoc: '纯文本 server 列表',
   },
   {
     order: 18,
     category: 'MCP',
     name: 'mcpGetTools',
-    doc: [
-      '查看指定 MCP server 提供的工具列表（含描述和参数）。',
-      '确认工具能力后再调用 mcpCall。',
-    ].join('\n'),
-    usage: 'mcpGetTools(serverName) 查看指定 MCP server 的工具和参数。',
+    doc: '查看指定 MCP server 的工具及参数；确认后再调 mcpCall。',
     params: 'serverName: string',
     returns: 'Promise<string>',
-    paramDocs: {
-      serverName: 'MCP server 名称',
-    },
-    returnsDoc: '纯文本工具列表',
-    throws: 'server 不存在或连接失败时抛出异常',
   },
 ];
 

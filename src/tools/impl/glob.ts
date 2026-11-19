@@ -17,20 +17,12 @@ export const apiMetas: ToolApiMeta[] = [
     order: 5,
     category: '搜索',
     name: 'glob',
-    usage: '使用 glob 工具（而不是 shell find）按路径模式查找文件。不含 "/" 的模式匹配任意深度的 basename，所以 "*" 匹配树中所有文件而非仅顶层。结果只包含文件，永不包含目录，且包含隐藏和已忽略文件。默认排除 node_modules、dist 等产物目录；若确需搜索这些目录，请显式传 path。',
     doc: [
-      '按 glob 模式查找文件路径，返回纯文本路径列表（以 / 分隔，如 "src/utils/a.js"）。',
-      '使用 ripgrep，包含隐藏文件和已忽略文件；未指定 path 时默认排除 VCS 元数据目录（.git 等）与常见产物目录（node_modules、dist、out、build 等）。',
-      'glob 语法：* 匹配单层内任意字符，** 匹配任意层级目录，? 匹配单个字符。',
-      '结果包含 footer：未超限时"(共找到 N 个文件)"，超限时说明只列出了前 M 个。',
+      '按 glob 模式查找文件路径（* 单层、** 任意层级、? 单字符），返回 / 分隔的纯文本列表。',
+      '只返回文件，含隐藏/忽略文件，默认排除 node_modules、dist 等；不含 "/" 的模式匹配任意深度 basename。用 glob 而不是 shell find。',
     ].join('\n'),
     params: 'pattern: string, searchPath?: string',
     returns: 'Promise<string>',
-    paramDocs: {
-      pattern: 'glob 匹配模式，如 src 下所有 .js / .ts，或 *.json',
-      searchPath: '搜索起始目录（相对路径），默认项目根目录',
-    },
-    throws: 'pattern 为空、搜索目录不存在或不是目录时抛出异常',
   },
 ];
 

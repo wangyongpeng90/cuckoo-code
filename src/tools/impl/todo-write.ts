@@ -20,19 +20,9 @@ export const apiMetas: ToolApiMeta[] = [
       '  status: TodoStatus;',
       '}',
     ].join('\n'),
-    doc: [
-      '记录并更新当前工作的结构化任务列表。',
-      '每次发送完整列表，替换之前的列表（无部分更新）。',
-      '串行模式：最多一条 in_progress。',
-    ].join('\n'),
-    usage: '记录并更新当前工作的结构化任务列表。每次调用发送完整列表——它替换之前的列表（没有部分更新）。完成任务后立即标记为 completed。对于简单的单步任务可跳过列表。',
+    doc: '记录并更新当前工作的结构化任务列表：每次发送完整列表并替换旧列表，最多一条 in_progress；完成后立即标 completed，简单单步任务可跳过。',
     params: 'todos: TodoItem[]',
     returns: 'Promise<string>',
-    paramDocs: {
-      todos: '完整任务列表',
-    },
-    returnsDoc: '统计确认消息，如 "Updated todo list: 2 pending, 1 in progress, 0 completed."',
-    throws: 'content 为空、重复、状态非法、超过一条 in_progress 时抛出异常',
   },
 ];
 

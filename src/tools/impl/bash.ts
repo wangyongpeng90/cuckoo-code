@@ -12,7 +12,6 @@ export const apiMetas: ToolApiMeta[] = [
     order: 7,
     category: '命令执行',
     name: 'bash',
-    usage: '执行 bash 命令并返回 stdout/stderr。每次调用在全新 shell 中运行：状态（cwd、变量、函数）不会跨调用保留——请用 workdir 参数而非 cd。非零退出以 [exit code: N] 标记报告。长输出会截断为尾部。',
     types: [
       '/** bash 的选项 */',
       'interface BashOptions {',
@@ -25,20 +24,11 @@ export const apiMetas: ToolApiMeta[] = [
       '}',
     ].join('\n'),
     doc: [
-      '执行 shell 命令（Windows 使用 cmd.exe）。',
-      '返回纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）。',
-      '必须用 log() 方法打印才能看到返回内容。',
-      '非零退出不抛异常，通过 [exit code] 标记报告。',
-      '危险命令会被安全策略拒绝并抛异常。',
+      '执行 shell 命令（Windows 用 cmd.exe），返回 stdout + [stderr] + 状态标记。',
+      '每次调用是全新 shell：cwd/变量/函数不保留，用 workdir 而不是 cd；非零退出不抛异常，以 [exit code: N] 报告；长输出截断为尾部。危险命令会被安全策略拒绝并抛异常。',
     ].join('\n'),
     params: 'command: string, options?: BashOptions',
     returns: 'Promise<string>',
-    paramDocs: {
-      command: '要执行的 shell 命令',
-      options: '可选，{ description?: string, workdir?: string, timeoutMs?: number }',
-    },
-    returnsDoc: '纯文本：stdout + [stderr] 分节 + 状态标记（[exit code]、[timed out]）',
-    throws: '危险命令被安全策略拒绝时抛出异常',
   },
 ];
 
