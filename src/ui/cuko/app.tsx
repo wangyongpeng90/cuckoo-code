@@ -28,6 +28,7 @@ import { AttachmentUI } from '@/components/assistant-ui/elements/attachment.aui'
 import { useAttachmentState } from '@/components/assistant-ui/elements/attachment-state';
 import { Thread } from '@/components/assistant-ui/elements/thread.aui';
 import { SessionTree } from '@/ui/cuko/session-tree';
+import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
 import {
   ToolFallbackRoot,
@@ -170,28 +171,6 @@ const CukoAttachmentAdapter: AttachmentAdapter = {
 function extractText(content: AppendMessage['content']): string {
   const parts = Array.isArray(content) ? content : [];
   return parts.filter((p: any) => p && p.type === 'text' && typeof p.text === 'string').map((p: any) => p.text).join('\n');
-}
-
-/** Cuko 附件存的是相对路径；data:/blob:/http(s) 都不是本地路径 */
-const isDiskAttachPath = (data: unknown): data is string =>
-  typeof data === 'string' && !/^(?:data|blob):/i.test(data) && !/^(?:https?:)?\/\//i.test(data);
-
-/**
- * 把一条附件元数据转成 assistant-ui 的 CompleteAttachment。
- * 注意：图片必须看 mimeType 判定（file part 会被映射成 type: "document"），
- * 否则缩略图尺寸与预览弹窗都不会按图片处理。
- */
-function toUserAttachment(msgId: string, index: number, part: { filename?: string; mimeType?: string; data: string }) {
-  const mimeType = part.mimeType || 'application/octet-stream';
-  const filename = part.filename || 'attachment-' + (index + 1);
-  return {
-    id: msgId + '-att-' + index,
-    type: mimeType.startsWith('image/') ? ('image' as const) : ('document' as const),
-    name: filename,
-    contentType: mimeType,
-    content: [{ type: 'file' as const, filename, mimeType, data: part.data }],
-    status: { type: 'complete' as const },
-  };
 }
 
 /** 从代码块里提取所有被调用的工具名（去重） */
@@ -691,43 +670,13 @@ function ChatApp() {
     setThreadId(id);
     const dbMsgs = await window.cukoAPI.getMessages(id);
     const loadedMsgs: Msg[] = dbMsgs.map(m => {
-      let content: any = m.content;
-      let attachments: ReturnType<typeof toUserAttachment>[] | undefined;
-      // 工具卡片消息：content 是 JSON 数组（tool-call part）
-      if (typeof m.content === 'string' && m.content.trim().startsWith('[')) {
-        try {
-          const parsed = JSON.parse(m.content);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            content = parsed;
-          }
-        } catch { /* 非 JSON，保留原文本 */ }
-      } else if (typeof m.content === 'string' && m.content.trim().startsWith('{')) {
-        // 带附件的用户消息：{ v:1, text, attachments:[{filename,mimeType,path}] }
-        try {
-          const parsed = JSON.parse(m.content);
-          if (parsed && parsed.v === 1 && Array.isArray(parsed.attachments)) {
-            content = typeof parsed.text === 'string' && parsed.text.trim() ? parsed.text : [];
-            attachments = parsed.attachments
-              .filter((a: any) => isDiskAttachPath(a?.path))
-              .map((a: any, i: number) => toUserAttachment(m.id, i, { filename: a.filename, mimeType: a.mimeType, data: a.path }));
-          }
-        } catch { /* 普通文本恰好像 JSON，忽略 */ }
-      }
-      // 兼容中间格式：content 数组里直接混着 file part（data 是相对路径）
-      if (!attachments && Array.isArray(content)) {
-        const stored = content.filter((p: any) => p && p.type === 'file' && isDiskAttachPath(p.data));
-        if (stored.length > 0) {
-          attachments = stored.map((p: any, i: number) => toUserAttachment(m.id, i, {
-            filename: p.filename, mimeType: p.mimeType, data: p.data,
-          }));
-          content = content.filter((p: any) => p && p.type !== 'file');
-        }
-      }
+      // content 可能是纯文本、tool-call 数组，或带附件的 `{ v:1, ... }`
+      const stored = parseStoredContent(m.content, m.id);
       return {
         id: m.id,
         role: m.role as any,
-        content,
-        ...(attachments ? { attachments } : {}),
+        content: stored.content,
+        ...(stored.attachments ? { attachments: stored.attachments } : {}),
         think: m.think || undefined,
         usage: m.usage_json ? JSON.parse(m.usage_json) : undefined,
         ...(m.role === 'assistant' ? { status: { type: 'complete' as const, reason: 'stop' } } : {}),
@@ -843,7 +792,7 @@ function ChatApp() {
       }
     }
 
-    const savedAttachments: ReturnType<typeof toUserAttachment>[] = [];
+    const savedAttachments: UserAttachment[] = [];
     if (fileParts.length > 0) {
       try {
         const res = await (window.cukoAPI as any).saveAttachments(activeThreadId, userId, fileParts);
@@ -858,17 +807,7 @@ function ChatApp() {
     }
 
     // 有附件时 content 存 JSON（text + 附件相对路径），无附件保持纯文本以兼容历史消息
-    const persistedContent = savedAttachments.length > 0
-      ? JSON.stringify({
-          v: 1,
-          text,
-          attachments: savedAttachments.map((a) => ({
-            filename: a.name,
-            mimeType: a.contentType || '',
-            path: (a.content[0] as any).data,
-          })),
-        })
-      : text;
+    const persistedContent = serializeUserMessage(text, savedAttachments);
     const userMsg: Msg = {
       role: 'user',
       content: text.trim() ? text : [],

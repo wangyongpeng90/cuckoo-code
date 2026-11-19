@@ -73,6 +73,8 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
   内存里做 40 条 LRU 缓存；图片按 `mimeType` 判定（file part 会被映射成 `type:"document"`）。
 - 渲染：图片 = 96px 缩略图（点开看原图），其他文件 = 文件名卡片（Cuko 通过 `Thread` 的
   `UserAttachment` 插槽注入，不影响主界面）。
+- 落库格式的序列化 / 解析抽到 `src/ui/cuko/persisted-content.ts`（纯函数，无 React 依赖），
+  由 `test/cuko-attachment-content.test.js` 覆盖，含「普通文本长得像 JSON」的回归用例。
 
 ### UI 交互定制
 
