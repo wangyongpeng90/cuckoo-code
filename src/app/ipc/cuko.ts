@@ -408,8 +408,9 @@ export function registerCukoIpc(): void {
   ipcMain.handle('cuko:get-messages', (_event: any, sessionId: string) => {
     const db = getDb();
     if (!db) return [];
-    // 同毫秒插入的多条消息按 rowid 稳定排序（工具消息在后台运行时连续写入）
-    return db.prepare('SELECT * FROM cuko_messages WHERE session_id = ? ORDER BY created_at ASC, rowid ASC').all(sessionId);
+    // 系统提示词（role=system）排最前；同毫秒插入的多条消息按 rowid 稳定排序
+    return db.prepare(`SELECT * FROM cuko_messages WHERE session_id = ?
+      ORDER BY CASE WHEN role = 'system' THEN 0 ELSE 1 END, created_at ASC, rowid ASC`).all(sessionId);
   });
 
   ipcMain.handle('cuko:save-message', (_event: any, msg: any) => {

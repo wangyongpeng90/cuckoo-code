@@ -302,6 +302,32 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
   );
 };
 
+/** 系统消息（首轮注入的系统提示词）：折叠展示，避免大段 prompt 占满屏幕 */
+const SystemPromptMessage: FC = () => {
+  const text = useAuiState((s) => {
+    const content = s.message.content;
+    if (!Array.isArray(content)) return "";
+    return content
+      .filter((part: any) => part && part.type === "text")
+      .map((part: any) => String(part.text || ""))
+      .join("\n");
+  });
+
+  if (!text) return null;
+  return (
+    <div className="px-2 py-1">
+      <details className="bg-muted/20 border-border/60 rounded-lg border">
+        <summary className="text-muted-foreground cursor-pointer px-3 py-2 text-xs select-none">
+          系统提示词（{text.length} 字符）· 点击展开
+        </summary>
+        <pre className="border-border/50 max-h-[45vh] overflow-auto border-t px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-words">
+          {text}
+        </pre>
+      </details>
+    </div>
+  );
+};
+
 const ThreadMessage: FC = () => {
   const { AssistantMessage: AssistantMessageComponent = AssistantMessage } =
     useContext(ThreadComponentsContext);
@@ -311,6 +337,7 @@ const ThreadMessage: FC = () => {
 
   if (isEditing) return <EditComposer />;
   if (isSpoken) return <SpokenMessage />;
+  if (role === "system") return <SystemPromptMessage />;
   if (role === "user") return <UserMessage />;
   return <AssistantMessageComponent />;
 };

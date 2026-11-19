@@ -89,7 +89,12 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 ### 首轮系统提示词留档
 
 - 首次对话（无 `provider_session_id` 且绑定了工作区）时，主进程 `buildPrompt` 组装完整提示词，
-  按 `# ` 分段注入 `input`；同时把**完整提示词**写入 `cuko_sessions.system_prompt`。
+  按 `# ` 分段注入 `input`；同时把**完整提示词**写入两处：
+  - `cuko_sessions.system_prompt`（会话级字段，切模型压缩时复用）
+  - `cuko_messages` 里一条 `role='system'` 的消息（消息表本身可见；重复注入同样内容不重复插行）
+- `cuko:get-messages` 让 `role='system'` 排最前；聊天页把它渲染成折叠块
+  「系统提示词（N 字符）· 点击展开」，**不过滤**。
+- 切模型压缩历史时跳过 `role='system'`（提示词由主进程单独补发，避免重复）。
 - 会话菜单「系统提示词」可查看 / 复制留档；没有注入过的会话会说明原因。
 - 续接对话（已有 providerSessionId）不会重复注入，也不会覆盖已留档的内容；
   手动清空会话 ID 后下一轮会重新注入并覆盖留档。
@@ -190,7 +195,7 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - [x] **修改会话 ID**：会话右键菜单可编辑 `provider_session_id`，只改库值、下次请求生效；留空则下次请求重新注入系统提示词。
 - [x] **跟随主程序主题**：Cuko 窗口跟随主程序设置的 深色 / 浅色 / 跟随系统，主程序改主题时实时同步。
 - [x] **后台运行**：关掉 Cuko 窗口任务继续跑；多个会话可同时运行；窗口重开后恢复进行中的消息。
-- [x] **首轮系统提示词留档**：注入时写入 `cuko_sessions.system_prompt`，会话菜单可查看 / 复制。
+- [x] **首轮系统提示词留档**：注入时写入 `cuko_sessions.system_prompt` 与 `cuko_messages`（role=system），聊天页折叠展示。
 - [x] **切换模型**：有历史时确认后压缩历史（去 think、非写操作工具结果替换）以 `type:"compress"` 发给新模型，成功后才切换。
 - [x] **请求日志**：页面内可查看主进程发出的最近 100 次请求（DevTools Network 看不到）。
 - [x] `typecheck / test / lint / compile` 全绿。

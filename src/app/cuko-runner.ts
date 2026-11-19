@@ -229,7 +229,12 @@ function withSystemPrompt(input: CukoRunInputPart[], projectDir: string, provide
   }
 }
 
-/** 首轮注入的完整提示词留档，便于事后核对 / 手动恢复 */
+/**
+ * 首轮注入的完整提示词留档：
+ * - cuko_sessions.system_prompt：会话级字段，切模型压缩时要用
+ * - cuko_messages 里再插一条 role='system'，让消息表本身就能看到这次请求带了什么
+ *   （渲染层 switchThread 会过滤 role='system'，聊天界面不展示）
+ */
 function persistSystemPrompt(sessionId: string, prompt: string): void {
   const db = getDb();
   if (!db) return;
@@ -237,6 +242,16 @@ function persistSystemPrompt(sessionId: string, prompt: string): void {
     db.prepare('UPDATE cuko_sessions SET system_prompt = ? WHERE id = ?').run(prompt, sessionId);
   } catch (err: any) {
     console.error('[Cuko] 系统提示词落库失败:', err?.message || err);
+    return;
+  }
+  try {
+    // 同一段提示词重复注入（比如 provider 没返回 session id 又发了一轮）不重复插行
+    const last = db.prepare("SELECT content FROM cuko_messages WHERE session_id = ? AND role = 'system' ORDER BY rowid DESC LIMIT 1").get(sessionId) as any;
+    if (last && last.content === prompt) return;
+    db.prepare('INSERT INTO cuko_messages (id, session_id, role, content, think, usage_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(randomUUID(), sessionId, 'system', prompt, null, null, nowLocalIso());
+  } catch (err: any) {
+    console.error('[Cuko] 系统提示词写入消息表失败:', err?.message || err);
   }
 }
 

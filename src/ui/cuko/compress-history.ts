@@ -84,6 +84,8 @@ export function buildCompressHistory(messages: CompressHistoryMessage[]): Compre
   const out: CompressInputPart[] = [];
   for (const message of messages || []) {
     if (!message) continue;
+    // 系统提示词单独由主进程补发，这里跳过，避免重复
+    if (message.role === 'system') continue;
     const text = messageToCompressText(message);
     if (!text) continue;
     const role = message.role === 'user' ? '用户' : '助手';

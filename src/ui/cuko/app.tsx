@@ -619,7 +619,8 @@ function ChatApp() {
   const handleConfigUpdate = async (newConfig: Config) => {
     if (!newConfig || !newConfig.providerId || !newConfig.modelId) return;
     if (newConfig.providerId === config.providerId && newConfig.modelId === config.modelId) return;
-    if (messages.length > 0) {
+    // 系统提示词留档不算「对话」，只有真正的消息才触发压缩确认
+    if (messages.some((m) => m.role !== 'system')) {
       setPendingModelSwitch(newConfig);
       return;
     }
@@ -700,6 +701,10 @@ function ChatApp() {
       Promise.resolve(window.cukoAPI.getRuns?.()).catch(() => [] as any[]),
     ]);
     const loadedMsgs: Msg[] = dbMsgs.map(m => {
+      // role='system'：首轮注入的系统提示词留档，原样展示（聊天页有专门的折叠块）
+      if (m.role === 'system') {
+        return { id: m.id, role: 'system', content: m.content } as Msg;
+      }
       // content 可能是纯文本、tool-call 数组，或带附件的 `{ v:1, ... }`
       const stored = parseStoredContent(m.content, m.id);
       return {
@@ -1131,7 +1136,7 @@ function ChatApp() {
       {pendingModelSwitch && (
         <ModelSwitchDialog
           targetLabel={pendingSwitchTarget}
-          messageCount={messages.length}
+          messageCount={messages.filter((m) => m.role !== 'system').length}
           onCancel={() => setPendingModelSwitch(null)}
           onConfirm={confirmModelSwitch}
         />
