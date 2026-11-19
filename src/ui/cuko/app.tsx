@@ -44,7 +44,7 @@ import {
   ToolFallback,
 } from '@/components/assistant-ui/elements/tool-fallback.aui';
 import { CollapsibleTrigger } from '@/components/assistant-ui/elements/collapsible-root';
-import { ChevronDownIcon, CheckIcon, XCircleIcon, LoaderIcon, FileText } from 'lucide-react';
+import { ChevronDownIcon, CheckIcon, XCircleIcon, LoaderIcon, FileText, SettingsIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // ============ 类型定义 ============
@@ -1070,6 +1070,8 @@ function ChatApp() {
 
   // 只在进行中禁止切模型（有历史时会弹窗确认并压缩发送）
   const modelSwitchLocked = isRunning;
+  // 没有配置任何模型时，模型选择器位置改成「设置模型」入口
+  const hasAnyModel = providers.some((p) => Array.isArray(p.models) && p.models.length > 0);
   // 弹窗里展示的目标模型名
   const pendingSwitchTarget = pendingModelSwitch
     ? (() => {
@@ -1132,7 +1134,19 @@ function ChatApp() {
                   onSelect={handleSelectWorkspace}
                   onAdd={handleAddWorkspace}
                 />
-                <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={modelSwitchLocked} />
+                {hasAnyModel ? (
+                  <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={modelSwitchLocked} />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSettingsOpen(true)}
+                    title="先去设置里添加模型提供商"
+                    className="text-muted-foreground hover:bg-accent hover:text-foreground flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors"
+                  >
+                    <SettingsIcon className="size-3.5" />
+                    设置模型
+                  </button>
+                )}
               </div>
             )
           }} />
