@@ -31,6 +31,8 @@ export interface CukoRunInputPart {
 export interface StartRunParams {
   sessionId: string;
   input: CukoRunInputPart[];
+  /** 发起运行的 Cuko 窗口 id（部分工具需要窗口上下文；窗口关了就是失效 id） */
+  windowId?: number | null;
 }
 
 export interface CukoRunSnapshot {
@@ -56,6 +58,7 @@ interface CukoRun extends CukoRunSnapshot {
   apiKey: string;
   modelId: string;
   initialInput: CukoRunInputPart[];
+  windowId: number | null;
 }
 
 /** 当前正在运行的会话（sessionId → run） */
@@ -331,7 +334,7 @@ async function runLoop(run: CukoRun): Promise<void> {
 
         let r: { success: boolean; output?: string; error?: string };
         try {
-          r = await jsRunner.run(code, run.projectDir || null, null, {});
+          r = await jsRunner.run(code, run.projectDir || null, run.windowId, {});
         } catch (err: any) {
           r = { success: false, error: err?.message || '执行失败' };
         }
@@ -434,6 +437,7 @@ export function startCukoRun(params: StartRunParams): { success: boolean; runId?
     apiKey: provider.api_key || '',
     modelId: session.model_id,
     initialInput: firstInput,
+    windowId: typeof params.windowId === 'number' ? params.windowId : null,
   };
 
   runs.set(sessionId, run);

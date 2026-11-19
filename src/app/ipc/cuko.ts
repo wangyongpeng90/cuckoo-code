@@ -408,7 +408,15 @@ export function registerCukoIpc(): void {
   });
 
   // ====== 后台运行（运行循环在主进程，关窗后继续；每个会话可并行） ======
-  ipcMain.handle('cuko:start-run', (_event: any, params: any) => startCukoRun(params));
+  ipcMain.handle('cuko:start-run', (event: any, params: any) => {
+    // 把发起窗口的 id 传给运行器：nameConversation / runAgent 这类工具需要窗口上下文
+    let windowId: number | null = null;
+    try {
+      const win = require('electron').BrowserWindow.fromWebContents(event.sender);
+      windowId = win && !win.isDestroyed() ? win.id : null;
+    } catch { /* ignore */ }
+    return startCukoRun({ ...(params || {}), windowId });
+  });
   ipcMain.handle('cuko:cancel-run', (_event: any, sessionId: string) => cancelCukoRun(sessionId));
   ipcMain.handle('cuko:get-runs', () => listCukoRuns());
   ipcMain.handle('cuko:subscribe-runs', (event: any) => {
