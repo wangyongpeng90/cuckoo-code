@@ -166,7 +166,8 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
   const threadIds = useAuiState((s) => s.threads.threadIds);
   const archivedThreadIds = useAuiState((s) => s.threads.archivedThreadIds);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [collapsedArchived, setCollapsedArchived] = useState<Set<string>>(new Set());
+  // 已归档会话默认收起：这里记录「被手动展开」的组，不在集合里就是收起态
+  const [expandedArchived, setExpandedArchived] = useState<Set<string>>(new Set());
   const [archivedProjectsOpen, setArchivedProjectsOpen] = useState(false);
   const [renamingKey, setRenamingKey] = useState<string | null>(null);
 
@@ -236,7 +237,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
   };
 
   const toggleArchivedSessions = (key: string) => {
-    setCollapsedArchived((prev) => {
+    setExpandedArchived((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -311,7 +312,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
             )}
 
             {g.archivedItems.length > 0 && (() => {
-              const archivedOpen = !collapsedArchived.has(g.key);
+              const archivedOpen = expandedArchived.has(g.key);
               return (
                 <div className="flex flex-col">
                   <button
