@@ -61,6 +61,23 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - 执行完成后，将结果拼装成下一轮的 `input` 数组：`[0]` 为随机回复语（从回复语池抽取），`[1..n]` 为每个代码块的执行结果。
 - 不设轮数上限：只要 AI 继续输出 `cuckoo` 代码块就一直执行（原 10 轮上限已移除）。
 
+### 后台运行（关窗继续 + 多会话并行）
+
+- 运行循环从渲染进程搬到主进程 `src/app/cuko-runner.ts`：每个会话一个运行实例，
+  同时可以跑多个会话，关掉 Cuko 窗口也不会中断（消息直接由主进程落库）。
+- IPC：`cuko:start-run`（立即返回，循环在后台跑）、`cuko:cancel-run`、
+  `cuko:get-runs`（窗口重开时取快照恢复现场）、`cuko:subscribe-runs`（订阅事件）。
+- 事件 `cuko:run-event`：`run-start` / `delta` / `round-complete` /
+  `tool-start` / `tool-update` / `tool-complete` / `provider-session` /
+  `run-complete`。渲染层只负责把事件投影成消息，不再自己发请求。
+- 同一会话同时只允许一个运行，重复启动返回「该会话正在运行」；
+  删除会话会先 `cancel`，避免删完还在往库里写。
+- 窗口重开 / 切回正在跑的会话：`getRuns` 返回未落库的进行中消息
+  （流式 assistant 内容、工具卡片 parts），渲染层补进消息列表后继续吃增量。
+- 侧边栏对正在后台运行的会话显示转圈（`ThreadListItem` 的 `running` 插槽）。
+- SSE 解析 / 代码块提取 / 提示词分段抽到 `src/app/cuko-run-protocol.ts`，
+  由 `test/cuko-run-protocol.test.js` 覆盖。
+
 ### 跟随主程序主题
 
 - 主程序设置里的 深色 / 浅色 / 跟随系统 由主进程 `theme-manager` 权威维护，变化时广播 `theme-changed`。
@@ -130,6 +147,7 @@ Cuko API 是一套纯粹的增量交互协议：客户端只发送当前用户�
 - [x] 支持传入多模态文件（Base64 随 `input` 发送，原文件落盘用于历史回看）。
 - [x] **修改会话 ID**：会话右键菜单可编辑 `provider_session_id`，只改库值、下次请求生效；留空则下次请求重新注入系统提示词。
 - [x] **跟随主程序主题**：Cuko 窗口跟随主程序设置的 深色 / 浅色 / 跟随系统，主程序改主题时实时同步。
+- [x] **后台运行**：关掉 Cuko 窗口任务继续跑；多个会话可同时运行；窗口重开后恢复进行中的消息。
 - [x] `typecheck / test / lint / compile` 全绿。
 
 ## 遗留 / 后续

@@ -42,6 +42,15 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   saveMessage: (msg: any) => ipcRenderer.invoke('cuko:save-message', msg),
   saveAttachments: (sessionId: string, messageId: string, files: any[]) => ipcRenderer.invoke('cuko:save-attachments', sessionId, messageId, files),
   readAttachment: (relPath: string) => ipcRenderer.invoke('cuko:read-attachment', relPath),
+
+  // ====== 后台运行（主进程跑，窗口关掉也继续） ======
+  startRun: (params: any) => ipcRenderer.invoke('cuko:start-run', params),
+  cancelRun: (sessionId: string) => ipcRenderer.invoke('cuko:cancel-run', sessionId),
+  getRuns: () => ipcRenderer.invoke('cuko:get-runs'),
+  subscribeRuns: () => ipcRenderer.invoke('cuko:subscribe-runs'),
+  onRunEvent: (cb: (event: any) => void) => {
+    ipcRenderer.on('cuko:run-event', (_e: any, ev: any) => cb(ev));
+  },
 });
 
 const shellAPI = {

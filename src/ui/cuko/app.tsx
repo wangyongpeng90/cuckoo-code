@@ -94,6 +94,14 @@ declare global {
       pickResultPhrase: (n: number) => Promise<{ success: boolean; phrase?: string; error?: string }>;
       getMessages: (sessionId: string) => Promise<Array<{ id: string; role: string; content: string; think: string; usage_json: string }>>;
       saveMessage: (msg: any) => Promise<{ success: boolean }>;
+      saveAttachments: (sessionId: string, messageId: string, files: any[]) => Promise<{ success: boolean; attachments?: any[]; error?: string }>;
+      readAttachment: (relPath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
+      // 后台运行（主进程执行，窗口关掉也继续）
+      startRun: (params: { sessionId: string; input: any[] }) => Promise<{ success: boolean; runId?: string; error?: string }>;
+      cancelRun: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
+      getRuns: () => Promise<Array<any>>;
+      subscribeRuns: () => Promise<{ success: boolean; runs?: any[] }>;
+      onRunEvent: (cb: (event: any) => void) => void;
     };
   }
 }
@@ -172,74 +180,6 @@ const CukoAttachmentAdapter: AttachmentAdapter = {
 function extractText(content: AppendMessage['content']): string {
   const parts = Array.isArray(content) ? content : [];
   return parts.filter((p: any) => p && p.type === 'text' && typeof p.text === 'string').map((p: any) => p.text).join('\n');
-}
-
-/** 从代码块里提取所有被调用的工具名（去重） */
-function extractToolNames(code: string): string[] {
-  const names: string[] = [];
-  const seen = new Set<string>();
-  const re = /await\s+([a-zA-Z_$][\w$]*)\s*\(/g;
-  let m;
-  while ((m = re.exec(code)) !== null) {
-    const name = m[1];
-    if (!seen.has(name)) { seen.add(name); names.push(name); }
-  }
-  return names;
-}
-
-/** 从代码块里提取第一个字符串参数作为预览 */
-function extractFirstArg(code: string, toolName: string): string {
-  try {
-    const re = new RegExp(toolName + '\\s*\\(\\s*([\'"\`])([\\s\\S]*?)\\1');
-    const m = re.exec(code);
-    if (m && m[2]) {
-      const s = m[2];
-      return s.length > 60 ? s.slice(0, 60) + '…' : s;
-    }
-  } catch { /* ignore */ }
-  return '';
-}
-
-/** 从 AI 回复中提取 ```cuckoo 代码块 */
-function extractCuckooBlocks(text: string): string[] {
-  const blocks: string[] = [];
-  if (!text) return blocks;
-  const lines = text.split('\n');
-  let inBlock = false;
-  let lang = '';
-  let buf: string[] = [];
-  for (const line of lines) {
-    const t = line.trim();
-    if (t.startsWith('```')) {
-      if (!inBlock) {
-        inBlock = true;
-        lang = t.slice(3).trim().toLowerCase();
-        buf = [];
-      } else {
-        inBlock = false;
-        const code = buf.join('\n').trim();
-        if (code && lang === 'cuckoo') blocks.push(code);
-        buf = [];
-        lang = '';
-      }
-      continue;
-    }
-    if (inBlock) buf.push(line);
-  }
-  return blocks;
-}
-
-const ERROR_MESSAGES: Record<string, string> = {
-  authentication_required: '需要登录，请先在浏览器中打开并登录对应 AI 服务。',
-  provider_unavailable: 'Provider 不可用，请检查服务端和浏览器扩展是否正常运行。',
-  rate_limit_exceeded: '请求过于频繁，请稍后再试。',
-  invalid_request: '请求参数不合法。',
-  request_timeout: '请求超时，请重试。',
-  internal_error: 'Provider 内部错误，请稍后重试。',
-};
-function friendlyError(code: string, message: string): string {
-  const friendly = ERROR_MESSAGES[code];
-  return friendly ? friendly + (message ? '（' + message + '）' : '') : (message || code);
 }
 
 // ============ 模型选择器组件 ============
@@ -580,14 +520,14 @@ function ChatApp() {
     currentThreadIdRef.current = id;
     setCurrentThreadId(id);
   }, []);
-  const [providerSessionId, setProviderSessionId] = useState<string>('');
   // 修改会话 ID 弹窗（方案 A：只改库里的值，下次请求生效）
   const [sessionIdEditing, setSessionIdEditing] = useState<{ threadId: string; title: string; value: string } | null>(null);
   
   // 消息状态
   const [messages, setMessages] = useState<Msg[]>([]);
-  const [isRunning, setIsRunning] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  // 正在后台运行的会话（可能同时多个）；当前会话是否在跑由它派生
+  const [runningSessions, setRunningSessions] = useState<string[]>([]);
+  const isRunning = runningSessions.includes(currentThreadId);
 
   // 工作区状态
   // 工作区状态（持久化）
@@ -710,7 +650,10 @@ function ChatApp() {
   // 切换会话
   const switchThread = async (id: string) => {
     setThreadId(id);
-    const dbMsgs = await window.cukoAPI.getMessages(id);
+    const [dbMsgs, runs] = await Promise.all([
+      window.cukoAPI.getMessages(id),
+      Promise.resolve(window.cukoAPI.getRuns?.()).catch(() => [] as any[]),
+    ]);
     const loadedMsgs: Msg[] = dbMsgs.map(m => {
       // content 可能是纯文本、tool-call 数组，或带附件的 `{ v:1, ... }`
       const stored = parseStoredContent(m.content, m.id);
@@ -724,12 +667,35 @@ function ChatApp() {
         ...(m.role === 'assistant' ? { status: { type: 'complete' as const, reason: 'stop' } } : {}),
       };
     });
+    // 该会话正在后台跑：把尚未落库的进行中消息补进列表（窗口重开 / 切回来）
+    const run = (Array.isArray(runs) ? runs : []).find((r: any) => r && r.sessionId === id);
+    if (run) {
+      const has = (mid: string) => loadedMsgs.some((m) => m.id === mid);
+      if (run.phase === 'streaming' && run.assistantId && !has(run.assistantId)) {
+        loadedMsgs.push({
+          id: run.assistantId,
+          role: 'assistant',
+          content: run.content || '',
+          think: run.think || undefined,
+          usage: run.usage,
+          status: { type: 'running' },
+        } as Msg);
+      }
+      if (run.toolMessageId && Array.isArray(run.toolParts) && !has(run.toolMessageId)) {
+        loadedMsgs.push({
+          id: run.toolMessageId,
+          role: 'assistant',
+          content: run.toolParts,
+          status: { type: 'running' },
+        } as Msg);
+      }
+    }
     setMessages(loadedMsgs);
+    setRunningSessions((Array.isArray(runs) ? runs : []).map((r: any) => r.sessionId));
     
     // 读取该会话绑定的模型与所属工作区
     const session = threads.find(t => t.id === id) || (await window.cukoAPI.listSessions()).find(x => x.id === id);
     if (session) {
-      setProviderSessionId(session.provider_session_id || '');
       if (session.provider_id && session.model_id) {
         setConfig({ providerId: session.provider_id, modelId: session.model_id });
       }
@@ -757,7 +723,6 @@ function ChatApp() {
     }
     setThreadId(newId);
     setMessages([]);
-    setProviderSessionId('');
     await refreshThreads();
   };
 
@@ -793,12 +758,11 @@ function ChatApp() {
     if (!editing) return;
     const res = await window.cukoAPI.updateProviderId(editing.threadId, value);
     if (res && res.success === false) throw new Error('写入数据库失败');
-    if (currentThreadIdRef.current === editing.threadId) setProviderSessionId(value);
     setSessionIdEditing(null);
     await refreshThreads();
   };
 
-  // 发送消息
+  // 发送消息：落库用户消息 + 启动主进程后台运行；循环本身不在渲染进程
   const onNew = useCallback(async (append: AppendMessage) => {
     const text = extractText(append.content);
     const hasAttachments = Array.isArray((append as any).attachments) && (append as any).attachments.length > 0;
@@ -817,23 +781,8 @@ function ChatApp() {
       }
     }
 
-    const provider = providers.find(p => p.id === config.providerId);
-    if (!provider || !config.modelId) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'user', content: text, id: crypto.randomUUID() },
-        { role: 'assistant', content: '⚠️ 尚未选择模型，请先配置。', id: crypto.randomUUID() },
-      ]);
-      return;
-    }
-
-    const activeUrl = provider.baseUrl;
-    const activeToken = provider.apiKey || '';
-    const activeModel = config.modelId;
-
     const userId = crypto.randomUUID();
-    // 附件先落盘：<userData>/cuko-attachments/<会话id>/<消息id>/<序号>.<ext>
-    // 消息里只记相对路径，图片由 useAttachmentSrc 异步读盘渲染缩略图
+    // 附件先落盘（消息展示用）；同一份 base64 也作为 Provider 请求内容
     const fileParts: Array<{ filename: string; mimeType: string; data: string }> = [];
     const appendAtts = (append as any).attachments;
     if (Array.isArray(appendAtts)) {
@@ -858,7 +807,7 @@ function ChatApp() {
     const savedAttachments: UserAttachment[] = [];
     if (fileParts.length > 0) {
       try {
-        const res = await (window.cukoAPI as any).saveAttachments(activeThreadId, userId, fileParts);
+        const res = await window.cukoAPI.saveAttachments(activeThreadId, userId, fileParts);
         if (res?.success && Array.isArray(res.attachments)) {
           res.attachments.forEach((a: any, i: number) => {
             savedAttachments.push(toUserAttachment(userId, i, { filename: a.filename, mimeType: a.mimeType, data: a.path }));
@@ -878,7 +827,7 @@ function ChatApp() {
       ...(savedAttachments.length > 0 ? { attachments: savedAttachments } : {}),
     };
     setMessages((prev) => [...prev, userMsg]);
-    setIsRunning(true);
+    setRunningSessions((prev) => (prev.includes(activeThreadId) ? prev : [...prev, activeThreadId]));
     window.cukoAPI.saveMessage({ id: userId, sessionId: activeThreadId, role: 'user', content: persistedContent });
 
     // 如果当前标题是 New Chat，顺便改个名
@@ -890,303 +839,127 @@ function ChatApp() {
       refreshThreads();
     }
 
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    let currentProviderSessionId = providerSessionId;
-
-    // 构建首轮 input（系统提示词分段 + 用户消息 + 附件）
-    const inputParts: Array<any> = [];
-    if (!currentProviderSessionId && activeWorkspace?.path) {
-      try {
-        const sysRes = await (window.cukoAPI as any).buildSystemPrompt(activeWorkspace.path);
-        if (sysRes && sysRes.success && Array.isArray(sysRes.segments)) {
-          for (const seg of sysRes.segments) {
-            if (seg && seg.trim()) inputParts.push({ type: 'text', text: seg });
-          }
-        }
-      } catch (e) {
-        console.error('组装系统提示词失败', e);
-      }
-    }
+    // Provider 请求内容：系统提示词由主进程按需注入，这里只给文本 + 附件
+    const inputParts: any[] = [];
     if (text.trim()) inputParts.push({ type: 'text', text });
-
-    // 附件：assistant-ui 把已发送附件放在 append.attachments（CompleteAttachment[]），
-    // 每个附件自带 content（file/image part 数组），转成 Provider 协议
-    // { type: "file", filename, mimeType, data }
-    const rawParts: any[] = [];
-    const appendAttachments = (append as any).attachments;
-    if (Array.isArray(appendAttachments)) {
-      for (const att of appendAttachments) {
-        if (att && Array.isArray(att.content)) rawParts.push(...att.content);
-      }
+    for (const p of fileParts) {
+      inputParts.push({ type: 'file', filename: p.filename, mimeType: p.mimeType, data: p.data });
     }
-    for (const p of rawParts) {
-      if (!p) continue;
-      if (p.type === 'file' && typeof p.data === 'string') {
-        inputParts.push({
-          type: 'file',
-          filename: p.filename || 'attachment',
-          mimeType: p.mimeType || 'application/octet-stream',
-          data: p.data,
-        });
-      } else if (p.type === 'image' && typeof p.image === 'string') {
-        // image part 的 image 字段是 data URL，拆出 base64 与 mime
-        const m = /^data:([^;]+);base64,(.*)$/.exec(p.image);
-        inputParts.push({
-          type: 'file',
-          filename: p.filename || 'image',
-          mimeType: m ? m[1] : 'image/png',
-          data: m ? m[2] : p.image,
-        });
-      }
-    }
-
-    let currentInput = inputParts;
 
     try {
-      // 无上限轮数：只要 AI 继续输出 cuckoo 代码块就持续执行工具
-      for (;;) {
-        // 每轮创建独立 assistant 消息
-        const assistantId = crypto.randomUUID();
-        const assistantMsg: Msg = { role: 'assistant', content: '', id: assistantId, status: { type: 'running' } };
-        setMessages((prev) => [...prev, assistantMsg]);
-
-        const patchAssistant = (patch: Partial<Msg>) => {
-          setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)));
-        };
-
-        const requestId = crypto.randomUUID();
-        const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
-        if (activeToken) headers.Authorization = 'Bearer ' + activeToken;
-
-        const body: Record<string, any> = {
-          cuckSessionId: activeThreadId,
-          requestId,
-          model: activeModel,
-          input: currentInput,
-        };
-        if (currentProviderSessionId) body.providerSessionId = currentProviderSessionId;
-
-        let roundContent = '';
-        let roundThink = '';
-        let roundUsage: Usage | undefined;
-        let sawDone = false;
-
-        try {
-          const response = await fetch(activeUrl.replace(/\/+$/, '') + '/v1/responses', {
-            method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
-          });
-
-          if (!response.ok || !response.body) {
-            let errText = 'HTTP ' + response.status;
-            try { const t = await response.text(); if (t) errText += ': ' + t; } catch {}
-            throw new Error(errText);
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
-
-          const handleEvent = (eventName: string, data: string) => {
-            if (sawDone) return;
-            if (eventName === 'message') {
-              try {
-                const payload = JSON.parse(data);
-                if (payload.providerSessionId && payload.providerSessionId !== currentProviderSessionId) {
-                  currentProviderSessionId = payload.providerSessionId;
-                  setProviderSessionId(payload.providerSessionId);
-                  window.cukoAPI.updateProviderId(activeThreadId, payload.providerSessionId);
-                }
-                let delta = '';
-                if (Array.isArray(payload.output)) {
-                  delta = payload.output.map((x: any) => typeof x === 'string' ? x : (x?.text || '')).join('');
-                } else if (typeof payload.output === 'string') {
-                  delta = payload.output;
-                }
-                const thinkDelta = typeof payload.think === 'string' ? payload.think : '';
-                if (delta) roundContent += delta;
-                if (thinkDelta) roundThink += thinkDelta;
-                if (delta || thinkDelta) {
-                  setMessages((prev) => prev.map((m) => {
-                    if (m.id !== assistantId) return m;
-                    return {
-                      ...m,
-                      content: (m.content as string) + delta,
-                      think: thinkDelta ? (m.think || '') + thinkDelta : m.think,
-                    };
-                  }));
-                }
-              } catch { /* ignore */ }
-            } else if (eventName === 'done') {
-              sawDone = true;
-              try {
-                const payload = JSON.parse(data);
-                roundUsage = payload.usage;
-                // done 帧里也可能携带 providerSessionId（首帧没给时的兜底）
-                if (payload.providerSessionId && payload.providerSessionId !== currentProviderSessionId) {
-                  currentProviderSessionId = payload.providerSessionId;
-                  setProviderSessionId(payload.providerSessionId);
-                  window.cukoAPI.updateProviderId(activeThreadId, payload.providerSessionId);
-                }
-                patchAssistant({ usage: roundUsage, status: { type: 'complete', reason: 'stop' } });
-              } catch {
-                patchAssistant({ status: { type: 'complete', reason: 'stop' } });
-              }
-            } else if (eventName === 'error') {
-              sawDone = true;
-              try {
-                const payload = JSON.parse(data);
-                const msg = friendlyError(payload.code || 'internal_error', payload.message || '');
-                roundContent += '\n\n⚠️ ' + msg;
-                patchAssistant({ content: roundContent, status: { type: 'incomplete', reason: 'error' } });
-              } catch {
-                roundContent += '\n\n⚠️ ' + data;
-                patchAssistant({ content: roundContent, status: { type: 'incomplete', reason: 'error' } });
-              }
-            }
-          };
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            let idx;
-            while ((idx = buffer.indexOf('\n\n')) >= 0) {
-              const raw = buffer.slice(0, idx);
-              buffer = buffer.slice(idx + 2);
-              let eventName = 'message';
-              const dataLines: string[] = [];
-              for (const line of raw.split('\n')) {
-                if (line.startsWith('event:')) eventName = line.slice(6).trim();
-                else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
-              }
-              if (dataLines.length) handleEvent(eventName, dataLines.join('\n'));
-            }
-          }
-
-          if (!sawDone) patchAssistant({ status: { type: 'complete', reason: 'stop' } });
-        } catch (err: any) {
-          if (err?.name === 'AbortError') {
-            roundContent += '\n\n（已停止）';
-            patchAssistant({ content: roundContent, status: { type: 'incomplete', reason: 'cancelled' } });
-          } else {
-            roundContent += '\n\n⚠️ ' + (err?.message || '请求失败');
-            patchAssistant({ content: roundContent, status: { type: 'incomplete', reason: 'error' } });
-          }
-        }
-
-        // 落库本轮 assistant 消息
-        window.cukoAPI.saveMessage({
-          id: assistantId,
-          sessionId: activeThreadId,
-          role: 'assistant',
-          content: roundContent,
-          think: roundThink,
-          usage: roundUsage,
-        });
-
-        // 只有正常收到 done 帧才检测并执行工具；中断/出错不执行
-        if (!sawDone) break;
-
-        // 检测 cuckoo 代码块
-        const blocks = extractCuckooBlocks(roundContent);
-        if (blocks.length === 0) break;
-
-        console.log('[Cuko] 检测到 ' + blocks.length + ' 个 cuckoo 代码块，开始执行');
-
-        // 所有代码块合并到同一条消息中
-        const results: Array<{ success: boolean; output?: string; error?: string }> = [];
-        const toolMsgId = crypto.randomUUID();
-        let combinedParts: any[] = [];
-
-        setMessages((prev) => [...prev, {
-          role: 'assistant',
-          id: toolMsgId,
-          content: [],
-          status: { type: 'running' as const, reason: 'stop' as const },
-        }]);
-
-        for (const code of blocks) {
-          const toolCallId = crypto.randomUUID();
-          const toolNames = extractToolNames(code);
-          const toolName = toolNames.length === 0 ? 'cuckoo' : toolNames.join(' + ');
-
-          // 先加个占位
-          const currentPart = {
-            type: 'tool-call' as const,
-            toolCallId,
-            toolName,
-            args: {},
-            argsText: code,
-            result: undefined,
-          };
-          combinedParts.push(currentPart);
-
-          setMessages((prev) => prev.map((m) => {
-            if (m.id !== toolMsgId) return m;
-            return { ...m, content: [...combinedParts] };
-          }));
-
-          let r: { success: boolean; output?: string; error?: string };
-          try {
-            r = await (window.cukoAPI as any).executeJs(code, activeWorkspace?.path || '');
-          } catch (e: any) {
-            r = { success: false, error: e.message || '执行失败' };
-          }
-          results.push(r);
-
-          // 更新该 part 的结果
-          combinedParts = combinedParts.map(p => p.toolCallId === toolCallId ? {
-            ...p,
-            result: r.success ? (r.output || '') : (r.error || ''),
-            isError: !r.success,
-          } : p);
-
-          setMessages((prev) => prev.map((m) => {
-            if (m.id !== toolMsgId) return m;
-            return { ...m, content: [...combinedParts] };
-          }));
-        }
-
-        // 最终落库
-        window.cukoAPI.saveMessage({
-          id: toolMsgId,
-          sessionId: activeThreadId,
-          role: 'assistant',
-          content: JSON.stringify(combinedParts),
-        });
-
-        // 更新状态为完成
-        setMessages((prev) => prev.map((m) => {
-          if (m.id !== toolMsgId) return m;
-          return { ...m, status: { type: 'complete' as const, reason: 'stop' as const } };
-        }));
-
-        // 拼下一轮 input：第一元素是回复语，后续每元素一个脚本结果
-        let phrase = `执行了 ${results.length} 个脚本`;
-        try {
-          const phraseRes = await (window.cukoAPI as any).pickResultPhrase(results.length);
-          if (phraseRes && phraseRes.success && phraseRes.phrase) phrase = phraseRes.phrase;
-        } catch { /* ignore */ }
-
-        currentInput = [
-          { type: 'text' as const, text: phrase },
-          ...results.map((r) => ({
-            type: 'text' as const,
-            text: r.success ? (r.output || '(脚本执行完成，无输出)') : '错误原因: ' + (r.error || '未知错误'),
-          })),
-        ];
+      const res = await window.cukoAPI.startRun({ sessionId: activeThreadId, input: inputParts });
+      if (!res?.success) {
+        setRunningSessions((prev) => prev.filter((id) => id !== activeThreadId));
+        setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ ' + (res?.error || '启动失败'), id: crypto.randomUUID() }]);
       }
-    } finally {
-      setIsRunning(false);
-      abortRef.current = null;
-      refreshThreads();
+    } catch (e: any) {
+      setRunningSessions((prev) => prev.filter((id) => id !== activeThreadId));
+      setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ ' + (e?.message || '启动失败'), id: crypto.randomUUID() }]);
     }
-  }, [config, currentThreadId, providerSessionId, threads, providers, activeWorkspace]);
+  }, [config, currentThreadId, threads, activeWorkspace]);
+
+  // 订阅主进程的运行事件：窗口重开 / 切回会话时继续追增量
+  useEffect(() => {
+    const api = window.cukoAPI as any;
+    if (!api?.onRunEvent) return;
+
+    const isCurrent = (sid: string) => currentThreadIdRef.current === sid;
+    const statusOf = (status: string) =>
+      status === 'cancelled'
+        ? ({ type: 'incomplete', reason: 'cancelled' } as const)
+        : status === 'error'
+          ? ({ type: 'incomplete', reason: 'error' } as const)
+          : ({ type: 'complete', reason: 'stop' } as const);
+
+    api.onRunEvent((ev: any) => {
+      if (!ev || !ev.sessionId) return;
+      const sid: string = ev.sessionId;
+
+      switch (ev.type) {
+        case 'run-start': {
+          setRunningSessions((prev) => (prev.includes(sid) ? prev : [...prev, sid]));
+          if (!isCurrent(sid)) break;
+          setMessages((prev) => (prev.some((m) => m.id === ev.assistantId)
+            ? prev
+            : [...prev, { role: 'assistant', content: '', id: ev.assistantId, status: { type: 'running' } } as Msg]));
+          break;
+        }
+        case 'delta': {
+          if (!isCurrent(sid)) break;
+          setMessages((prev) => {
+            if (!prev.some((m) => m.id === ev.assistantId)) {
+              return [...prev, { role: 'assistant', content: ev.delta || '', id: ev.assistantId, status: { type: 'running' } } as Msg];
+            }
+            return prev.map((m) => {
+              if (m.id !== ev.assistantId) return m;
+              return {
+                ...m,
+                content: (m.content as string) + (ev.delta || ''),
+                think: ev.thinkDelta ? ((m.think || '') + ev.thinkDelta) : m.think,
+              };
+            });
+          });
+          break;
+        }
+        case 'round-complete': {
+          if (!isCurrent(sid)) break;
+          setMessages((prev) => prev.map((m) => (m.id === ev.assistantId
+            ? {
+                ...m,
+                content: typeof ev.content === 'string' ? ev.content : m.content,
+                think: ev.think || undefined,
+                usage: ev.usage || m.usage,
+                status: statusOf(ev.status),
+              }
+            : m)));
+          break;
+        }
+        case 'tool-start': {
+          if (!isCurrent(sid)) break;
+          setMessages((prev) => (prev.some((m) => m.id === ev.toolMessageId)
+            ? prev
+            : [...prev, { role: 'assistant', id: ev.toolMessageId, content: ev.parts || [], status: { type: 'running' } } as Msg]));
+          break;
+        }
+        case 'tool-update':
+        case 'tool-complete': {
+          if (!isCurrent(sid)) break;
+          setMessages((prev) => prev.map((m) => (m.id === ev.toolMessageId
+            ? {
+                ...m,
+                content: ev.parts || [],
+                ...(ev.type === 'tool-complete' ? { status: statusOf('complete') } : {}),
+              }
+            : m)));
+          break;
+        }
+        case 'run-complete': {
+          setRunningSessions((prev) => prev.filter((id) => id !== sid));
+          if (ev.status === 'error' && ev.error && isCurrent(sid)) {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === 'assistant' && typeof last.content === 'string' && last.content.includes(ev.error)) return prev;
+              return [...prev, { role: 'assistant', content: '⚠️ ' + ev.error, id: crypto.randomUUID() } as Msg];
+            });
+          }
+          refreshThreads();
+          break;
+        }
+        default:
+          break;
+      }
+    });
+
+    // 首次挂载：订阅并把在跑的快照同步到 runningSessions（窗口刚打开时）
+    Promise.resolve(api.subscribeRuns?.())
+      .then((r: any) => {
+        if (r && Array.isArray(r.runs)) setRunningSessions(r.runs.map((x: any) => x.sessionId));
+      })
+      .catch(() => {});
+  }, []);
 
   const onCancel = useCallback(async () => {
-    abortRef.current?.abort();
+    await window.cukoAPI.cancelRun(currentThreadIdRef.current);
   }, []);
 
   // 组装 ThreadList Adapter
@@ -1244,6 +1017,7 @@ function ChatApp() {
               onNewThreadInWorkspace={switchNewThread}
               onArchiveWorkspace={handleArchiveWorkspace}
               onEditSessionId={openSessionIdDialog}
+              runningSessionIds={runningSessions}
             />
           </div>
           <div className="border-t p-2">

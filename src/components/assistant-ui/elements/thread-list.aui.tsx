@@ -315,8 +315,10 @@ const ThreadListSkeleton: FC = () => {
 export const ThreadListItem: FC<{
   /** 传入时才显示「会话 ID」菜单项（Cuko 窗口用，主界面不传） */
   onEditSessionId?: (() => void) | undefined;
-}> = ({ onEditSessionId }) => {
-  const isRunning = useAuiState((s) => s.threadListItem.isRunning);
+  /** Cuko 的后台任务在别的会话里跑时，也能显示转圈 */
+  running?: boolean | undefined;
+}> = ({ onEditSessionId, running }) => {
+  const isRunning = useAuiState((s) => s.threadListItem.isRunning) || !!running;
   const [isRenaming, setIsRenaming] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const restoreFocusRef = useRef(false);

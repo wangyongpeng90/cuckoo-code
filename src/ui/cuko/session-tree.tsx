@@ -40,6 +40,8 @@ interface SessionTreeProps {
   onNewThreadInWorkspace?: (path: string) => Promise<void> | void;
   onArchiveWorkspace?: (path: string, archived: boolean) => Promise<void> | void;
   onEditSessionId?: (threadId: string) => Promise<void> | void;
+  /** 正在后台运行的会话 id（侧边栏显示转圈） */
+  runningSessionIds?: string[];
 }
 
 const UNASSIGNED = '__unassigned__';
@@ -161,6 +163,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
   onNewThreadInWorkspace,
   onArchiveWorkspace,
   onEditSessionId,
+  runningSessionIds,
 }) => {
   // threadIds 与 adapter.threads 顺序一致，索引即 ByIndexProvider 需要的 index
   const threadIds = useAuiState((s) => s.threads.threadIds);
@@ -306,6 +309,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
                 <ThreadListItemByIndexProvider key={it.id} index={it.index} archived={false}>
                   <ThreadListItem
                     onEditSessionId={onEditSessionId ? () => onEditSessionId(it.id) : undefined}
+                    running={runningSessionIds?.includes(it.id)}
                   />
                 </ThreadListItemByIndexProvider>
               ))
@@ -331,6 +335,7 @@ export const SessionTree: React.FC<SessionTreeProps> = ({
                         <ThreadListItemByIndexProvider key={it.id} index={it.index} archived={true}>
                           <ThreadListItem
                             onEditSessionId={onEditSessionId ? () => onEditSessionId(it.id) : undefined}
+                            running={runningSessionIds?.includes(it.id)}
                           />
                         </ThreadListItemByIndexProvider>
                       ))}

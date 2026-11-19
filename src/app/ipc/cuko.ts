@@ -12,6 +12,14 @@ import { createRequire } from 'node:module';
 import { buildPrompt } from '../../session/prompt-builder.js';
 import { jsRunner } from '../../tools/index.js';
 import { pickJsResultPhrase } from '../../overlay/js-result-phrases.js';
+import { splitPromptByH1 } from '../cuko-run-protocol.js';
+import {
+  startCukoRun,
+  cancelCukoRun,
+  cancelAllCukoRuns,
+  listCukoRuns,
+  subscribeCukoRuns,
+} from '../cuko-runner.js';
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
 
@@ -19,25 +27,6 @@ function getDb() {
   return (global as any).__globalDb;
 }
 
-/** 按 Markdown 一级标题（行首 "# "）把完整提示词切分成段 */
-function splitPromptByH1(prompt: string): string[] {
-  if (!prompt) return [];
-  const lines = prompt.split('\n');
-  const segments: string[] = [];
-  let current: string[] = [];
-  for (const line of lines) {
-    if (/^# /.test(line)) {
-      const text = current.join('\n').trim();
-      if (text) segments.push(text);
-      current = [line];
-    } else {
-      current.push(line);
-    }
-  }
-  const tail = current.join('\n').trim();
-  if (tail) segments.push(tail);
-  return segments;
-}
 
 export function registerCukoIpc(): void {
   // ====== 杂项配置（保留） ======
@@ -281,6 +270,8 @@ export function registerCukoIpc(): void {
   ipcMain.handle('cuko:delete-session', (_event: any, sessionId: string) => {
     const db = getDb();
     if (!db) return { success: false };
+    // 正在后台跑的会话先停掉，避免删完还在往库里写
+    cancelCukoRun(sessionId);
     db.prepare('DELETE FROM cuko_sessions WHERE id = ?').run(sessionId);
     return { success: true };
   });
@@ -401,7 +392,8 @@ export function registerCukoIpc(): void {
   ipcMain.handle('cuko:get-messages', (_event: any, sessionId: string) => {
     const db = getDb();
     if (!db) return [];
-    return db.prepare('SELECT * FROM cuko_messages WHERE session_id = ? ORDER BY created_at ASC').all(sessionId);
+    // 同毫秒插入的多条消息按 rowid 稳定排序（工具消息在后台运行时连续写入）
+    return db.prepare('SELECT * FROM cuko_messages WHERE session_id = ? ORDER BY created_at ASC, rowid ASC').all(sessionId);
   });
 
   ipcMain.handle('cuko:save-message', (_event: any, msg: any) => {
@@ -414,4 +406,19 @@ export function registerCukoIpc(): void {
     db.prepare('UPDATE cuko_sessions SET updated_at = ? WHERE id = ?').run(now, msg.sessionId);
     return { success: true };
   });
+
+  // ====== 后台运行（运行循环在主进程，关窗后继续；每个会话可并行） ======
+  ipcMain.handle('cuko:start-run', (_event: any, params: any) => startCukoRun(params));
+  ipcMain.handle('cuko:cancel-run', (_event: any, sessionId: string) => cancelCukoRun(sessionId));
+  ipcMain.handle('cuko:get-runs', () => listCukoRuns());
+  ipcMain.handle('cuko:subscribe-runs', (event: any) => {
+    try {
+      if (event && event.sender) subscribeCukoRuns(event.sender);
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'subscribe failed', runs: listCukoRuns() };
+    }
+    return { success: true, runs: listCukoRuns() };
+  });
+  // 退出主进程前把仍在跑的请求 abort 掉，避免半截消息
+  try { require('electron').app.once('before-quit', () => cancelAllCukoRuns()); } catch { /* ignore */ }
 }
