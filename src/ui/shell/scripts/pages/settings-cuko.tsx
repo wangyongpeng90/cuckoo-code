@@ -16,14 +16,6 @@ export function CukoSettings() {
   const [marketItems, setMarketItems] = useState<any[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
 
-  // 系统提示词编辑（只针对 cuko 这一个虚拟平台，不需要选 provider）
-  const [showPrompt, setShowPrompt] = useState(false);
-  const [promptText, setPromptText] = useState('');
-  const [promptBuiltin, setPromptBuiltin] = useState('');
-  const [promptDirty, setPromptDirty] = useState(false);
-  const [promptSaving, setPromptSaving] = useState(false);
-  const [promptTip, setPromptTip] = useState('');
-
   // 当前正在编辑的表单数据
   const [editProvider, setEditProvider] = useState<any>({
     id: '', name: '', baseUrl: 'http://127.0.0.1:3000', apiKey: '', protocol: 'cuko', models: []
@@ -46,63 +38,6 @@ export function CukoSettings() {
       }
     } catch (e: any) { showTip('搜索失败: ' + e.message); }
     setMarketLoading(false);
-  };
-
-  // ===== 系统提示词（固定 providerId = 'cuko'）=====
-  const PROMPT_KEY = 'cuckoo-system-prompt-template:cuko';
-
-  const showPromptTip = (msg: string) => {
-    setPromptTip(msg);
-    setTimeout(() => setPromptTip(''), 1800);
-  };
-
-  const loadPrompt = async () => {
-    const anyApi = api as any;
-    if (typeof anyApi.getPromptTemplate !== 'function') return;
-    try {
-      const r = await anyApi.getPromptTemplate('cuko');
-      if (r && r.success) {
-        setPromptBuiltin(r.builtin || '');
-        // 有自定义就用自定义，否则展示内置模板供参考
-        setPromptText(r.custom || r.builtin || '');
-        setPromptDirty(false);
-      }
-    } catch (_) { /* ignore */ }
-  };
-
-  const openPrompt = () => {
-    setShowPrompt(true);
-    setPromptTip('');
-    loadPrompt();
-  };
-
-  const savePrompt = async () => {
-    const anyApi = api as any;
-    if (typeof anyApi.saveSharedSettings !== 'function') return;
-    setPromptSaving(true);
-    try {
-      const r = await anyApi.saveSharedSettings({ [PROMPT_KEY]: promptText });
-      if (r && r.success) {
-        setPromptDirty(false);
-        showPromptTip('已保存');
-      } else {
-        showPromptTip('保存失败');
-      }
-    } catch (_) { showPromptTip('保存失败'); }
-    setPromptSaving(false);
-  };
-
-  const resetPrompt = async () => {
-    const anyApi = api as any;
-    if (typeof anyApi.resetSharedSettings !== 'function') return;
-    try {
-      const r = await anyApi.resetSharedSettings([PROMPT_KEY]);
-      if (r && r.success) {
-        setPromptText(promptBuiltin);
-        setPromptDirty(false);
-        showPromptTip('已恢复内置');
-      }
-    } catch (_) { /* ignore */ }
   };
 
   const loadProviders = async () => {
@@ -181,33 +116,6 @@ export function CukoSettings() {
     padding: '16px 20px', background: 'var(--ck-bg-2)', border: '1px solid var(--ck-border)',
     borderRadius: '12px', marginBottom: '16px'
   };
-
-  // ===== 系统提示词视图（固定 cuko，无需选 provider）=====
-  if (showPrompt) {
-    return createElement('div', { style: { maxWidth: '640px' } },
-      createElement('div', { style: { display: 'flex', alignItems: 'center', marginBottom: '16px' } },
-        createElement('button', { className: 'ck-btn ck-btn-ghost', onClick: () => setShowPrompt(false) }, '< 返回'),
-        createElement('div', { style: { marginLeft: '16px', fontSize: '16px', fontWeight: 500 } }, 'Cuko API 系统提示词')
-      ),
-      createElement('div', { className: 'ck-set-row-col' },
-        createElement('div', { className: 'ck-set-row-label' }, '系统提示词模板'),
-        createElement('div', { className: 'ck-set-row-desc' },
-          'Cuko API 首次对话时发给 AI 的系统提示词。占位符（如 {{PLATFORM_INFO}}、{{TOOL_API_TYPES}}、{{MCP_SECTION}}、{{PROJECT_DIR}}）在发送时自动替换，请勿删除。留空或点「恢复内置」使用 src/prompt/cuko.md。'),
-        createElement('textarea', {
-          className: 'ck-set-textarea',
-          style: { minHeight: '360px', fontFamily: 'monospace', fontSize: '12.5px', lineHeight: 1.5 },
-          value: promptText,
-          onChange: (e: any) => { setPromptText(e.target.value); setPromptDirty(true); },
-        }),
-        createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end', alignItems: 'center' } },
-          promptTip ? createElement('span', { style: { color: 'var(--ck-text-dim)', fontSize: '12px', marginRight: '8px' } }, promptTip) : null,
-          createElement('button', { className: 'ck-btn', onClick: () => { setPromptText(promptBuiltin); setPromptDirty(true); } }, '填入内置模板'),
-          createElement('button', { className: 'ck-btn ck-btn-danger', onClick: resetPrompt }, '恢复内置'),
-          createElement('button', { className: 'ck-btn ck-btn-primary', disabled: !promptDirty || promptSaving, onClick: savePrompt }, promptSaving ? '保存中…' : '保存'),
-        )
-      )
-    );
-  }
 
   // ===== 市场视图 =====
   // 这里只做「展示 + 跳转」：市场不替用户落任何配置，
@@ -296,14 +204,6 @@ export function CukoSettings() {
           border: '1px solid var(--ck-border)', background: 'var(--ck-bg-2)',
           color: 'var(--ck-text)', fontSize: '13px', cursor: 'pointer'
         },
-        onClick: openPrompt
-      }, '系统提示词'),
-      createElement('button', {
-        style: {
-          width: '100%', height: '40px', marginTop: '8px', borderRadius: '10px',
-          border: '1px solid var(--ck-border)', background: 'var(--ck-bg-2)',
-          color: 'var(--ck-text)', fontSize: '13px', cursor: 'pointer'
-        },
         onClick: () => setShowGuide(true)
       }, '如何接入 Cuko API'),
       showGuide ? createElement(CukoIntegrationDialog, { onClose: () => setShowGuide(false) }) : null
@@ -368,6 +268,83 @@ export function CukoSettings() {
       createElement('div', { style: { display: 'flex', justifyContent: 'flex-end', gap: '12px' } },
         createElement('button', { className: 'ck-btn ck-btn-ghost', onClick: () => setCukoEditing(false) }, '取消'),
         createElement('button', { className: 'ck-btn ck-btn-primary', style: { background: 'var(--ck-text)', color: 'var(--ck-bg)' }, onClick: saveProvider }, '保存配置')
+      )
+    )
+  );
+}
+
+// ===== Cuko API 系统提示词（左侧导航独立页签，固定 providerId = 'cuko'）=====
+const CUKO_PROMPT_KEY = 'cuckoo-system-prompt-template:cuko';
+
+export function CukoPromptSettings() {
+  const [text, setText] = useState('');
+  const [builtin, setBuiltin] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [tip, setTip] = useState('');
+
+  const showTip = (msg: string) => {
+    setTip(msg);
+    setTimeout(() => setTip(''), 1800);
+  };
+
+  const load = async () => {
+    const anyApi = api as any;
+    if (typeof anyApi.getPromptTemplate !== 'function') return;
+    try {
+      const r = await anyApi.getPromptTemplate('cuko');
+      if (r && r.success) {
+        setBuiltin(r.builtin || '');
+        // 有自定义就用自定义，否则展示内置模板供参考
+        setText(r.custom || r.builtin || '');
+        setDirty(false);
+      }
+    } catch (_) { /* ignore */ }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    const anyApi = api as any;
+    if (typeof anyApi.saveSharedSettings !== 'function') return;
+    setSaving(true);
+    try {
+      const r = await anyApi.saveSharedSettings({ [CUKO_PROMPT_KEY]: text });
+      if (r && r.success) { setDirty(false); showTip('已保存'); }
+      else showTip('保存失败');
+    } catch (_) { showTip('保存失败'); }
+    setSaving(false);
+  };
+
+  const reset = async () => {
+    const anyApi = api as any;
+    if (typeof anyApi.resetSharedSettings !== 'function') return;
+    try {
+      const r = await anyApi.resetSharedSettings([CUKO_PROMPT_KEY]);
+      if (r && r.success) {
+        setText(builtin);
+        setDirty(false);
+        showTip('已恢复内置');
+      }
+    } catch (_) { /* ignore */ }
+  };
+
+  return createElement('div', { className: 'ck-card' },
+    createElement('div', { className: 'ck-set-row-col' },
+      createElement('div', { className: 'ck-set-row-label' }, 'Cuko API 系统提示词'),
+      createElement('div', { className: 'ck-set-row-desc' },
+        'Cuko API 首次对话时发给 AI 的系统提示词。占位符（如 {{PLATFORM_INFO}}、{{TOOL_API_TYPES}}、{{MCP_SECTION}}、{{PROJECT_DIR}}）在发送时自动替换，请勿删除。留空或点「恢复内置」使用 src/prompt/cuko.md。'),
+      createElement('textarea', {
+        className: 'ck-set-textarea',
+        style: { minHeight: '420px', fontFamily: 'monospace', fontSize: '12.5px', lineHeight: 1.5 },
+        value: text,
+        onChange: (e: any) => { setText(e.target.value); setDirty(true); },
+      }),
+      createElement('div', { className: 'ck-set-inline', style: { marginTop: '8px', justifyContent: 'flex-end', alignItems: 'center' } },
+        tip ? createElement('span', { style: { color: 'var(--ck-text-dim)', fontSize: '12px', marginRight: '8px' } }, tip) : null,
+        createElement('button', { className: 'ck-btn', onClick: () => { setText(builtin); setDirty(true); } }, '填入内置模板'),
+        createElement('button', { className: 'ck-btn ck-btn-danger', onClick: reset }, '恢复内置'),
+        createElement('button', { className: 'ck-btn ck-btn-primary', disabled: !dirty || saving, onClick: save }, saving ? '保存中…' : '保存'),
       )
     )
   );

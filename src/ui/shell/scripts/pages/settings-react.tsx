@@ -14,7 +14,7 @@ import { SlotErrorBoundary } from '../components/slot-error-boundary.js';
 import { useHideAiView } from '../use-hide-ai-view.js';
 import { Select } from '../components/select.js';
 import { SettingRow } from '../components/setting-row.js';
-import { CukoSettings } from './settings-cuko.js';
+import { CukoSettings, CukoPromptSettings } from './settings-cuko.js';
 import { DEFAULT_JS_RESULT_PHRASES, DEFAULT_JS_RESULT_ITEM_TEMPLATES } from '../../../../overlay/js-result-phrases.js';
 import { DEFAULT_CONTINUE_PROMPTS } from '../../../../infra/continue-prompt-pool.js';
 import {
@@ -717,6 +717,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const isCuko = !!(window as any).cukoAPI;
   const NAV: [string, string][] = [
     ['cuko-api', 'Cuko API'], // 针对 Cuko 独立窗口的模型配置
+    ['cuko-prompt', '系统提示词'], // Cuko 专属：只改 cuko.md 对应模板，不选 provider
     ['appearance', '外观'],
     ['security', '网络安全'], // Cuko 窗口也需要这个
     ...(isCuko ? [] : [
@@ -747,6 +748,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   let content: any = null;
   if (loading && active !== 'cuko-api') content = createElement('div', { className: 'ck-list-empty' }, '加载中…');
   else if (active === 'cuko-api') content = createElement(CukoSettings);
+  else if (active === 'cuko-prompt') content = createElement(CukoPromptSettings);
   else if (active === 'appearance') content = appearance;
   else if (active === 'system-prompt') content = systemPrompt;
   else if (active === 'retry') content = createElement('div', null, retry, continuePrompt);
