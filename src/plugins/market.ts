@@ -15,7 +15,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import { getMarketCacheFile, getMarketConfigFile, getManifestCacheFile } from './paths.js';
+import { getMarketCacheFile, getMarketConfigFile, getManifestCacheFile, getUserDir } from './paths.js';
 import { validateManifest } from './manifest.js';
 import { isValidRepo, isValidBranch, buildRawFileUrl } from './github.js';
 import {
@@ -57,8 +57,8 @@ export interface MarketResult {
 }
 
 /** 构造搜索 URL（导出供测试断言） */
-function buildSearchUrl(): string {
-  const q = encodeURIComponent('topic:' + TOPIC);
+function buildSearchUrl(topic: string = TOPIC): string {
+  const q = encodeURIComponent('topic:' + topic);
   // 按最近更新排序：插件过时是负担，活跃度比 star 数更该优先暴露
   return SEARCH_ENDPOINT + '?q=' + q + '&sort=updated&order=desc&per_page=' + PER_PAGE;
 }
@@ -262,9 +262,11 @@ async function searchPlugins(opts: {
   force?: boolean;
   now?: number;
   cacheFile?: string;
+  topic?: string;
 }): Promise<MarketResult> {
+  const topic = opts.topic || TOPIC;
   const now = typeof opts.now === 'number' ? opts.now : Date.now();
-  const cacheFile = opts.cacheFile || getMarketCacheFile();
+  const cacheFile = opts.cacheFile || (topic === TOPIC ? getMarketCacheFile() : path.join(getUserDir(), `market-cache-${topic}.json`));
 
   if (!opts.force) {
     const cache = readCache(cacheFile);
@@ -291,7 +293,7 @@ async function searchPlugins(opts: {
 
   let res: any = null;
   try {
-    res = await opts.httpGet({ url: buildSearchUrl(), headers });
+    res = await opts.httpGet({ url: buildSearchUrl(topic), headers });
   } catch (err: any) {
     ghError = 'GitHub 网络失败：' + (err && err.message ? err.message : String(err));
   }

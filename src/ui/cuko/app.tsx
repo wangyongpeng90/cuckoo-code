@@ -203,9 +203,10 @@ function extractText(content: AppendMessage['content']): string {
 }
 
 // ============ 模型选择器组件 ============
-function ModelSelector({ providers, config, setConfig, disabled }: { providers: CukoProvider[]; config: Config; setConfig: (c: Config) => void; disabled?: boolean }) {
+function ModelSelector({ providers, config, setConfig, disabled, onRefresh }: { providers: CukoProvider[]; config: Config; setConfig: (c: Config) => void; disabled?: boolean; onRefresh?: () => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // 点击外部关闭
@@ -248,14 +249,37 @@ function ModelSelector({ providers, config, setConfig, disabled }: { providers: 
             </div>
           </div>
           
-          <div className="p-2 border-b">
+          <div className="p-2 border-b flex items-center gap-2">
             <input
               type="text"
               placeholder="搜索模型..."
               value={search}
               onChange={e => setSearch(e.target.value)}
-              className="w-full rounded-md bg-accent/50 px-2.5 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:bg-accent transition-colors"
+              className="flex-1 min-w-0 rounded-md bg-accent/50 px-2.5 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:bg-accent transition-colors"
             />
+            {onRefresh && (
+              <button
+                type="button"
+                disabled={refreshing}
+                onClick={async () => {
+                  setRefreshing(true);
+                  try {
+                    await onRefresh();
+                  } finally {
+                    setRefreshing(false);
+                  }
+                }}
+                title="重新获取所有模型"
+                className="flex-shrink-0 flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
+              >
+                {refreshing ? (
+                  <span className="animate-spin size-3 border-2 border-current border-t-transparent rounded-full" />
+                ) : (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                )}
+                重新获取
+              </button>
+            )}
           </div>
 
           <div className="max-h-60 overflow-y-auto p-2">
@@ -536,6 +560,8 @@ function ChatApp() {
   const [threads, setThreads] = useState<Array<{ id: string; title: string; provider_id: string; model_id: string; project_dir?: string; provider_session_id?: string; archived?: number; updated_at: string }>>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string>('');
   const currentThreadIdRef = useRef<string>('');
+  // 切换会话时暂存未发送的输入框草稿（会话ID -> 文本），仅在本次运行期间有效
+  const draftCacheRef = useRef<Map<string, string>>(new Map());
   const setThreadId = useCallback((id: string) => {
     currentThreadIdRef.current = id;
     setCurrentThreadId(id);
@@ -704,6 +730,24 @@ function ChatApp() {
     }
   };
 
+  const handleRefreshModels = async () => {
+    if (!window.cukoAPI) return;
+    try {
+      const res = await (window.cukoAPI as any).refreshModels();
+      if (res.success) {
+        const list = await window.cukoAPI.listProviders();
+        setProviders(list);
+        if (res.errors && res.errors.length > 0) {
+          console.warn('部分模型获取失败:', res.errors);
+        }
+      } else {
+        console.error('刷新模型失败:', res.error);
+      }
+    } catch (err: any) {
+      console.error('刷新模型异常:', err);
+    }
+  };
+
   // 设置面板关闭时重新加载 Provider 列表
   useEffect(() => {
     if (!settingsOpen && window.cukoAPI) {
@@ -746,6 +790,12 @@ function ChatApp() {
 
   // 切换会话
   const switchThread = async (id: string) => {
+    // 切换前先保存当前会话的输入框草稿
+    const prevId = currentThreadIdRef.current;
+    if (prevId && prevId !== id) {
+      const prevText = runtimeRef.current?.thread?.composer?.getState?.()?.text ?? '';
+      if (prevText.trim()) draftCacheRef.current.set(prevId, prevText);
+    }
     setThreadId(id);
     const [dbMsgs, runs] = await Promise.all([
       window.cukoAPI.getMessages(id),
@@ -814,6 +864,12 @@ function ChatApp() {
 
   // 新建会话（可指定项目目录；不传则用当前 activeWorkspace）
   const switchNewThread = async (projectDir?: string) => {
+    // 新建前先保存当前会话的输入框草稿
+    const prevId = currentThreadIdRef.current;
+    if (prevId) {
+      const prevText = runtimeRef.current?.thread?.composer?.getState?.()?.text ?? '';
+      if (prevText.trim()) draftCacheRef.current.set(prevId, prevText);
+    }
     const newId = crypto.randomUUID();
     const targetDir = projectDir || activeWorkspace?.path || undefined;
     await (window.cukoAPI as any).createSession(newId, config.providerId || undefined, config.modelId || undefined, targetDir);
@@ -1167,7 +1223,7 @@ function ChatApp() {
                   onAdd={handleAddWorkspace}
                 />
                 {hasAnyModel ? (
-                  <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={modelSwitchLocked} />
+                  <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={modelSwitchLocked} onRefresh={handleRefreshModels} />
                 ) : (
                   <button
                     type="button"

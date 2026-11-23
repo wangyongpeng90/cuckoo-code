@@ -11,8 +11,10 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   saveConfig: (config: Record<string, string>) => ipcRenderer.invoke('cuko:save-config', config),
   
   listProviders: () => ipcRenderer.invoke('cuko:list-providers'),
+  marketList: (topic: string) => ipcRenderer.invoke('cuko:market-list', topic),
   saveProvider: (provider: any) => ipcRenderer.invoke('cuko:save-provider', provider),
   deleteProvider: (id: string) => ipcRenderer.invoke('cuko:delete-provider', id),
+  refreshModels: () => ipcRenderer.invoke('cuko:refresh-models'),
   getActive: () => ipcRenderer.invoke('cuko:get-active'),
   setActive: (providerId: string, modelId: string) => ipcRenderer.invoke('cuko:set-active', providerId, modelId),
   

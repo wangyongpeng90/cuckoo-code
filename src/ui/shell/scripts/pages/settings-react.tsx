@@ -7,7 +7,7 @@
  * - 底部：恢复默认（保存改为自动：改动后 500ms 防抖保存）
  * - 关闭：右上 ✕ / ESC / 点遮罩
  */
-import { createElement, useState, useEffect, useCallback, useRef } from 'react';
+import { createElement, Component, useState, useEffect, useCallback, useRef } from 'react';
 import { api, ckAlert, ckConfirm } from '../shared.js';
 import { useSlot, specLabel, renderPluginElement } from '../use-slot.js';
 import { SlotErrorBoundary } from '../components/slot-error-boundary.js';
@@ -28,6 +28,23 @@ import * as echarts from 'echarts';
 const SETTINGS_SLOT = 'settings.section';
 
 const THEME_BUILTINS: [string, string][] = [['system', '跟随系统'], ['light', '浅色'], ['dark', '深色']];
+
+/** 设置内容区错误边界：单个分类渲染崩溃不影响整个设置面板（左导航仍可用） */
+class SettingsErrorBoundary extends Component<{ children?: any }, { err: string | null }> {
+  constructor(props: any) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(e: any) { return { err: (e && e.message) ? e.message : String(e) }; }
+  componentDidCatch(e: any) { console.error('[settings] 分类渲染崩溃', e); }
+  render() {
+    if (this.state.err) {
+      return createElement('div', { style: { padding: '20px', color: 'var(--ck-danger)', fontSize: '13px', lineHeight: 1.6 } },
+        createElement('div', { style: { fontWeight: 600, marginBottom: '8px' } }, '此分类渲染出错'),
+        createElement('div', null, this.state.err),
+        createElement('div', { style: { marginTop: '12px', color: 'var(--ck-text-2)', fontSize: '12px' } }, '可切换到其他分类继续操作，或重启应用。'),
+      );
+    }
+    return (this as any).props.children;
+  }
+}
 
 function RefreshIcon() {
   return createElement('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' },
@@ -267,11 +284,20 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
   const promptLoadedRef = useRef(false);
 
   const load = useCallback(async () => {
-    if (!api.getSettings) return;
+    if (!api.getSettings) { setData({}); return; }
     try {
       const r = await api.getSettings();
-      if (r && r.success && r.data) { dirtyRef.current = false; setData(r.data); }
-    } catch (_) { /* ignore */ }
+      if (r && r.success && r.data) { 
+        dirtyRef.current = false; 
+        setData(r.data); 
+      } else { 
+        console.error('获取设置失败:', r?.error);
+        setData({}); 
+      }
+    } catch (err: any) { 
+      console.error('获取设置异常:', err);
+      setData({}); 
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -688,21 +714,24 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
     ),
   );
 
+  const isCuko = !!(window as any).cukoAPI;
   const NAV: [string, string][] = [
     ['cuko-api', 'Cuko API'], // 针对 Cuko 独立窗口的模型配置
     ['appearance', '外观'],
-    ['system-prompt', '系统提示词'],  // [261105-uw877b]
-    ['retry', '失败自动重试'],
-    ['send', '发送延迟'],
-    ['attach', '附件上传间隔'],
-    ['security', '网络安全'],
-    ['ai-intercept', 'AI 回复拦截'],
-    ['js-result-phrases', '工具结果回复语'],   // [261101-ym9l98]
-    ['read-header', '文件读取格式'],          // [261101-ym9l98]
-    ['glob-footer', '文件搜索格式'],          // [261101-ym9l98]
-    ['write-footer', '文件写入格式'],         // [261101-ym9l98]
-    ['logs', '日志'],
-    ['usage', '用量统计'],
+    ['security', '网络安全'], // Cuko 窗口也需要这个
+    ...(isCuko ? [] : [
+      ['system-prompt', '系统提示词'],  // [261105-uw877b]
+      ['retry', '失败自动重试'],
+      ['send', '发送延迟'],
+      ['attach', '附件上传间隔'],
+      ['ai-intercept', 'AI 回复拦截'],
+      ['js-result-phrases', '工具结果回复语'],   // [261101-ym9l98]
+      ['read-header', '文件读取格式'],          // [261101-ym9l98]
+      ['glob-footer', '文件搜索格式'],          // [261101-ym9l98]
+      ['write-footer', '文件写入格式'],         // [261101-ym9l98]
+      ['logs', '日志'],
+      ['usage', '用量统计'],
+    ] as [string, string][])
   ];
 
   // 当前分类标题（右侧内容区顶部显示）
@@ -776,7 +805,7 @@ export function SettingsModal({ onClose }: { onClose: () => void }) {
         ),
         createElement('div', { className: 'ck-set-content' },
           pageTitle ? createElement('div', { className: 'ck-set-page-title' }, pageTitle) : null,
-          content,
+          createElement(SettingsErrorBoundary, { key: active }, content),
         ),
       ),
       // 顶栏下方显示"已保存"提示（自动保存状态）

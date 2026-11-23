@@ -9,6 +9,7 @@
  */
 import { createRequire } from 'node:module';
 import * as windowState from '../window.js';
+import { getSetting, setSetting } from '../settings-store.js';
 
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -42,7 +43,7 @@ function requestFromAiPage(shellEvent: any, channel: string, data?: any): Promis
         pending.delete(reqId);
         resolve({ ok: false, error: 'AI 页面响应超时' });
       }
-    }, 5000);
+    }, 15000);
     pending.set(reqId, { resolve, timer });
     try {
       view.webContents.send(channel, { reqId, data });
@@ -62,15 +63,32 @@ function registerSettingsIpc(): void {
   // 读设置
   ipcMain.handle('get-settings', async (event: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
-    if (!ctx) return { success: true, data: {} }; // Cuko 独立窗口没有 AI 页面，返回空设置
-    const r = await requestFromAiPage(event, 'cuckoo-get-settings');
-    return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
+    if (!ctx || !ctx.view) {
+      // Cuko 独立窗口没有 AI 页面，从主进程数据库读取
+      return { success: true, data: {
+        ssrfGuard: getSetting('cuckoo-ssrf-guard') === '1',
+      }};
+    }
+    
+    // 增加一次重试，应对 AI 页面刚启动响应慢
+    let r = await requestFromAiPage(event, 'cuckoo-get-settings');
+    if (!r.ok) {
+      await new Promise(res => setTimeout(res, 500));
+      r = await requestFromAiPage(event, 'cuckoo-get-settings');
+    }
+    return r.ok ? { success: true, data: r.data } : { success: false, error: r.error || '获取设置超时' };
   });
 
   // 保存设置
   ipcMain.handle('save-settings', async (event: any, { data }: any) => {
     const ctx = windowState.getContextByWebContents(event.sender);
-    if (!ctx) return { success: true }; // Cuko 独立窗口，设置直接跳过
+    if (!ctx || !ctx.view) {
+      // Cuko 独立窗口，写入主进程数据库
+      if (data.ssrfGuard !== undefined) {
+        setSetting('cuckoo-ssrf-guard', data.ssrfGuard ? '1' : '0');
+      }
+      return { success: true };
+    }
     const r = await requestFromAiPage(event, 'cuckoo-save-settings', data);
     return r.ok ? { success: true, data: r.data } : { success: false, error: r.error };
   });

@@ -3076,7 +3076,7 @@ body {
       "use strict";
       (function() {
         function defineDeprecationWarning(methodName, info) {
-          Object.defineProperty(Component4.prototype, methodName, {
+          Object.defineProperty(Component5.prototype, methodName, {
             get: function() {
               console.warn(
                 "%s(...) is deprecated in plain JavaScript React classes. %s",
@@ -3101,7 +3101,7 @@ body {
             publicInstance
           ), didWarnStateUpdateForUnmountedComponent[warningKey] = true);
         }
-        function Component4(props, context, updater) {
+        function Component5(props, context, updater) {
           this.props = props;
           this.context = context;
           this.refs = emptyObject;
@@ -3593,15 +3593,15 @@ body {
           }
         }, assign = Object.assign, emptyObject = {};
         Object.freeze(emptyObject);
-        Component4.prototype.isReactComponent = {};
-        Component4.prototype.setState = function(partialState, callback) {
+        Component5.prototype.isReactComponent = {};
+        Component5.prototype.setState = function(partialState, callback) {
           if ("object" !== typeof partialState && "function" !== typeof partialState && null != partialState)
             throw Error(
               "takes an object of state variables to update or a function which returns an object of state variables."
             );
           this.updater.enqueueSetState(this, partialState, callback, "setState");
         };
-        Component4.prototype.forceUpdate = function(callback) {
+        Component5.prototype.forceUpdate = function(callback) {
           this.updater.enqueueForceUpdate(this, callback, "forceUpdate");
         };
         var deprecatedAPIs = {
@@ -3616,10 +3616,10 @@ body {
         };
         for (fnName in deprecatedAPIs)
           deprecatedAPIs.hasOwnProperty(fnName) && defineDeprecationWarning(fnName, deprecatedAPIs[fnName]);
-        ComponentDummy.prototype = Component4.prototype;
+        ComponentDummy.prototype = Component5.prototype;
         deprecatedAPIs = PureComponent.prototype = new ComponentDummy();
         deprecatedAPIs.constructor = PureComponent;
-        assign(deprecatedAPIs, Component4.prototype);
+        assign(deprecatedAPIs, Component5.prototype);
         deprecatedAPIs.isPureReactComponent = true;
         var isArrayImpl = Array.isArray, REACT_CLIENT_REFERENCE = /* @__PURE__ */ Symbol.for("react.client.reference"), ReactSharedInternals = {
           H: null,
@@ -3707,7 +3707,7 @@ body {
         };
         exports.Activity = REACT_ACTIVITY_TYPE;
         exports.Children = fnName;
-        exports.Component = Component4;
+        exports.Component = Component5;
         exports.Fragment = REACT_FRAGMENT_TYPE;
         exports.Profiler = REACT_PROFILER_TYPE;
         exports.PureComponent = PureComponent;
@@ -8179,9 +8179,9 @@ body {
           this._debugHookTypes = null;
           hasBadMapPolyfill || "function" !== typeof Object.preventExtensions || Object.preventExtensions(this);
         }
-        function shouldConstruct(Component4) {
-          Component4 = Component4.prototype;
-          return !(!Component4 || !Component4.isReactComponent);
+        function shouldConstruct(Component5) {
+          Component5 = Component5.prototype;
+          return !(!Component5 || !Component5.isReactComponent);
         }
         function createWorkInProgress(current2, pendingProps) {
           var workInProgress2 = current2.alternate;
@@ -10238,13 +10238,13 @@ body {
             if (!objectIs(nextDeps[i2], prevDeps[i2])) return false;
           return true;
         }
-        function renderWithHooks(current2, workInProgress2, Component4, props, secondArg, nextRenderLanes) {
+        function renderWithHooks(current2, workInProgress2, Component5, props, secondArg, nextRenderLanes) {
           renderLanes = nextRenderLanes;
           currentlyRenderingFiber = workInProgress2;
           hookTypesDev = null !== current2 ? current2._debugHookTypes : null;
           hookTypesUpdateIndexDev = -1;
           ignorePreviousDependencies = null !== current2 && current2.type !== workInProgress2.type;
-          if ("[object AsyncFunction]" === Object.prototype.toString.call(Component4) || "[object AsyncGeneratorFunction]" === Object.prototype.toString.call(Component4))
+          if ("[object AsyncFunction]" === Object.prototype.toString.call(Component5) || "[object AsyncGeneratorFunction]" === Object.prototype.toString.call(Component5))
             nextRenderLanes = getComponentNameFromFiber(currentlyRenderingFiber), didWarnAboutAsyncClientComponent.has(nextRenderLanes) || (didWarnAboutAsyncClientComponent.add(nextRenderLanes), console.error(
               "%s is an async Client Component. Only Server Components can be async at the moment. This error is often caused by accidentally adding `'use client'` to a module that was originally written for the server.",
               null === nextRenderLanes ? "An unknown Component" : "<" + nextRenderLanes + ">"
@@ -10254,11 +10254,11 @@ body {
           workInProgress2.lanes = 0;
           ReactSharedInternals.H = null !== current2 && null !== current2.memoizedState ? HooksDispatcherOnUpdateInDEV : null !== hookTypesDev ? HooksDispatcherOnMountWithHookTypesInDEV : HooksDispatcherOnMountInDEV;
           shouldDoubleInvokeUserFnsInHooksDEV = nextRenderLanes = (workInProgress2.mode & StrictLegacyMode) !== NoMode;
-          var children = callComponentInDEV(Component4, props, secondArg);
+          var children = callComponentInDEV(Component5, props, secondArg);
           shouldDoubleInvokeUserFnsInHooksDEV = false;
           didScheduleRenderPhaseUpdateDuringThisPass && (children = renderWithHooksAgain(
             workInProgress2,
-            Component4,
+            Component5,
             props,
             secondArg
           ));
@@ -10267,7 +10267,7 @@ body {
             try {
               children = renderWithHooksAgain(
                 workInProgress2,
-                Component4,
+                Component5,
                 props,
                 secondArg
               );
@@ -10308,7 +10308,7 @@ body {
             "`use` was called from inside a try/catch block. This is not allowed and can lead to unexpected behavior. To handle errors triggered by `use`, wrap your component in a error boundary."
           )));
         }
-        function renderWithHooksAgain(workInProgress2, Component4, props, secondArg) {
+        function renderWithHooksAgain(workInProgress2, Component5, props, secondArg) {
           currentlyRenderingFiber = workInProgress2;
           var numberOfReRenders = 0;
           do {
@@ -10331,7 +10331,7 @@ body {
             }
             hookTypesUpdateIndexDev = -1;
             ReactSharedInternals.H = HooksDispatcherOnRerenderInDEV;
-            children = callComponentInDEV(Component4, props, secondArg);
+            children = callComponentInDEV(Component5, props, secondArg);
           } while (didScheduleRenderPhaseUpdateDuringThisPass);
           return children;
         }
@@ -11561,17 +11561,17 @@ body {
             null
           ));
         }
-        function resolveClassComponentProps(Component4, baseProps) {
+        function resolveClassComponentProps(Component5, baseProps) {
           var newProps = baseProps;
           if ("ref" in baseProps) {
             newProps = {};
             for (var propName in baseProps)
               "ref" !== propName && (newProps[propName] = baseProps[propName]);
           }
-          if (Component4 = Component4.defaultProps) {
+          if (Component5 = Component5.defaultProps) {
             newProps === baseProps && (newProps = assign({}, newProps));
-            for (var _propName in Component4)
-              void 0 === newProps[_propName] && (newProps[_propName] = Component4[_propName]);
+            for (var _propName in Component5)
+              void 0 === newProps[_propName] && (newProps[_propName] = Component5[_propName]);
           }
           return newProps;
         }
@@ -11809,10 +11809,10 @@ body {
             renderLanes2
           );
         }
-        function updateForwardRef(current2, workInProgress2, Component4, nextProps, renderLanes2) {
-          Component4 = Component4.render;
-          var resolvedRender = resolveTypeForHotReloading(Component4);
-          resolvedRender !== Component4 && (Component4 = resolvedRender, null !== current2 && (didReceiveUpdate = true));
+        function updateForwardRef(current2, workInProgress2, Component5, nextProps, renderLanes2) {
+          Component5 = Component5.render;
+          var resolvedRender = resolveTypeForHotReloading(Component5);
+          resolvedRender !== Component5 && (Component5 = resolvedRender, null !== current2 && (didReceiveUpdate = true));
           resolvedRender = workInProgress2.ref;
           if ("ref" in nextProps) {
             var propsWithoutRef = {};
@@ -11823,7 +11823,7 @@ body {
           nextProps = renderWithHooks(
             current2,
             workInProgress2,
-            Component4,
+            Component5,
             propsWithoutRef,
             resolvedRender,
             renderLanes2
@@ -11836,19 +11836,19 @@ body {
           reconcileChildren(current2, workInProgress2, nextProps, renderLanes2);
           return workInProgress2.child;
         }
-        function updateMemoComponent(current2, workInProgress2, Component4, nextProps, renderLanes2) {
+        function updateMemoComponent(current2, workInProgress2, Component5, nextProps, renderLanes2) {
           if (null === current2) {
-            var type = Component4.type;
-            if ("function" === typeof type && !shouldConstruct(type) && void 0 === type.defaultProps && null === Component4.compare)
-              return Component4 = resolveTypeForHotReloading(type), workInProgress2.tag = 15, workInProgress2.type = Component4, validateFunctionComponentInDev(workInProgress2, type), updateSimpleMemoComponent(
+            var type = Component5.type;
+            if ("function" === typeof type && !shouldConstruct(type) && void 0 === type.defaultProps && null === Component5.compare)
+              return Component5 = resolveTypeForHotReloading(type), workInProgress2.tag = 15, workInProgress2.type = Component5, validateFunctionComponentInDev(workInProgress2, type), updateSimpleMemoComponent(
                 current2,
                 workInProgress2,
-                Component4,
+                Component5,
                 nextProps,
                 renderLanes2
               );
             current2 = createFiberFromTypeAndProps(
-              Component4.type,
+              Component5.type,
               null,
               nextProps,
               workInProgress2,
@@ -11862,9 +11862,9 @@ body {
           type = current2.child;
           if (!checkScheduledUpdateOrContext(current2, renderLanes2)) {
             var prevProps = type.memoizedProps;
-            Component4 = Component4.compare;
-            Component4 = null !== Component4 ? Component4 : shallowEqual2;
-            if (Component4(prevProps, nextProps) && current2.ref === workInProgress2.ref)
+            Component5 = Component5.compare;
+            Component5 = null !== Component5 ? Component5 : shallowEqual2;
+            if (Component5(prevProps, nextProps) && current2.ref === workInProgress2.ref)
               return bailoutOnAlreadyFinishedWork(
                 current2,
                 workInProgress2,
@@ -11877,7 +11877,7 @@ body {
           current2.return = workInProgress2;
           return workInProgress2.child = current2;
         }
-        function updateSimpleMemoComponent(current2, workInProgress2, Component4, nextProps, renderLanes2) {
+        function updateSimpleMemoComponent(current2, workInProgress2, Component5, nextProps, renderLanes2) {
           if (null !== current2) {
             var prevProps = current2.memoizedProps;
             if (shallowEqual2(prevProps, nextProps) && current2.ref === workInProgress2.ref && workInProgress2.type === current2.type)
@@ -11889,7 +11889,7 @@ body {
           return updateFunctionComponent(
             current2,
             workInProgress2,
-            Component4,
+            Component5,
             nextProps,
             renderLanes2
           );
@@ -12081,9 +12081,9 @@ body {
               workInProgress2.flags |= 4194816;
           }
         }
-        function updateFunctionComponent(current2, workInProgress2, Component4, nextProps, renderLanes2) {
-          if (Component4.prototype && "function" === typeof Component4.prototype.render) {
-            var componentName2 = getComponentNameFromType(Component4) || "Unknown";
+        function updateFunctionComponent(current2, workInProgress2, Component5, nextProps, renderLanes2) {
+          if (Component5.prototype && "function" === typeof Component5.prototype.render) {
+            var componentName2 = getComponentNameFromType(Component5) || "Unknown";
             didWarnAboutBadClass[componentName2] || (console.error(
               "The <%s /> component appears to have a render method, but doesn't extend React.Component. This is likely to cause errors. Change %s to extend React.Component instead.",
               componentName2,
@@ -12094,15 +12094,15 @@ body {
             workInProgress2,
             null
           );
-          null === current2 && (validateFunctionComponentInDev(workInProgress2, workInProgress2.type), Component4.contextTypes && (componentName2 = getComponentNameFromType(Component4) || "Unknown", didWarnAboutContextTypes[componentName2] || (didWarnAboutContextTypes[componentName2] = true, console.error(
+          null === current2 && (validateFunctionComponentInDev(workInProgress2, workInProgress2.type), Component5.contextTypes && (componentName2 = getComponentNameFromType(Component5) || "Unknown", didWarnAboutContextTypes[componentName2] || (didWarnAboutContextTypes[componentName2] = true, console.error(
             "%s uses the legacy contextTypes API which was removed in React 19. Use React.createContext() with React.useContext() instead. (https://react.dev/link/legacy-context)",
             componentName2
           ))));
           prepareToReadContext(workInProgress2);
-          Component4 = renderWithHooks(
+          Component5 = renderWithHooks(
             current2,
             workInProgress2,
-            Component4,
+            Component5,
             nextProps,
             void 0,
             renderLanes2
@@ -12112,30 +12112,30 @@ body {
             return bailoutHooks(current2, workInProgress2, renderLanes2), bailoutOnAlreadyFinishedWork(current2, workInProgress2, renderLanes2);
           isHydrating && nextProps && pushMaterializedTreeId(workInProgress2);
           workInProgress2.flags |= 1;
-          reconcileChildren(current2, workInProgress2, Component4, renderLanes2);
+          reconcileChildren(current2, workInProgress2, Component5, renderLanes2);
           return workInProgress2.child;
         }
-        function replayFunctionComponent(current2, workInProgress2, nextProps, Component4, secondArg, renderLanes2) {
+        function replayFunctionComponent(current2, workInProgress2, nextProps, Component5, secondArg, renderLanes2) {
           prepareToReadContext(workInProgress2);
           hookTypesUpdateIndexDev = -1;
           ignorePreviousDependencies = null !== current2 && current2.type !== workInProgress2.type;
           workInProgress2.updateQueue = null;
           nextProps = renderWithHooksAgain(
             workInProgress2,
-            Component4,
+            Component5,
             nextProps,
             secondArg
           );
           finishRenderingHooks(current2, workInProgress2);
-          Component4 = checkDidRenderIdHook();
+          Component5 = checkDidRenderIdHook();
           if (null !== current2 && !didReceiveUpdate)
             return bailoutHooks(current2, workInProgress2, renderLanes2), bailoutOnAlreadyFinishedWork(current2, workInProgress2, renderLanes2);
-          isHydrating && Component4 && pushMaterializedTreeId(workInProgress2);
+          isHydrating && Component5 && pushMaterializedTreeId(workInProgress2);
           workInProgress2.flags |= 1;
           reconcileChildren(current2, workInProgress2, nextProps, renderLanes2);
           return workInProgress2.child;
         }
-        function updateClassComponent(current2, workInProgress2, Component4, nextProps, renderLanes2) {
+        function updateClassComponent(current2, workInProgress2, Component5, nextProps, renderLanes2) {
           switch (shouldErrorImpl(workInProgress2)) {
             case false:
               var _instance = workInProgress2.stateNode, state = new workInProgress2.type(
@@ -12167,18 +12167,18 @@ body {
           prepareToReadContext(workInProgress2);
           if (null === workInProgress2.stateNode) {
             state = emptyContextObject;
-            _instance = Component4.contextType;
-            "contextType" in Component4 && null !== _instance && (void 0 === _instance || _instance.$$typeof !== REACT_CONTEXT_TYPE) && !didWarnAboutInvalidateContextType.has(Component4) && (didWarnAboutInvalidateContextType.add(Component4), lane = void 0 === _instance ? " However, it is set to undefined. This can be caused by a typo or by mixing up named and default imports. This can also happen due to a circular dependency, so try moving the createContext() call to a separate file." : "object" !== typeof _instance ? " However, it is set to a " + typeof _instance + "." : _instance.$$typeof === REACT_CONSUMER_TYPE ? " Did you accidentally pass the Context.Consumer instead?" : " However, it is set to an object with keys {" + Object.keys(_instance).join(", ") + "}.", console.error(
+            _instance = Component5.contextType;
+            "contextType" in Component5 && null !== _instance && (void 0 === _instance || _instance.$$typeof !== REACT_CONTEXT_TYPE) && !didWarnAboutInvalidateContextType.has(Component5) && (didWarnAboutInvalidateContextType.add(Component5), lane = void 0 === _instance ? " However, it is set to undefined. This can be caused by a typo or by mixing up named and default imports. This can also happen due to a circular dependency, so try moving the createContext() call to a separate file." : "object" !== typeof _instance ? " However, it is set to a " + typeof _instance + "." : _instance.$$typeof === REACT_CONSUMER_TYPE ? " Did you accidentally pass the Context.Consumer instead?" : " However, it is set to an object with keys {" + Object.keys(_instance).join(", ") + "}.", console.error(
               "%s defines an invalid contextType. contextType should point to the Context object returned by React.createContext().%s",
-              getComponentNameFromType(Component4) || "Component",
+              getComponentNameFromType(Component5) || "Component",
               lane
             ));
             "object" === typeof _instance && null !== _instance && (state = readContext(_instance));
-            _instance = new Component4(nextProps, state);
+            _instance = new Component5(nextProps, state);
             if (workInProgress2.mode & StrictLegacyMode) {
               setIsStrictModeForDevtools(true);
               try {
-                _instance = new Component4(nextProps, state);
+                _instance = new Component5(nextProps, state);
               } finally {
                 setIsStrictModeForDevtools(false);
               }
@@ -12188,20 +12188,20 @@ body {
             workInProgress2.stateNode = _instance;
             _instance._reactInternals = workInProgress2;
             _instance._reactInternalInstance = fakeInternalInstance;
-            "function" === typeof Component4.getDerivedStateFromProps && null === state && (state = getComponentNameFromType(Component4) || "Component", didWarnAboutUninitializedState.has(state) || (didWarnAboutUninitializedState.add(state), console.error(
+            "function" === typeof Component5.getDerivedStateFromProps && null === state && (state = getComponentNameFromType(Component5) || "Component", didWarnAboutUninitializedState.has(state) || (didWarnAboutUninitializedState.add(state), console.error(
               "`%s` uses `getDerivedStateFromProps` but its initial state is %s. This is not recommended. Instead, define the initial state by assigning an object to `this.state` in the constructor of `%s`. This ensures that `getDerivedStateFromProps` arguments have a consistent shape.",
               state,
               null === _instance.state ? "null" : "undefined",
               state
             )));
-            if ("function" === typeof Component4.getDerivedStateFromProps || "function" === typeof _instance.getSnapshotBeforeUpdate) {
+            if ("function" === typeof Component5.getDerivedStateFromProps || "function" === typeof _instance.getSnapshotBeforeUpdate) {
               var foundWillUpdateName = lane = state = null;
               "function" === typeof _instance.componentWillMount && true !== _instance.componentWillMount.__suppressDeprecationWarning ? state = "componentWillMount" : "function" === typeof _instance.UNSAFE_componentWillMount && (state = "UNSAFE_componentWillMount");
               "function" === typeof _instance.componentWillReceiveProps && true !== _instance.componentWillReceiveProps.__suppressDeprecationWarning ? lane = "componentWillReceiveProps" : "function" === typeof _instance.UNSAFE_componentWillReceiveProps && (lane = "UNSAFE_componentWillReceiveProps");
               "function" === typeof _instance.componentWillUpdate && true !== _instance.componentWillUpdate.__suppressDeprecationWarning ? foundWillUpdateName = "componentWillUpdate" : "function" === typeof _instance.UNSAFE_componentWillUpdate && (foundWillUpdateName = "UNSAFE_componentWillUpdate");
               if (null !== state || null !== lane || null !== foundWillUpdateName) {
-                _instance = getComponentNameFromType(Component4) || "Component";
-                var newApiName = "function" === typeof Component4.getDerivedStateFromProps ? "getDerivedStateFromProps()" : "getSnapshotBeforeUpdate()";
+                _instance = getComponentNameFromType(Component5) || "Component";
+                var newApiName = "function" === typeof Component5.getDerivedStateFromProps ? "getDerivedStateFromProps()" : "getSnapshotBeforeUpdate()";
                 didWarnAboutLegacyLifecyclesAndDerivedState.has(_instance) || (didWarnAboutLegacyLifecyclesAndDerivedState.add(_instance), console.error(
                   "Unsafe legacy lifecycles will not be called for components using new component APIs.\n\n%s uses %s but also contains the following legacy lifecycles:%s%s%s\n\nThe above lifecycles should be removed. Learn more about this warning here:\nhttps://react.dev/link/unsafe-component-lifecycles",
                   _instance,
@@ -12213,8 +12213,8 @@ body {
               }
             }
             _instance = workInProgress2.stateNode;
-            state = getComponentNameFromType(Component4) || "Component";
-            _instance.render || (Component4.prototype && "function" === typeof Component4.prototype.render ? console.error(
+            state = getComponentNameFromType(Component5) || "Component";
+            _instance.render || (Component5.prototype && "function" === typeof Component5.prototype.render ? console.error(
               "No `render` method found on the %s instance: did you accidentally return an object from the constructor?",
               state
             ) : console.error(
@@ -12233,11 +12233,11 @@ body {
               "contextType was defined as an instance property on %s. Use a static property to define contextType instead.",
               state
             );
-            Component4.childContextTypes && !didWarnAboutChildContextTypes.has(Component4) && (didWarnAboutChildContextTypes.add(Component4), console.error(
+            Component5.childContextTypes && !didWarnAboutChildContextTypes.has(Component5) && (didWarnAboutChildContextTypes.add(Component5), console.error(
               "%s uses the legacy childContextTypes API which was removed in React 19. Use React.createContext() instead. (https://react.dev/link/legacy-context)",
               state
             ));
-            Component4.contextTypes && !didWarnAboutContextTypes$1.has(Component4) && (didWarnAboutContextTypes$1.add(Component4), console.error(
+            Component5.contextTypes && !didWarnAboutContextTypes$1.has(Component5) && (didWarnAboutContextTypes$1.add(Component5), console.error(
               "%s uses the legacy contextTypes API which was removed in React 19. Use React.createContext() with static contextType instead. (https://react.dev/link/legacy-context)",
               state
             ));
@@ -12245,9 +12245,9 @@ body {
               "%s has a method called componentShouldUpdate(). Did you mean shouldComponentUpdate()? The name is phrased as a question because the function is expected to return a value.",
               state
             );
-            Component4.prototype && Component4.prototype.isPureReactComponent && "undefined" !== typeof _instance.shouldComponentUpdate && console.error(
+            Component5.prototype && Component5.prototype.isPureReactComponent && "undefined" !== typeof _instance.shouldComponentUpdate && console.error(
               "%s has a method called shouldComponentUpdate(). shouldComponentUpdate should not be used when extending React.PureComponent. Please extend React.Component if shouldComponentUpdate is used.",
-              getComponentNameFromType(Component4) || "A pure component"
+              getComponentNameFromType(Component5) || "A pure component"
             );
             "function" === typeof _instance.componentDidUnmount && console.error(
               "%s has a method called componentDidUnmount(). But there is no such lifecycle method. Did you mean componentWillUnmount()?",
@@ -12275,9 +12275,9 @@ body {
               state,
               state
             );
-            "function" !== typeof _instance.getSnapshotBeforeUpdate || "function" === typeof _instance.componentDidUpdate || didWarnAboutGetSnapshotBeforeUpdateWithoutDidUpdate.has(Component4) || (didWarnAboutGetSnapshotBeforeUpdateWithoutDidUpdate.add(Component4), console.error(
+            "function" !== typeof _instance.getSnapshotBeforeUpdate || "function" === typeof _instance.componentDidUpdate || didWarnAboutGetSnapshotBeforeUpdateWithoutDidUpdate.has(Component5) || (didWarnAboutGetSnapshotBeforeUpdateWithoutDidUpdate.add(Component5), console.error(
               "%s: getSnapshotBeforeUpdate() should be used with componentDidUpdate(). This component defines getSnapshotBeforeUpdate() only.",
-              getComponentNameFromType(Component4)
+              getComponentNameFromType(Component5)
             ));
             "function" === typeof _instance.getDerivedStateFromProps && console.error(
               "%s: getDerivedStateFromProps() is defined as an instance method and will be ignored. Instead, declare it as a static method.",
@@ -12287,12 +12287,12 @@ body {
               "%s: getDerivedStateFromError() is defined as an instance method and will be ignored. Instead, declare it as a static method.",
               state
             );
-            "function" === typeof Component4.getSnapshotBeforeUpdate && console.error(
+            "function" === typeof Component5.getSnapshotBeforeUpdate && console.error(
               "%s: getSnapshotBeforeUpdate() is defined as a static method and will be ignored. Instead, declare it as an instance method.",
               state
             );
             (lane = _instance.state) && ("object" !== typeof lane || isArrayImpl(lane)) && console.error("%s.state: must be set to an object or null", state);
-            "function" === typeof _instance.getChildContext && "object" !== typeof Component4.childContextTypes && console.error(
+            "function" === typeof _instance.getChildContext && "object" !== typeof Component5.childContextTypes && console.error(
               "%s.getChildContext(): childContextTypes must be defined in order to use getChildContext().",
               state
             );
@@ -12301,9 +12301,9 @@ body {
             _instance.state = workInProgress2.memoizedState;
             _instance.refs = {};
             initializeUpdateQueue(workInProgress2);
-            state = Component4.contextType;
+            state = Component5.contextType;
             _instance.context = "object" === typeof state && null !== state ? readContext(state) : emptyContextObject;
-            _instance.state === nextProps && (state = getComponentNameFromType(Component4) || "Component", didWarnAboutDirectlyAssigningPropsToState.has(state) || (didWarnAboutDirectlyAssigningPropsToState.add(state), console.error(
+            _instance.state === nextProps && (state = getComponentNameFromType(Component5) || "Component", didWarnAboutDirectlyAssigningPropsToState.has(state) || (didWarnAboutDirectlyAssigningPropsToState.add(state), console.error(
               "%s: It is not recommended to assign props directly to state because updates to props won't be reflected in state. In most cases, it is better to use props directly.",
               state
             )));
@@ -12316,14 +12316,14 @@ body {
               _instance
             );
             _instance.state = workInProgress2.memoizedState;
-            state = Component4.getDerivedStateFromProps;
+            state = Component5.getDerivedStateFromProps;
             "function" === typeof state && (applyDerivedStateFromProps(
               workInProgress2,
-              Component4,
+              Component5,
               state,
               nextProps
             ), _instance.state = workInProgress2.memoizedState);
-            "function" === typeof Component4.getDerivedStateFromProps || "function" === typeof _instance.getSnapshotBeforeUpdate || "function" !== typeof _instance.UNSAFE_componentWillMount && "function" !== typeof _instance.componentWillMount || (state = _instance.state, "function" === typeof _instance.componentWillMount && _instance.componentWillMount(), "function" === typeof _instance.UNSAFE_componentWillMount && _instance.UNSAFE_componentWillMount(), state !== _instance.state && (console.error(
+            "function" === typeof Component5.getDerivedStateFromProps || "function" === typeof _instance.getSnapshotBeforeUpdate || "function" !== typeof _instance.UNSAFE_componentWillMount && "function" !== typeof _instance.componentWillMount || (state = _instance.state, "function" === typeof _instance.componentWillMount && _instance.componentWillMount(), "function" === typeof _instance.UNSAFE_componentWillMount && _instance.UNSAFE_componentWillMount(), state !== _instance.state && (console.error(
               "%s.componentWillMount(): Assigning directly to this.state is deprecated (except inside a component's constructor). Use setState instead.",
               getComponentNameFromFiber(workInProgress2) || "Component"
             ), classComponentUpdater.enqueueReplaceState(
@@ -12337,13 +12337,13 @@ body {
           } else if (null === current2) {
             _instance = workInProgress2.stateNode;
             var unresolvedOldProps = workInProgress2.memoizedProps;
-            lane = resolveClassComponentProps(Component4, unresolvedOldProps);
+            lane = resolveClassComponentProps(Component5, unresolvedOldProps);
             _instance.props = lane;
             var oldContext = _instance.context;
-            foundWillUpdateName = Component4.contextType;
+            foundWillUpdateName = Component5.contextType;
             state = emptyContextObject;
             "object" === typeof foundWillUpdateName && null !== foundWillUpdateName && (state = readContext(foundWillUpdateName));
-            newApiName = Component4.getDerivedStateFromProps;
+            newApiName = Component5.getDerivedStateFromProps;
             foundWillUpdateName = "function" === typeof newApiName || "function" === typeof _instance.getSnapshotBeforeUpdate;
             unresolvedOldProps = workInProgress2.pendingProps !== unresolvedOldProps;
             foundWillUpdateName || "function" !== typeof _instance.UNSAFE_componentWillReceiveProps && "function" !== typeof _instance.componentWillReceiveProps || (unresolvedOldProps || oldContext !== state) && callComponentWillReceiveProps(
@@ -12360,12 +12360,12 @@ body {
             oldContext = workInProgress2.memoizedState;
             unresolvedOldProps || oldState !== oldContext || hasForceUpdate ? ("function" === typeof newApiName && (applyDerivedStateFromProps(
               workInProgress2,
-              Component4,
+              Component5,
               newApiName,
               nextProps
             ), oldContext = workInProgress2.memoizedState), (lane = hasForceUpdate || checkShouldComponentUpdate(
               workInProgress2,
-              Component4,
+              Component5,
               lane,
               nextProps,
               oldState,
@@ -12376,14 +12376,14 @@ body {
             _instance = workInProgress2.stateNode;
             cloneUpdateQueue(current2, workInProgress2);
             state = workInProgress2.memoizedProps;
-            foundWillUpdateName = resolveClassComponentProps(Component4, state);
+            foundWillUpdateName = resolveClassComponentProps(Component5, state);
             _instance.props = foundWillUpdateName;
             newApiName = workInProgress2.pendingProps;
             oldState = _instance.context;
-            oldContext = Component4.contextType;
+            oldContext = Component5.contextType;
             lane = emptyContextObject;
             "object" === typeof oldContext && null !== oldContext && (lane = readContext(oldContext));
-            unresolvedOldProps = Component4.getDerivedStateFromProps;
+            unresolvedOldProps = Component5.getDerivedStateFromProps;
             (oldContext = "function" === typeof unresolvedOldProps || "function" === typeof _instance.getSnapshotBeforeUpdate) || "function" !== typeof _instance.UNSAFE_componentWillReceiveProps && "function" !== typeof _instance.componentWillReceiveProps || (state !== newApiName || oldState !== lane) && callComponentWillReceiveProps(
               workInProgress2,
               _instance,
@@ -12398,12 +12398,12 @@ body {
             var newState = workInProgress2.memoizedState;
             state !== newApiName || oldState !== newState || hasForceUpdate || null !== current2 && null !== current2.dependencies && checkIfContextChanged(current2.dependencies) ? ("function" === typeof unresolvedOldProps && (applyDerivedStateFromProps(
               workInProgress2,
-              Component4,
+              Component5,
               unresolvedOldProps,
               nextProps
             ), newState = workInProgress2.memoizedState), (foundWillUpdateName = hasForceUpdate || checkShouldComponentUpdate(
               workInProgress2,
-              Component4,
+              Component5,
               foundWillUpdateName,
               nextProps,
               oldState,
@@ -12421,9 +12421,9 @@ body {
           if (lane || state) {
             lane = workInProgress2.stateNode;
             setCurrentFiber(workInProgress2);
-            if (state && "function" !== typeof Component4.getDerivedStateFromError)
-              Component4 = null, profilerStartTime = -1;
-            else if (Component4 = callRenderInDEV(lane), workInProgress2.mode & StrictLegacyMode) {
+            if (state && "function" !== typeof Component5.getDerivedStateFromError)
+              Component5 = null, profilerStartTime = -1;
+            else if (Component5 = callRenderInDEV(lane), workInProgress2.mode & StrictLegacyMode) {
               setIsStrictModeForDevtools(true);
               try {
                 callRenderInDEV(lane);
@@ -12440,9 +12440,9 @@ body {
             ), workInProgress2.child = reconcileChildFibers(
               workInProgress2,
               null,
-              Component4,
+              Component5,
               renderLanes2
-            )) : reconcileChildren(current2, workInProgress2, Component4, renderLanes2);
+            )) : reconcileChildren(current2, workInProgress2, Component5, renderLanes2);
             workInProgress2.memoizedState = lane.state;
             current2 = workInProgress2.child;
           } else
@@ -12464,19 +12464,19 @@ body {
           reconcileChildren(current2, workInProgress2, nextChildren, renderLanes2);
           return workInProgress2.child;
         }
-        function validateFunctionComponentInDev(workInProgress2, Component4) {
-          Component4 && Component4.childContextTypes && console.error(
+        function validateFunctionComponentInDev(workInProgress2, Component5) {
+          Component5 && Component5.childContextTypes && console.error(
             "childContextTypes cannot be defined on a function component.\n  %s.childContextTypes = ...",
-            Component4.displayName || Component4.name || "Component"
+            Component5.displayName || Component5.name || "Component"
           );
-          "function" === typeof Component4.getDerivedStateFromProps && (workInProgress2 = getComponentNameFromType(Component4) || "Unknown", didWarnAboutGetDerivedStateOnFunctionComponent[workInProgress2] || (console.error(
+          "function" === typeof Component5.getDerivedStateFromProps && (workInProgress2 = getComponentNameFromType(Component5) || "Unknown", didWarnAboutGetDerivedStateOnFunctionComponent[workInProgress2] || (console.error(
             "%s: Function components do not support getDerivedStateFromProps.",
             workInProgress2
           ), didWarnAboutGetDerivedStateOnFunctionComponent[workInProgress2] = true));
-          "object" === typeof Component4.contextType && null !== Component4.contextType && (Component4 = getComponentNameFromType(Component4) || "Unknown", didWarnAboutContextTypeOnFunctionComponent[Component4] || (console.error(
+          "object" === typeof Component5.contextType && null !== Component5.contextType && (Component5 = getComponentNameFromType(Component5) || "Unknown", didWarnAboutContextTypeOnFunctionComponent[Component5] || (console.error(
             "%s: Function components do not support contextType.",
-            Component4
-          ), didWarnAboutContextTypeOnFunctionComponent[Component4] = true));
+            Component5
+          ), didWarnAboutContextTypeOnFunctionComponent[Component5] = true));
         }
         function mountSuspenseOffscreenState(renderLanes2) {
           return { baseLanes: renderLanes2, cachePool: getSuspendedCache() };
@@ -24591,11 +24591,11 @@ body {
           pendingLegacyContextWarning = /* @__PURE__ */ new Map();
         };
         var REACT_RECOVERABLE_DIGEST = "", callComponent = {
-          react_stack_bottom_frame: function(Component4, props, secondArg) {
+          react_stack_bottom_frame: function(Component5, props, secondArg) {
             var wasRendering = isRendering;
             isRendering = true;
             try {
-              return Component4(props, secondArg);
+              return Component5(props, secondArg);
             } finally {
               isRendering = wasRendering;
             }
@@ -29578,7 +29578,7 @@ body {
           };
         }
       },
-      register(spec, Component4) {
+      register(spec, Component5) {
         const s = spec || {};
         const slotName = s.name || s.slot;
         const id = s.id || s.key || slotName;
@@ -29633,7 +29633,7 @@ body {
           });
         }
         const list = (slotTable.get(slotName) || []).filter((x) => x.key !== key2);
-        list.push({ key: key2, pluginId, slot: slotName, id, order: typeof s.order === "number" ? s.order : 100, spec: s, Component: Component4, t, injectedProps });
+        list.push({ key: key2, pluginId, slot: slotName, id, order: typeof s.order === "number" ? s.order : 100, spec: s, Component: Component5, t, injectedProps });
         slotTable.set(slotName, list);
         notifySlot(slotName);
         try {
@@ -30525,6 +30525,9 @@ body {
     const [cukoErr, setCukoErr] = (0, import_react9.useState)("");
     const [tip, setTip] = (0, import_react9.useState)("");
     const [showGuide, setShowGuide] = (0, import_react9.useState)(false);
+    const [showMarket, setShowMarket] = (0, import_react9.useState)(false);
+    const [marketItems, setMarketItems] = (0, import_react9.useState)([]);
+    const [marketLoading, setMarketLoading] = (0, import_react9.useState)(false);
     const [editProvider, setEditProvider] = (0, import_react9.useState)({
       id: "",
       name: "",
@@ -30536,6 +30539,21 @@ body {
     const showTip = (msg) => {
       setTip(msg);
       setTimeout(() => setTip(""), 2e3);
+    };
+    const loadMarket = async () => {
+      setMarketLoading(true);
+      try {
+        if (window.cukoAPI && window.cukoAPI.marketList) {
+          const res = await window.cukoAPI.marketList("cuko-api");
+          if (res.success) setMarketItems(res.items || []);
+          else showTip(res.error || "\u641C\u7D22\u5931\u8D25");
+        } else {
+          showTip("\u5F53\u524D\u73AF\u5883\u4E0D\u652F\u6301\u5E02\u573A");
+        }
+      } catch (e2) {
+        showTip("\u641C\u7D22\u5931\u8D25: " + e2.message);
+      }
+      setMarketLoading(false);
     };
     const loadProviders = async () => {
       if (!window.cukoAPI) return;
@@ -30616,6 +30634,50 @@ body {
       borderRadius: "12px",
       marginBottom: "16px"
     };
+    if (showMarket) {
+      return (0, import_react9.createElement)(
+        "div",
+        { style: { maxWidth: "640px" } },
+        (0, import_react9.createElement)(
+          "div",
+          { style: { display: "flex", alignItems: "center", marginBottom: "16px" } },
+          (0, import_react9.createElement)("button", { className: "ck-btn ck-btn-ghost", onClick: () => setShowMarket(false) }, "< \u8FD4\u56DE"),
+          (0, import_react9.createElement)("div", { style: { marginLeft: "16px", fontSize: "16px", fontWeight: 500 } }, "Cuko API \u5E02\u573A (topic:cuko-api)")
+        ),
+        marketLoading ? (0, import_react9.createElement)("div", { style: { textAlign: "center", padding: "20px" } }, "\u52A0\u8F7D\u4E2D...") : marketItems.length === 0 ? (0, import_react9.createElement)("div", { style: { textAlign: "center", padding: "20px", color: "var(--ck-text-2)" } }, "\u6682\u65E0\u5339\u914D\u7684\u4ED3\u5E93\u3002\u7ED9\u4ED3\u5E93\u6253\u4E0A cuko-api topic \u5373\u53EF\u51FA\u73B0\u5728\u8FD9\u91CC\u3002") : marketItems.map(
+          (it) => (0, import_react9.createElement)(
+            "div",
+            { key: it.id, style: cardStyle },
+            (0, import_react9.createElement)(
+              "div",
+              { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+              (0, import_react9.createElement)(
+                "div",
+                { style: { display: "flex", flexDirection: "column", gap: 4 } },
+                (0, import_react9.createElement)("div", { style: { fontSize: "14px", fontWeight: 500, color: "var(--ck-text)" } }, it.id),
+                (0, import_react9.createElement)("div", { style: { fontSize: "12px", color: "var(--ck-text-2)" } }, it.description || "\u65E0\u63CF\u8FF0"),
+                (0, import_react9.createElement)("div", { style: { fontSize: "12px", color: "var(--ck-text-2)" } }, "Star: " + (it.stars || 0) + " \xB7 \u66F4\u65B0: " + (it.updatedAt || "").slice(0, 10))
+              ),
+              (0, import_react9.createElement)("button", {
+                className: "ck-btn ck-btn-primary",
+                onClick: () => {
+                  setEditProvider({
+                    id: "cuko-provider-" + Date.now().toString(36),
+                    name: it.name,
+                    baseUrl: it.url || "http://127.0.0.1:3000",
+                    apiKey: "",
+                    protocol: "cuko",
+                    models: []
+                  });
+                  setShowMarket(false);
+                  setCukoEditing(true);
+                }
+              }, "\u4F7F\u7528")
+            )
+          )
+        )
+      );
+    }
     if (!cukoEditing) {
       return (0, import_react9.createElement)(
         "div",
@@ -30656,6 +30718,23 @@ body {
             width: "100%",
             height: "40px",
             marginTop: "16px",
+            borderRadius: "10px",
+            border: "1px solid var(--ck-border)",
+            background: "var(--ck-bg-2)",
+            color: "var(--ck-text)",
+            fontSize: "13px",
+            cursor: "pointer"
+          },
+          onClick: () => {
+            setShowMarket(true);
+            loadMarket();
+          }
+        }, "\u53D1\u73B0 Cuko API \u5E02\u573A"),
+        (0, import_react9.createElement)("button", {
+          style: {
+            width: "100%",
+            height: "40px",
+            marginTop: "8px",
             borderRadius: "10px",
             border: "1px solid var(--ck-border)",
             background: "var(--ck-bg-2)",
@@ -116548,6 +116627,30 @@ body {
   // src/ui/shell/scripts/pages/settings-react.tsx
   var SETTINGS_SLOT = "settings.section";
   var THEME_BUILTINS = [["system", "\u8DDF\u968F\u7CFB\u7EDF"], ["light", "\u6D45\u8272"], ["dark", "\u6DF1\u8272"]];
+  var SettingsErrorBoundary = class extends import_react10.Component {
+    constructor(props) {
+      super(props);
+      this.state = { err: null };
+    }
+    static getDerivedStateFromError(e2) {
+      return { err: e2 && e2.message ? e2.message : String(e2) };
+    }
+    componentDidCatch(e2) {
+      console.error("[settings] \u5206\u7C7B\u6E32\u67D3\u5D29\u6E83", e2);
+    }
+    render() {
+      if (this.state.err) {
+        return (0, import_react10.createElement)(
+          "div",
+          { style: { padding: "20px", color: "var(--ck-danger)", fontSize: "13px", lineHeight: 1.6 } },
+          (0, import_react10.createElement)("div", { style: { fontWeight: 600, marginBottom: "8px" } }, "\u6B64\u5206\u7C7B\u6E32\u67D3\u51FA\u9519"),
+          (0, import_react10.createElement)("div", null, this.state.err),
+          (0, import_react10.createElement)("div", { style: { marginTop: "12px", color: "var(--ck-text-2)", fontSize: "12px" } }, "\u53EF\u5207\u6362\u5230\u5176\u4ED6\u5206\u7C7B\u7EE7\u7EED\u64CD\u4F5C\uFF0C\u6216\u91CD\u542F\u5E94\u7528\u3002")
+        );
+      }
+      return this.props.children;
+    }
+  };
   function ToggleRow({ label, desc, checked, onChange }) {
     return (0, import_react10.createElement)(
       "div",
@@ -116765,14 +116868,22 @@ body {
     const [promptTip, setPromptTip] = (0, import_react10.useState)("");
     const promptLoadedRef = (0, import_react10.useRef)(false);
     const load = (0, import_react10.useCallback)(async () => {
-      if (!api.getSettings) return;
+      if (!api.getSettings) {
+        setData({});
+        return;
+      }
       try {
         const r = await api.getSettings();
         if (r && r.success && r.data) {
           dirtyRef.current = false;
           setData(r.data);
+        } else {
+          console.error("\u83B7\u53D6\u8BBE\u7F6E\u5931\u8D25:", r?.error);
+          setData({});
         }
-      } catch (_) {
+      } catch (err) {
+        console.error("\u83B7\u53D6\u8BBE\u7F6E\u5F02\u5E38:", err);
+        setData({});
       }
     }, []);
     (0, import_react10.useEffect)(() => {
@@ -117307,27 +117418,31 @@ body {
         )
       )
     );
+    const isCuko = !!window.cukoAPI;
     const NAV = [
       ["cuko-api", "Cuko API"],
       // 针对 Cuko 独立窗口的模型配置
       ["appearance", "\u5916\u89C2"],
-      ["system-prompt", "\u7CFB\u7EDF\u63D0\u793A\u8BCD"],
-      // [261105-uw877b]
-      ["retry", "\u5931\u8D25\u81EA\u52A8\u91CD\u8BD5"],
-      ["send", "\u53D1\u9001\u5EF6\u8FDF"],
-      ["attach", "\u9644\u4EF6\u4E0A\u4F20\u95F4\u9694"],
       ["security", "\u7F51\u7EDC\u5B89\u5168"],
-      ["ai-intercept", "AI \u56DE\u590D\u62E6\u622A"],
-      ["js-result-phrases", "\u5DE5\u5177\u7ED3\u679C\u56DE\u590D\u8BED"],
-      // [261101-ym9l98]
-      ["read-header", "\u6587\u4EF6\u8BFB\u53D6\u683C\u5F0F"],
-      // [261101-ym9l98]
-      ["glob-footer", "\u6587\u4EF6\u641C\u7D22\u683C\u5F0F"],
-      // [261101-ym9l98]
-      ["write-footer", "\u6587\u4EF6\u5199\u5165\u683C\u5F0F"],
-      // [261101-ym9l98]
-      ["logs", "\u65E5\u5FD7"],
-      ["usage", "\u7528\u91CF\u7EDF\u8BA1"]
+      // Cuko 窗口也需要这个
+      ...isCuko ? [] : [
+        ["system-prompt", "\u7CFB\u7EDF\u63D0\u793A\u8BCD"],
+        // [261105-uw877b]
+        ["retry", "\u5931\u8D25\u81EA\u52A8\u91CD\u8BD5"],
+        ["send", "\u53D1\u9001\u5EF6\u8FDF"],
+        ["attach", "\u9644\u4EF6\u4E0A\u4F20\u95F4\u9694"],
+        ["ai-intercept", "AI \u56DE\u590D\u62E6\u622A"],
+        ["js-result-phrases", "\u5DE5\u5177\u7ED3\u679C\u56DE\u590D\u8BED"],
+        // [261101-ym9l98]
+        ["read-header", "\u6587\u4EF6\u8BFB\u53D6\u683C\u5F0F"],
+        // [261101-ym9l98]
+        ["glob-footer", "\u6587\u4EF6\u641C\u7D22\u683C\u5F0F"],
+        // [261101-ym9l98]
+        ["write-footer", "\u6587\u4EF6\u5199\u5165\u683C\u5F0F"],
+        // [261101-ym9l98]
+        ["logs", "\u65E5\u5FD7"],
+        ["usage", "\u7528\u91CF\u7EDF\u8BA1"]
+      ]
     ];
     let pageTitle = "";
     const navHit = NAV.find(([id]) => id === active);
@@ -117417,7 +117532,7 @@ body {
             "div",
             { className: "ck-set-content" },
             pageTitle ? (0, import_react10.createElement)("div", { className: "ck-set-page-title" }, pageTitle) : null,
-            content
+            (0, import_react10.createElement)(SettingsErrorBoundary, { key: active }, content)
           )
         ),
         // 顶栏下方显示"已保存"提示（自动保存状态）

@@ -9,6 +9,11 @@ export function CukoSettings() {
   const [cukoErr, setCukoErr] = useState('');
   const [tip, setTip] = useState('');
   const [showGuide, setShowGuide] = useState(false);
+  
+  // 市场相关状态
+  const [showMarket, setShowMarket] = useState(false);
+  const [marketItems, setMarketItems] = useState<any[]>([]);
+  const [marketLoading, setMarketLoading] = useState(false);
 
   // 当前正在编辑的表单数据
   const [editProvider, setEditProvider] = useState<any>({
@@ -18,6 +23,20 @@ export function CukoSettings() {
   const showTip = (msg: string) => {
     setTip(msg);
     setTimeout(() => setTip(''), 2000);
+  };
+
+  const loadMarket = async () => {
+    setMarketLoading(true);
+    try {
+      if ((window as any).cukoAPI && (window as any).cukoAPI.marketList) {
+        const res = await (window as any).cukoAPI.marketList('cuko-api');
+        if (res.success) setMarketItems(res.items || []);
+        else showTip(res.error || '搜索失败');
+      } else {
+        showTip('当前环境不支持市场');
+      }
+    } catch (e: any) { showTip('搜索失败: ' + e.message); }
+    setMarketLoading(false);
   };
 
   const loadProviders = async () => {
@@ -97,6 +116,44 @@ export function CukoSettings() {
     borderRadius: '12px', marginBottom: '16px'
   };
 
+  // ===== 市场视图 =====
+  if (showMarket) {
+    return createElement('div', { style: { maxWidth: '640px' } },
+      createElement('div', { style: { display: 'flex', alignItems: 'center', marginBottom: '16px' } },
+        createElement('button', { className: 'ck-btn ck-btn-ghost', onClick: () => setShowMarket(false) }, '< 返回'),
+        createElement('div', { style: { marginLeft: '16px', fontSize: '16px', fontWeight: 500 } }, 'Cuko API 市场 (topic:cuko-api)')
+      ),
+      marketLoading ? createElement('div', { style: { textAlign: 'center', padding: '20px' } }, '加载中...') :
+      marketItems.length === 0 ? createElement('div', { style: { textAlign: 'center', padding: '20px', color: 'var(--ck-text-2)' } }, '暂无匹配的仓库。给仓库打上 cuko-api topic 即可出现在这里。') :
+      marketItems.map((it: any) =>
+        createElement('div', { key: it.id, style: cardStyle },
+          createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+            createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+              createElement('div', { style: { fontSize: '14px', fontWeight: 500, color: 'var(--ck-text)' } }, it.id),
+              createElement('div', { style: { fontSize: '12px', color: 'var(--ck-text-2)' } }, it.description || '无描述'),
+              createElement('div', { style: { fontSize: '12px', color: 'var(--ck-text-2)' } }, 'Star: ' + (it.stars || 0) + ' · 更新: ' + (it.updatedAt || '').slice(0, 10))
+            ),
+            createElement('button', {
+              className: 'ck-btn ck-btn-primary',
+              onClick: () => {
+                setEditProvider({
+                  id: 'cuko-provider-' + Date.now().toString(36),
+                  name: it.name,
+                  baseUrl: it.url || 'http://127.0.0.1:3000',
+                  apiKey: '',
+                  protocol: 'cuko',
+                  models: []
+                });
+                setShowMarket(false);
+                setCukoEditing(true);
+              }
+            }, '使用')
+          )
+        )
+      )
+    );
+  }
+
   // ===== 列表视图 =====
   if (!cukoEditing) {
     return createElement('div', { style: { maxWidth: '640px' } },
@@ -124,6 +181,14 @@ export function CukoSettings() {
       createElement('button', {
         style: {
           width: '100%', height: '40px', marginTop: '16px', borderRadius: '10px',
+          border: '1px solid var(--ck-border)', background: 'var(--ck-bg-2)',
+          color: 'var(--ck-text)', fontSize: '13px', cursor: 'pointer'
+        },
+        onClick: () => { setShowMarket(true); loadMarket(); }
+      }, '发现 Cuko API 市场'),
+      createElement('button', {
+        style: {
+          width: '100%', height: '40px', marginTop: '8px', borderRadius: '10px',
           border: '1px solid var(--ck-border)', background: 'var(--ck-bg-2)',
           color: 'var(--ck-text)', fontSize: '13px', cursor: 'pointer'
         },

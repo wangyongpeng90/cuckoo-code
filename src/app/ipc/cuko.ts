@@ -9,6 +9,7 @@
  * 采用 Provider / Model 分离结构（类似 DSH 的工业级设计）。
  */
 import { createRequire } from 'node:module';
+import { searchPlugins, createElectronHttpGet } from '../../plugins/index.js';
 import { buildPrompt } from '../../session/prompt-builder.js';
 import { jsRunner } from '../../tools/index.js';
 import { pickJsResultPhrase } from '../../overlay/js-result-phrases.js';
@@ -34,6 +35,15 @@ function getDb() {
 
 
 export function registerCukoIpc(): void {
+  // ====== 市场 ======
+  ipcMain.handle('cuko:market-list', async (_event: any, topic: string) => {
+    try {
+      const httpGet = createElectronHttpGet();
+      const r = await searchPlugins({ httpGet, topic: topic || 'cuko-api', force: true });
+      return { success: r.success, items: r.items, error: r.error };
+    } catch (e: any) { return { success: false, items: [], error: e.message }; }
+  });
+
   // ====== 杂项配置（保留） ======
   ipcMain.handle('cuko:get-config', () => {
     const db = getDb();
@@ -111,6 +121,53 @@ export function registerCukoIpc(): void {
       return { success: true };
     } catch (err: any) {
       console.error('[cuko:save-provider]', err);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('cuko:refresh-models', async () => {
+    const db = getDb();
+    if (!db) return { success: false, error: 'Database unavailable' };
+    try {
+      const providers = db.prepare('SELECT * FROM cuko_providers').all() as any[];
+      const httpGet = createElectronHttpGet();
+      const errors: string[] = [];
+
+      await Promise.all(providers.map(async (p) => {
+        try {
+          const headers: Record<string, string> = { Accept: 'application/json' };
+          if (p.api_key) headers.Authorization = 'Bearer ' + p.api_key;
+          const url = p.base_url.replace(/\/+$/, '') + '/v1/models';
+          
+          const res = await httpGet({ url, headers });
+          if (res.status !== 200) {
+            errors.push(`${p.name}: HTTP ${res.status}`);
+            return;
+          }
+          
+          const bodyText = res.body ? res.body.toString('utf-8') : '';
+          const json = JSON.parse(bodyText);
+          if (!json.data || !Array.isArray(json.data)) {
+            errors.push(`${p.name}: 返回格式不正确`);
+            return;
+          }
+
+          const now = nowLocalIso();
+          db.prepare('DELETE FROM cuko_models WHERE provider_id = ?').run(p.id);
+          const stmt = db.prepare(`
+            INSERT INTO cuko_models (provider_id, model_id, name, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+          `);
+          for (const m of json.data) {
+            stmt.run(p.id, m.id, m.name || m.id, now, now);
+          }
+        } catch (err: any) {
+          errors.push(`${p.name}: ${err.message}`);
+        }
+      }));
+
+      return { success: true, errors };
+    } catch (err: any) {
       return { success: false, error: err.message };
     }
   });
