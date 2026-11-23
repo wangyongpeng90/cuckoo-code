@@ -562,10 +562,38 @@ function ChatApp() {
   const currentThreadIdRef = useRef<string>('');
   // 切换会话时暂存未发送的输入框草稿（会话ID -> 文本），仅在本次运行期间有效
   const draftCacheRef = useRef<Map<string, string>>(new Map());
+  // 反查当前 runtime（useExternalStoreRuntime 在下面才创建，所以要用 ref 后置赋值）
+  const runtimeRef = useRef<any>(null);
   const setThreadId = useCallback((id: string) => {
     currentThreadIdRef.current = id;
     setCurrentThreadId(id);
   }, []);
+
+  /** 取出当前输入框里的文本（拿不到就返回空串） */
+  const readComposerText = (): string => {
+    try {
+      return runtimeRef.current?.thread?.composer?.getState?.()?.text ?? '';
+    } catch {
+      return '';
+    }
+  };
+
+  /** 切换会话前把当前输入框草稿存起来（切回来能还原） */
+  const stashDraft = (prevId: string) => {
+    if (!prevId) return;
+    const text = readComposerText();
+    if (text.trim()) draftCacheRef.current.set(prevId, text);
+    else draftCacheRef.current.delete(prevId);
+  };
+
+  /** 切换会话后还原目标会话的草稿（没有就清空输入框） */
+  const restoreDraft = (nextId: string) => {
+    const next = draftCacheRef.current.get(nextId) || '';
+    try {
+      const composer = runtimeRef.current?.thread?.composer;
+      if (composer && typeof composer.setText === 'function') composer.setText(next);
+    } catch { /* 输入框还没挂载，忽略 */ }
+  };
   // 修改会话 ID 弹窗（方案 A：只改库里的值，下次请求生效）
   const [sessionIdEditing, setSessionIdEditing] = useState<{ threadId: string; title: string; value: string } | null>(null);
   // 查看首轮注入的系统提示词
@@ -792,10 +820,7 @@ function ChatApp() {
   const switchThread = async (id: string) => {
     // 切换前先保存当前会话的输入框草稿
     const prevId = currentThreadIdRef.current;
-    if (prevId && prevId !== id) {
-      const prevText = runtimeRef.current?.thread?.composer?.getState?.()?.text ?? '';
-      if (prevText.trim()) draftCacheRef.current.set(prevId, prevText);
-    }
+    if (prevId && prevId !== id) stashDraft(prevId);
     setThreadId(id);
     const [dbMsgs, runs] = await Promise.all([
       window.cukoAPI.getMessages(id),
@@ -843,6 +868,7 @@ function ChatApp() {
     }
     setMessages(loadedMsgs);
     setRunningSessions((Array.isArray(runs) ? runs : []).map((r: any) => r.sessionId));
+    restoreDraft(id);
     
     // 读取该会话绑定的模型与所属工作区
     const session = threads.find(t => t.id === id) || (await window.cukoAPI.listSessions()).find(x => x.id === id);
@@ -865,11 +891,7 @@ function ChatApp() {
   // 新建会话（可指定项目目录；不传则用当前 activeWorkspace）
   const switchNewThread = async (projectDir?: string) => {
     // 新建前先保存当前会话的输入框草稿
-    const prevId = currentThreadIdRef.current;
-    if (prevId) {
-      const prevText = runtimeRef.current?.thread?.composer?.getState?.()?.text ?? '';
-      if (prevText.trim()) draftCacheRef.current.set(prevId, prevText);
-    }
+    stashDraft(currentThreadIdRef.current);
     const newId = crypto.randomUUID();
     const targetDir = projectDir || activeWorkspace?.path || undefined;
     await (window.cukoAPI as any).createSession(newId, config.providerId || undefined, config.modelId || undefined, targetDir);
@@ -880,6 +902,7 @@ function ChatApp() {
     }
     setThreadId(newId);
     setMessages([]);
+    restoreDraft(newId);
     await refreshThreads();
   };
 
@@ -1155,6 +1178,9 @@ function ChatApp() {
       return { ...m, content, metadata: { ...(m.metadata || {}), custom: { usage: m.usage } } } as any;
     },
   });
+
+  // 上面的 switchThread / switchNewThread 需要读输入框，runtime 在这里才创建，用 ref 桥接
+  runtimeRef.current = runtime;
 
   // 只在进行中禁止切模型（有历史时会弹窗确认并压缩发送）
   const modelSwitchLocked = isRunning;
