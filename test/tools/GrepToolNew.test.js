@@ -72,10 +72,20 @@ test('formatGrepOutput 基本与截断', () => {
   assert.match(out, /Found 2 matches/);
   assert.match(out, /a\.js/);
   assert.match(out, /Line 1: x/);
+});
+
+test('formatGrepOutput 截断时不给总数，并提示收窄条件', () => {
   const trunc = { truncated: true, kept: 1, seen: 5, items: [{ path: 'a.js', lineNumber: 1, line: 'x' }] };
   const out2 = formatGrepOutput(trunc);
-  assert.match(out2, /Found 1 of 5 matches/);
-  assert.match(out2, /narrow pattern/);
+  // 数量在读取上限处就停了，给可能不准的总数不如不给
+  assert.match(out2, /Showing the first 1 matches/);
+  assert.match(out2, /truncated/);
+  assert.doesNotMatch(out2, /of 5 matches/);
+  // 明确要求 AI 用更精准的搜索
+  assert.match(out2, /Narrow the search/);
+  assert.match(out2, /pattern more specific/);
+  assert.match(out2, /set path/);
+  assert.match(out2, /set include/);
 });
 
 test('retainGrepMatches 截断', () => {
