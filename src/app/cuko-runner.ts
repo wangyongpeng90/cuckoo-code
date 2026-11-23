@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { buildPrompt } from '../session/prompt-builder.js';
 import { nowLocalIso } from '../infra/time.js';
 import { jsRunner } from '../tools/index.js';
-import { pickJsResultPhrase } from '../overlay/js-result-phrases.js';
+import { pickJsResultPhrase, pickJsResultItemTemplate, formatJsResultItemTitle } from '../overlay/js-result-phrases.js';
 import {
   createSseDecoder,
   extractCuckooBlocks,
@@ -21,6 +21,25 @@ import {
   friendlyError,
   splitPromptByH1,
 } from './cuko-run-protocol.js';
+import {
+  normalizeProtocol,
+  joinApiUrl,
+  composeFirstUserText,
+  buildToolSentText,
+  assistantSentText,
+  parseStoredUserContent,
+  buildChatMessages,
+  buildChatCompletionsBody,
+  parseJsonObjectParam,
+  createChatStreamParser,
+  classifyFailure,
+  retryDelayMs,
+  MAX_RETRIES,
+  isContextOverflowError,
+  effectiveModelMeta,
+  reasoningRequestOf,
+} from './cuko-openai.js';
+import type { CukoProtocol, ToolRunItem, ModelMeta, ReasoningRequest } from './cuko-openai.js';
 
 export type CukoRunStatus = 'complete' | 'cancelled' | 'error';
 
@@ -34,6 +53,8 @@ export interface StartRunParams {
   input: CukoRunInputPart[];
   /** 发起运行的 Cuko 窗口 id（部分工具需要窗口上下文；窗口关了就是失效 id） */
   windowId?: number | null;
+  /** [261123-q4h7tn-cuko-openai] 用户消息（由主进程落库；OpenAI 协议必需，Cuko 协议可选） */
+  userMessage?: { id: string; content: string };
 }
 
 export interface CukoRunSnapshot {
@@ -60,6 +81,8 @@ interface CukoRun extends CukoRunSnapshot {
   modelId: string;
   initialInput: CukoRunInputPart[];
   windowId: number | null;
+  /** [261123-q4h7tn-cuko-openai] 协议（未设置视为 cuko） */
+  protocol?: CukoProtocol;
 }
 
 /** 当前正在运行的会话（sessionId → run） */
@@ -180,13 +203,16 @@ function insertMessage(msg: {
   content: string;
   think?: string;
   usage?: any;
+  /** [261123-q4h7tn-cuko-openai] 发给模型的原文（写入即固定） */
+  sentRole?: string | null;
+  sentText?: string | null;
 }): void {
   const db = getDb();
   if (!db) return;
   try {
     const now = nowLocalIso();
-    db.prepare('INSERT INTO cuko_messages (id, session_id, role, content, think, usage_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(msg.id, msg.sessionId, msg.role, msg.content, msg.think || null, msg.usage ? JSON.stringify(msg.usage) : null, now);
+    db.prepare('INSERT INTO cuko_messages (id, session_id, role, content, think, usage_json, created_at, sent_role, sent_text) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(msg.id, msg.sessionId, msg.role, msg.content, msg.think || null, msg.usage ? JSON.stringify(msg.usage) : null, now, msg.sentRole || null, msg.sentText || null);
     db.prepare('UPDATE cuko_sessions SET updated_at = ? WHERE id = ?').run(now, msg.sessionId);
   } catch (err: any) {
     console.error('[Cuko] 消息落库失败:', err?.message || err);
@@ -262,6 +288,8 @@ interface RoundResult {
   sawDone: boolean;
   aborted: boolean;
   error?: string;
+  /** [261123-q4h7tn-cuko-openai] OpenAI 协议：本轮 assistant 原文（null = 不进历史） */
+  sentText?: string | null;
 }
 
 /** 跑一轮请求：POST /v1/responses，解析 SSE，返回累计内容 */
@@ -449,6 +477,7 @@ async function executeToolBlocks(run: CukoRun, blocks: string[]): Promise<ToolEx
     sessionId: run.sessionId,
     role: 'assistant',
     content: JSON.stringify(run.toolParts || []),
+    ...toolSentFields(run, results, blocks.length),
   });
   emit({ type: 'tool-complete', sessionId: run.sessionId, toolMessageId: run.toolMessageId, parts: run.toolParts });
   return results;
@@ -503,7 +532,10 @@ async function runLoop(run: CukoRun, initialContent?: string): Promise<void> {
       run.toolParts = undefined;
       emit({ type: 'run-start', sessionId: run.sessionId, runId: run.runId, assistantId, startedAt: run.startedAt });
 
-      const round = await streamRound(run, currentInput, run.providerSessionId, requestType);
+      // [261123-q4h7tn-cuko-openai] 按协议分流：OpenAI 每轮从库里重放原文，Cuko 只发增量
+      const round = run.protocol === 'openai'
+        ? await streamOpenAiRound(run)
+        : await streamRound(run, currentInput, run.providerSessionId, requestType);
 
       insertMessage({
         id: assistantId,
@@ -512,6 +544,8 @@ async function runLoop(run: CukoRun, initialContent?: string): Promise<void> {
         content: round.content,
         think: round.think,
         usage: round.usage,
+        sentRole: round.sentText ? 'assistant' : null,
+        sentText: round.sentText || null,
       });
       emit({
         type: 'round-complete',
@@ -583,11 +617,23 @@ export function startCukoRun(params: StartRunParams): { success: boolean; runId?
   const input = Array.isArray(params.input) ? params.input.filter((p) => p && typeof p.type === 'string') : [];
   if (input.length === 0) return { success: false, error: '消息内容为空' };
 
+  const protocol = normalizeProtocol(provider.protocol);
   const providerSessionId = session.provider_session_id || '';
   const projectDir = session.project_dir || '';
-  const first = withSystemPrompt(input, projectDir, providerSessionId);
-  const firstInput = first.input;
-  if (first.promptText) persistSystemPrompt(sessionId, first.promptText);
+  let firstInput: CukoRunInputPart[] = input;
+  if (protocol === 'openai') {
+    // [261123-q4h7tn-cuko-openai] 用户消息由主进程落库并固定原文（第一条拼上系统提示词）
+    const prep = prepareOpenAiUserTurn(sessionId, projectDir, params.userMessage);
+    if (!prep.ok) return { success: false, error: prep.error };
+  } else {
+    const first = withSystemPrompt(input, projectDir, providerSessionId);
+    firstInput = first.input;
+    if (first.promptText) persistSystemPrompt(sessionId, first.promptText);
+    // 新版界面把用户消息交给主进程落库；旧版界面自己存（不传 userMessage）
+    if (params.userMessage && params.userMessage.id) {
+      insertMessage({ id: params.userMessage.id, sessionId, role: 'user', content: String(params.userMessage.content ?? '') });
+    }
+  }
 
   const run: CukoRun = {
     sessionId,
@@ -609,6 +655,7 @@ export function startCukoRun(params: StartRunParams): { success: boolean; runId?
     apiKey: provider.api_key || '',
     modelId: session.model_id,
     initialInput: firstInput,
+    protocol,
     windowId: typeof params.windowId === 'number' ? params.windowId : null,
   };
 
@@ -892,5 +939,281 @@ export function cancelAllCukoRuns(): void {
   for (const run of runs.values()) {
     run.aborted = true;
     try { run.abort.abort(); } catch { /* ignore */ }
+  }
+}
+
+// ================= [261123-q4h7tn-cuko-openai] OpenAI 兼容协议（Chat Completions） =================
+// 设计见 docs/requirements/261123-q4h7tn-cuko-openai.md：
+// 原文写入即固定、每轮原样重放（前缀不变以命中缓存）；失败尝试不进历史；临时错误原样重发重试。
+
+/** 与网页模式一致：单个脚本结果超过这个长度就截断 */
+const OPENAI_TOOL_OUTPUT_MAX = 15000;
+
+function truncateToolOutput(text: string): string {
+  const s = String(text ?? '').trim();
+  return s.length > OPENAI_TOOL_OUTPUT_MAX ? s.slice(0, OPENAI_TOOL_OUTPUT_MAX) + '\n...[输出过长已截断]...' : s;
+}
+
+/** 工具卡片的原文（仅 OpenAI 协议）：回复语 + 每个脚本「标题 + 结果」；被停止没跑的脚本标为未执行 */
+function toolSentFields(run: CukoRun, results: ToolExecResult[], total: number): { sentRole?: string; sentText?: string } {
+  if (run.protocol !== 'openai') return {};
+  const items: ToolRunItem[] = [];
+  for (let i = 0; i < total; i++) {
+    const r = results[i];
+    if (!r) items.push({ status: 'skipped' });
+    else if (r.success) items.push({ status: 'ok', text: truncateToolOutput(r.output || '') });
+    else items.push({ status: 'error', text: r.error || '未知错误' });
+  }
+  let phrase = '执行了 ' + total + ' 个脚本，结果如下：';
+  try {
+    const picked = pickJsResultPhrase(total || 1);
+    if (picked) phrase = picked;
+  } catch { /* 用默认回复语 */ }
+  let template = '';
+  try {
+    template = pickJsResultItemTemplate();
+  } catch { /* 用默认标题 */ }
+  const title = template ? (i: number, ok: boolean) => formatJsResultItemTitle(template, i, ok) : undefined;
+  return { sentRole: 'user', sentText: buildToolSentText(phrase, items, title) };
+}
+
+/** 首轮完整系统提示词（未绑定工作区时为空） */
+function buildSystemPromptText(projectDir: string): string {
+  if (!projectDir) return '';
+  try {
+    const built = buildPrompt({ providerId: 'cuko', selectedDir: projectDir });
+    if (built.error || !built.prompt) return '';
+    return String(built.prompt).trim();
+  } catch (err: any) {
+    console.error('[Cuko] 组装系统提示词失败:', err?.message || err);
+    return '';
+  }
+}
+
+type PrepareUserTurnResult = { ok: true } | { ok: false; error: string };
+
+/** OpenAI 协议：用户消息由主进程落库并固定原文；会话还没有任何原文时拼上系统提示词 */
+function prepareOpenAiUserTurn(sessionId: string, projectDir: string, userMessage: StartRunParams['userMessage']): PrepareUserTurnResult {
+  if (!userMessage || !userMessage.id) {
+    return { ok: false, error: 'OpenAI 协议需要由主进程保存用户消息，当前界面版本过旧，请更新后重试' };
+  }
+  const raw = String(userMessage.content ?? '');
+  const parsed = parseStoredUserContent(raw);
+  if (parsed.attachmentNames.length > 0) return { ok: false, error: '当前模型暂不支持附件，请移除附件后再发送' };
+  const db = getDb();
+  if (!db) return { ok: false, error: '数据库未就绪' };
+  let isFirst = true;
+  try {
+    const row = db.prepare("SELECT COUNT(*) AS c FROM cuko_messages WHERE session_id = ? AND sent_text IS NOT NULL AND sent_text != ''").get(sessionId) as any;
+    isFirst = !row || !row.c;
+  } catch (err: any) {
+    return { ok: false, error: '读取历史失败：' + (err?.message || String(err)) };
+  }
+  let sentText = parsed.text;
+  if (isFirst) {
+    const prompt = buildSystemPromptText(projectDir);
+    if (prompt) {
+      persistSystemPrompt(sessionId, prompt);
+      sentText = composeFirstUserText(prompt, sentText);
+    }
+  }
+  if (!sentText.trim()) return { ok: false, error: '消息内容为空' };
+  insertMessage({ id: userMessage.id, sessionId, role: 'user', content: raw, sentRole: 'user', sentText });
+  return { ok: true };
+}
+
+interface OpenAiRequestOptions {
+  extraParams: Record<string, any> | null;
+  maxTokens: number | null;
+  reasoning: ReasoningRequest | null;
+}
+
+function parseMetaJson(text: unknown): ModelMeta | null {
+  if (typeof text !== 'string' || !text.trim()) return null;
+  try {
+    const value = JSON.parse(text);
+    return value && typeof value === 'object' && !Array.isArray(value) ? (value as ModelMeta) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 每轮请求前从库里读：额外参数、模型最大输出、会话思考强度（改了从下一次请求生效） */
+function loadOpenAiRequestOptions(run: CukoRun): OpenAiRequestOptions {
+  const out: OpenAiRequestOptions = { extraParams: null, maxTokens: null, reasoning: null };
+  const db = getDb();
+  if (!db) return out;
+  try {
+    const session = db.prepare('SELECT provider_id, reasoning_effort FROM cuko_sessions WHERE id = ?').get(run.sessionId) as any;
+    const providerId = session?.provider_id || '';
+    const provider = db.prepare('SELECT extra_params, reasoning_field, disable_reasoning_params FROM cuko_providers WHERE id = ?').get(providerId) as any;
+    const model = db.prepare('SELECT api_meta, user_meta FROM cuko_models WHERE provider_id = ? AND model_id = ?').get(providerId, run.modelId) as any;
+    const extra = parseJsonObjectParam(String(provider?.extra_params || ''));
+    if (extra.ok) out.extraParams = extra.value;
+    const meta = effectiveModelMeta(parseMetaJson(model?.api_meta), parseMetaJson(model?.user_meta));
+    if (typeof meta.maxTokens === 'number' && meta.maxTokens > 0) out.maxTokens = meta.maxTokens;
+    const disable = parseJsonObjectParam(String(provider?.disable_reasoning_params || ''));
+    out.reasoning = reasoningRequestOf(meta, session?.reasoning_effort, {
+      field: provider?.reasoning_field || null,
+      disableParams: disable.ok ? disable.value : null,
+    });
+  } catch (err: any) {
+    console.error('[Cuko] 读取 OpenAI 请求参数失败:', err?.message || err);
+  }
+  return out;
+}
+
+/** 等待 ms 毫秒；期间被停止返回 false */
+function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(false);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve(true);
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+interface OpenAiAttempt {
+  content: string;
+  think: string;
+  usage?: any;
+  sawDone: boolean;
+  aborted: boolean;
+  httpStatus?: number;
+  networkError: boolean;
+  streamError?: string;
+  errorText?: string;
+}
+
+/** 一次 Chat Completions 请求（流式）；每次尝试都记一条请求日志 */
+async function openAiAttempt(run: CukoRun, url: string, headers: Record<string, string>, bodyText: string, logInput: any[], attempt: number): Promise<OpenAiAttempt> {
+  const parser = createChatStreamParser((delta, thinkDelta) => {
+    run.content += delta;
+    run.think += thinkDelta;
+    emit({ type: 'delta', sessionId: run.sessionId, assistantId: run.assistantId, delta, thinkDelta });
+  });
+  const startedAt = Date.now();
+  const logId = pushRequestLog({
+    kind: 'run',
+    sessionId: run.sessionId,
+    model: run.modelId,
+    url,
+    type: attempt > 0 ? 'openai（第 ' + attempt + ' 次重试）' : 'openai',
+    input: logInput,
+  });
+  let httpStatus: number | undefined;
+  let networkError = false;
+  let aborted = false;
+  let errorText: string | undefined;
+  try {
+    const response = await fetch(url, { method: 'POST', headers, body: bodyText, signal: run.abort.signal });
+    httpStatus = response.status;
+    finishRequestLog(logId, { httpStatus });
+    if (!response.ok || !response.body) {
+      let detail = '';
+      try {
+        detail = await response.text();
+      } catch { /* ignore */ }
+      errorText = 'HTTP ' + response.status + (detail ? ': ' + detail.slice(0, 2000) : '');
+    } else {
+      const reader = response.body.getReader();
+      const textDecoder = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parser.push(textDecoder.decode(value, { stream: true }));
+      }
+      parser.push(textDecoder.decode());
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError' || run.aborted) {
+      aborted = true;
+    } else {
+      networkError = true;
+      errorText = err?.message || '网络错误';
+    }
+  }
+  if (run.aborted) aborted = true;
+  const res = parser.finish();
+  const failed = aborted || !!errorText || !!res.error || !res.sawDone;
+  finishRequestLog(logId, {
+    status: failed ? 'error' : 'ok',
+    error: aborted ? '已停止' : (errorText || res.error || (res.sawDone ? undefined : '连接中断，回复不完整')),
+    durationMs: Date.now() - startedAt,
+  });
+  return {
+    content: res.content,
+    think: res.think,
+    usage: res.usage,
+    sawDone: res.sawDone,
+    aborted,
+    httpStatus,
+    networkError,
+    streamError: res.error,
+    errorText: errorText || res.error,
+  };
+}
+
+/**
+ * OpenAI 协议的一轮：按 rowid 顺序重放库里的原文 → 请求 → 解析；
+ * 临时错误（网络 / 断开 / 429 / 5xx）原样重发，最多 MAX_RETRIES 次。
+ * 停止：已输出的正文进历史；出错 / 断开：不进历史（sentText 为空）。
+ */
+async function streamOpenAiRound(run: CukoRun): Promise<RoundResult> {
+  const db = getDb();
+  let rows: any[] = [];
+  try {
+    rows = db ? (db.prepare('SELECT sent_role, sent_text FROM cuko_messages WHERE session_id = ? ORDER BY rowid ASC').all(run.sessionId) as any[]) : [];
+  } catch (err: any) {
+    const error = '读取历史失败：' + (err?.message || String(err));
+    return { content: '⚠️ ' + error, think: '', sawDone: false, aborted: false, error };
+  }
+  const messages = buildChatMessages(rows);
+  if (messages.length === 0) {
+    const error = '没有可发送的内容';
+    return { content: '⚠️ ' + error, think: '', sawDone: false, aborted: false, error };
+  }
+  const opts = loadOpenAiRequestOptions(run);
+  const body = buildChatCompletionsBody({ model: run.modelId, messages, extraParams: opts.extraParams, maxTokens: opts.maxTokens, reasoning: opts.reasoning });
+  const bodyText = JSON.stringify(body);
+  const url = joinApiUrl(run.baseUrl, '/v1/chat/completions');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
+  if (run.apiKey) headers.Authorization = 'Bearer ' + run.apiKey;
+  const logInput = messages.map((m) => ({ type: m.role, text: m.content }));
+
+  for (let attempt = 0; ; attempt++) {
+    run.content = '';
+    run.think = '';
+    run.usage = undefined;
+    const a = await openAiAttempt(run, url, headers, bodyText, logInput, attempt);
+    const kind = classifyFailure({ aborted: a.aborted, httpStatus: a.httpStatus, networkError: a.networkError, streamError: a.streamError, sawDone: a.sawDone });
+    if (kind === 'none') {
+      return { content: a.content, think: a.think, usage: a.usage, sawDone: true, aborted: false, sentText: assistantSentText(a.content) };
+    }
+    if (kind === 'aborted') {
+      return { content: a.content + '\n\n（已停止）', think: a.think, usage: a.usage, sawDone: false, aborted: true, sentText: assistantSentText(a.content) };
+    }
+    if (kind === 'retry' && attempt < MAX_RETRIES) {
+      emit({ type: 'round-retry', sessionId: run.sessionId, assistantId: run.assistantId, attempt: attempt + 1, maxRetries: MAX_RETRIES, error: a.errorText || '连接中断，回复不完整' });
+      const waited = await sleepUnlessAborted(retryDelayMs(attempt + 1), run.abort.signal);
+      if (!waited) {
+        // 重试等待期间被停止：失败的那次尝试不进历史
+        return { content: '（已停止）', think: '', sawDone: false, aborted: true, sentText: null };
+      }
+      continue;
+    }
+    let error = a.errorText || '连接中断，回复不完整';
+    if (isContextOverflowError(error)) error = '对话已超出模型上下文长度，请新开会话，或切换到上下文更长的模型（' + error + '）';
+    if (kind === 'retry') error = '已重试 ' + MAX_RETRIES + ' 次仍失败：' + error;
+    return { content: (a.content ? a.content + '\n\n' : '') + '⚠️ ' + error, think: a.think, usage: a.usage, sawDone: false, aborted: false, error };
   }
 }
