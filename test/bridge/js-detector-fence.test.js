@@ -19,6 +19,15 @@ describe('extractJsToolBlocks 围栏语言解析', () => {
     expect(extractJsToolBlocks(fence('CUCKOO', 'await bash("echo hi");'))).toEqual(['await bash("echo hi");']);
   });
 
+  it('围栏挤在正文末尾（行内出现）也要认', () => {
+    const sample = ['结论如下。', '确保不破坏现有流程。' + '```' + 'cuckoo id="c8v5mt"', 'await bash("echo hi");', '```'].join(NL);
+    expect(extractJsToolBlocks(sample)).toEqual(['await bash("echo hi");']);
+  });
+
+  it('闭围栏后面跟正文也要认', () => {
+    expect(extractJsToolBlocks('```cuckoo' + NL + 'await bash("x");' + NL + '``` 后面' + NL)).toEqual(['await bash("x");']);
+  });
+
   it('json 块不误判', () => {
     expect(extractJsToolBlocks(fence('json', '{"a":1}'))).toEqual([]);
   });

@@ -13,6 +13,8 @@ import {
   splitPromptByH1,
 } from '../src/app/cuko-run-protocol.js';
 
+const NL = String.fromCharCode(10);
+
 const collect = () => {
   const events = [];
   const decoder = createSseDecoder((event, data) => events.push({ event, data }));
@@ -87,6 +89,23 @@ describe('extractCuckooBlocks', () => {
   it('CRLF 回复也能提取（去掉行尾 \\r）', () => {
     const text = ['```cuckoo id="1"', 'return 1;', '```'].join('\r\n');
     expect(extractCuckooBlocks(text)).toEqual(['return 1;']);
+  });
+
+  // 实测：模型把开围栏挤在正文末尾（"…确保不破坏现有流程。```cuckoo id=\"c8v5mt\""），
+  // 整行 trim 后不以围栏开头，旧实现按行首匹配会整块漏掉、工具不执行。
+  it('围栏挤在正文末尾（行内出现）也要认', () => {
+    const text = ['我正在核对参考项目的后端接口。', '确保复用时不会破坏现有流程。```cuckoo id="c8v5mt"', 'log(r);', '```'].join(NL);
+    expect(extractCuckooBlocks(text)).toEqual(['log(r);']);
+  });
+
+  it('闭围栏后面还有正文也要认', () => {
+    const text = ['```cuckoo', 'return 1;', '``` 后面还有字'].join(NL);
+    expect(extractCuckooBlocks(text)).toEqual(['return 1;']);
+  });
+
+  it('行内写法与独立写法混排，两段都取', () => {
+    const text = ['前言```cuckoo', 'a();', '```', '中间```cuckoo id="x"', 'b();', '```结尾'].join(NL);
+    expect(extractCuckooBlocks(text)).toEqual(['a();', 'b();']);
   });
 
   it('非 cuckoo 语言（含 cuckoo 前缀的假语言）不误判', () => {
