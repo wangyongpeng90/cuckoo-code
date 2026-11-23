@@ -30528,6 +30528,12 @@ body {
     const [showMarket, setShowMarket] = (0, import_react9.useState)(false);
     const [marketItems, setMarketItems] = (0, import_react9.useState)([]);
     const [marketLoading, setMarketLoading] = (0, import_react9.useState)(false);
+    const [showPrompt, setShowPrompt] = (0, import_react9.useState)(false);
+    const [promptText, setPromptText] = (0, import_react9.useState)("");
+    const [promptBuiltin, setPromptBuiltin] = (0, import_react9.useState)("");
+    const [promptDirty, setPromptDirty] = (0, import_react9.useState)(false);
+    const [promptSaving, setPromptSaving] = (0, import_react9.useState)(false);
+    const [promptTip, setPromptTip] = (0, import_react9.useState)("");
     const [editProvider, setEditProvider] = (0, import_react9.useState)({
       id: "",
       name: "",
@@ -30554,6 +30560,59 @@ body {
         showTip("\u641C\u7D22\u5931\u8D25: " + e2.message);
       }
       setMarketLoading(false);
+    };
+    const PROMPT_KEY = "cuckoo-system-prompt-template:cuko";
+    const showPromptTip = (msg) => {
+      setPromptTip(msg);
+      setTimeout(() => setPromptTip(""), 1800);
+    };
+    const loadPrompt = async () => {
+      const anyApi = api;
+      if (typeof anyApi.getPromptTemplate !== "function") return;
+      try {
+        const r = await anyApi.getPromptTemplate("cuko");
+        if (r && r.success) {
+          setPromptBuiltin(r.builtin || "");
+          setPromptText(r.custom || r.builtin || "");
+          setPromptDirty(false);
+        }
+      } catch (_) {
+      }
+    };
+    const openPrompt = () => {
+      setShowPrompt(true);
+      setPromptTip("");
+      loadPrompt();
+    };
+    const savePrompt = async () => {
+      const anyApi = api;
+      if (typeof anyApi.saveSharedSettings !== "function") return;
+      setPromptSaving(true);
+      try {
+        const r = await anyApi.saveSharedSettings({ [PROMPT_KEY]: promptText });
+        if (r && r.success) {
+          setPromptDirty(false);
+          showPromptTip("\u5DF2\u4FDD\u5B58");
+        } else {
+          showPromptTip("\u4FDD\u5B58\u5931\u8D25");
+        }
+      } catch (_) {
+        showPromptTip("\u4FDD\u5B58\u5931\u8D25");
+      }
+      setPromptSaving(false);
+    };
+    const resetPrompt = async () => {
+      const anyApi = api;
+      if (typeof anyApi.resetSharedSettings !== "function") return;
+      try {
+        const r = await anyApi.resetSharedSettings([PROMPT_KEY]);
+        if (r && r.success) {
+          setPromptText(promptBuiltin);
+          setPromptDirty(false);
+          showPromptTip("\u5DF2\u6062\u590D\u5185\u7F6E");
+        }
+      } catch (_) {
+      }
     };
     const loadProviders = async () => {
       if (!window.cukoAPI) return;
@@ -30634,6 +30693,48 @@ body {
       borderRadius: "12px",
       marginBottom: "16px"
     };
+    if (showPrompt) {
+      return (0, import_react9.createElement)(
+        "div",
+        { style: { maxWidth: "640px" } },
+        (0, import_react9.createElement)(
+          "div",
+          { style: { display: "flex", alignItems: "center", marginBottom: "16px" } },
+          (0, import_react9.createElement)("button", { className: "ck-btn ck-btn-ghost", onClick: () => setShowPrompt(false) }, "< \u8FD4\u56DE"),
+          (0, import_react9.createElement)("div", { style: { marginLeft: "16px", fontSize: "16px", fontWeight: 500 } }, "Cuko API \u7CFB\u7EDF\u63D0\u793A\u8BCD")
+        ),
+        (0, import_react9.createElement)(
+          "div",
+          { className: "ck-set-row-col" },
+          (0, import_react9.createElement)("div", { className: "ck-set-row-label" }, "\u7CFB\u7EDF\u63D0\u793A\u8BCD\u6A21\u677F"),
+          (0, import_react9.createElement)(
+            "div",
+            { className: "ck-set-row-desc" },
+            "Cuko API \u9996\u6B21\u5BF9\u8BDD\u65F6\u53D1\u7ED9 AI \u7684\u7CFB\u7EDF\u63D0\u793A\u8BCD\u3002\u5360\u4F4D\u7B26\uFF08\u5982 {{PLATFORM_INFO}}\u3001{{TOOL_API_TYPES}}\u3001{{MCP_SECTION}}\u3001{{PROJECT_DIR}}\uFF09\u5728\u53D1\u9001\u65F6\u81EA\u52A8\u66FF\u6362\uFF0C\u8BF7\u52FF\u5220\u9664\u3002\u7559\u7A7A\u6216\u70B9\u300C\u6062\u590D\u5185\u7F6E\u300D\u4F7F\u7528 src/prompt/cuko.md\u3002"
+          ),
+          (0, import_react9.createElement)("textarea", {
+            className: "ck-set-textarea",
+            style: { minHeight: "360px", fontFamily: "monospace", fontSize: "12.5px", lineHeight: 1.5 },
+            value: promptText,
+            onChange: (e2) => {
+              setPromptText(e2.target.value);
+              setPromptDirty(true);
+            }
+          }),
+          (0, import_react9.createElement)(
+            "div",
+            { className: "ck-set-inline", style: { marginTop: "8px", justifyContent: "flex-end", alignItems: "center" } },
+            promptTip ? (0, import_react9.createElement)("span", { style: { color: "var(--ck-text-dim)", fontSize: "12px", marginRight: "8px" } }, promptTip) : null,
+            (0, import_react9.createElement)("button", { className: "ck-btn", onClick: () => {
+              setPromptText(promptBuiltin);
+              setPromptDirty(true);
+            } }, "\u586B\u5165\u5185\u7F6E\u6A21\u677F"),
+            (0, import_react9.createElement)("button", { className: "ck-btn ck-btn-danger", onClick: resetPrompt }, "\u6062\u590D\u5185\u7F6E"),
+            (0, import_react9.createElement)("button", { className: "ck-btn ck-btn-primary", disabled: !promptDirty || promptSaving, onClick: savePrompt }, promptSaving ? "\u4FDD\u5B58\u4E2D\u2026" : "\u4FDD\u5B58")
+          )
+        )
+      );
+    }
     if (showMarket) {
       return (0, import_react9.createElement)(
         "div",
@@ -30746,6 +30847,20 @@ body {
             loadMarket();
           }
         }, "\u53D1\u73B0 Cuko API \u5E02\u573A"),
+        (0, import_react9.createElement)("button", {
+          style: {
+            width: "100%",
+            height: "40px",
+            marginTop: "8px",
+            borderRadius: "10px",
+            border: "1px solid var(--ck-border)",
+            background: "var(--ck-bg-2)",
+            color: "var(--ck-text)",
+            fontSize: "13px",
+            cursor: "pointer"
+          },
+          onClick: openPrompt
+        }, "\u7CFB\u7EDF\u63D0\u793A\u8BCD"),
         (0, import_react9.createElement)("button", {
           style: {
             width: "100%",
