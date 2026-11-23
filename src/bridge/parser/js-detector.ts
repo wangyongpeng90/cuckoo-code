@@ -69,7 +69,7 @@ function extractJsToolBlocks(text: any): string[] {
     const code = buf.join(String.fromCharCode(10)).trim();
     const l = (lang || '').toLowerCase();
     if (code) {
-      if (l === 'cuckoo') {
+      if (l === 'cuckoo' || l.startsWith('cuckoo-') || l.startsWith('cuckoo_')) {
         blocks.push(code);
       } else if ((l === 'js' || l === 'javascript') && onlyFences && looksLikeToolScript(code)) {
         blocks.push(code);
@@ -89,7 +89,9 @@ function extractJsToolBlocks(text: any): string[] {
         // 叠加会产生 6 个反引号 ``````cuckoo）——按实际反引号数剥离，避免语言标记变成 "```cuckoo"。
         let bt = 0;
         while (bt < trimmed.length && trimmed[bt] === '`') bt++;
-        lang = (trimmed.slice(bt) || '').split(' ')[0];
+        // 只取第一个 token：模型会写 ```cuckoo id="58216" / ```cuckoo,js，
+        // 按空格切分遇到 tab 或整行匹配都会漏掉语言标记。
+        lang = (trimmed.slice(bt) || '').trim().split(/[\s,;=]+/)[0];
         inBlock = true;
         buf = [];
       }

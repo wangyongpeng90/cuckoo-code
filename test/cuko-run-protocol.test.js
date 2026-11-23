@@ -8,6 +8,8 @@ import {
   extractCuckooBlocks,
   extractToolNames,
   friendlyError,
+  isCuckooLang,
+  parseFenceLang,
   splitPromptByH1,
 } from '../src/app/cuko-run-protocol.js';
 
@@ -67,6 +69,45 @@ describe('extractCuckooBlocks', () => {
 
   it('未闭合的块不返回', () => {
     expect(extractCuckooBlocks('```cuckoo\nreturn 1;')).toEqual([]);
+  });
+
+  // 实测：模型把围栏写成 ```cuckoo id="58216"（带属性）时整行 lowercase 成
+  // "cuckoo id=\"58216\""，旧实现按整行比较语言标记，块被整条丢弃、工具不执行。
+  it('围栏带属性（cuckoo id="58216"）也要认', () => {
+    const text = ['```cuckoo id="58216"', 'log("hi");', 'return 1;', '```'].join('\n');
+    expect(extractCuckooBlocks(text)).toEqual(['log("hi");\nreturn 1;']);
+  });
+
+  it('围栏带大小写 / 连字符变体也要认', () => {
+    expect(extractCuckooBlocks(['```CUCKOO', 'return 1;', '```'].join('\n'))).toEqual(['return 1;']);
+    expect(extractCuckooBlocks(['```cuckoo-js', 'return 1;', '```'].join('\n'))).toEqual(['return 1;']);
+    expect(extractCuckooBlocks(['```cuckoo_js', 'return 1;', '```'].join('\n'))).toEqual(['return 1;']);
+  });
+
+  it('CRLF 回复也能提取（去掉行尾 \\r）', () => {
+    const text = ['```cuckoo id="1"', 'return 1;', '```'].join('\r\n');
+    expect(extractCuckooBlocks(text)).toEqual(['return 1;']);
+  });
+
+  it('非 cuckoo 语言（含 cuckoo 前缀的假语言）不误判', () => {
+    expect(extractCuckooBlocks(['```json', '{"a":1}', '```'].join('\n'))).toEqual([]);
+    expect(extractCuckooBlocks(['```cuckooish', 'return 1;', '```'].join('\n'))).toEqual([]);
+  });
+});
+
+describe('parseFenceLang / isCuckooLang', () => {
+  it('只取围栏后第一个 token', () => {
+    expect(parseFenceLang('```cuckoo id="1"')).toBe('cuckoo');
+    expect(parseFenceLang('```Cuckoo,js')).toBe('cuckoo');
+    expect(parseFenceLang('```')).toBe('');
+    expect(parseFenceLang('```js')).toBe('js');
+  });
+
+  it('识别 cuckoo 家族语言', () => {
+    expect(isCuckooLang('cuckoo')).toBe(true);
+    expect(isCuckooLang('cuckoo-js')).toBe(true);
+    expect(isCuckooLang('cuckooish')).toBe(false);
+    expect(isCuckooLang('')).toBe(false);
   });
 });
 

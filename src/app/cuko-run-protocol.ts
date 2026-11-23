@@ -7,11 +7,27 @@
  * 都需要脱离 React 与 Electron 单独测试。
  */
 
+/**
+ * 解析围栏行（``` 之后的部分）的语言标记。
+ * 只取第一个 token：模型经常把围栏写成 ```cuckoo id="58216"（带属性）或
+ * ```cuckoo,js，整行 lowercase 后会变成 "cuckoo id=..."，导致块被漏掉。
+ */
+export function parseFenceLang(line: string): string {
+  const rest = String(line || '').trim().replace(/^`+/, '').trim();
+  if (!rest) return '';
+  return rest.split(/[\s,;=]+/)[0].toLowerCase();
+}
+
+/** 语言标记是否表示 cuckoo 工具脚本（cuckoo / cuckoo-js / cuckoo_js …） */
+export function isCuckooLang(lang: string): boolean {
+  return lang === 'cuckoo' || lang.startsWith('cuckoo-') || lang.startsWith('cuckoo_');
+}
+
 /** 从 AI 回复中提取 ```cuckoo 代码块 */
 export function extractCuckooBlocks(text: string): string[] {
   const blocks: string[] = [];
   if (!text) return blocks;
-  const lines = text.split('\n');
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
   let inBlock = false;
   let lang = '';
   let buf: string[] = [];
@@ -20,12 +36,12 @@ export function extractCuckooBlocks(text: string): string[] {
     if (t.startsWith('```')) {
       if (!inBlock) {
         inBlock = true;
-        lang = t.slice(3).trim().toLowerCase();
+        lang = parseFenceLang(t);
         buf = [];
       } else {
         inBlock = false;
         const code = buf.join('\n').trim();
-        if (code && lang === 'cuckoo') blocks.push(code);
+        if (code && isCuckooLang(lang)) blocks.push(code);
         buf = [];
         lang = '';
       }
