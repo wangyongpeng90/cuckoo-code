@@ -1,5 +1,6 @@
 import { createElement, useState, useEffect } from 'react';
 import { Select } from '../components/select.js';
+import { api } from '../shared.js';
 import { CukoIntegrationDialog } from './cuko-integration.js';
 
 export function CukoSettings() {
@@ -117,40 +118,44 @@ export function CukoSettings() {
   };
 
   // ===== 市场视图 =====
+  // 这里只做「展示 + 跳转」：市场不替用户落任何配置，
+  // 用户去仓库 README 自己看怎么部署、怎么填地址/密钥，再回来手动添加。
   if (showMarket) {
     return createElement('div', { style: { maxWidth: '640px' } },
       createElement('div', { style: { display: 'flex', alignItems: 'center', marginBottom: '16px' } },
         createElement('button', { className: 'ck-btn ck-btn-ghost', onClick: () => setShowMarket(false) }, '< 返回'),
         createElement('div', { style: { marginLeft: '16px', fontSize: '16px', fontWeight: 500 } }, 'Cuko API 市场 (topic:cuko-api)')
       ),
+      createElement('div', { style: { fontSize: '12px', color: 'var(--ck-text-2)', marginBottom: '12px' } },
+        '点击仓库进入 GitHub 主页，按其 README 自行部署，再回到上一页点「添加模型提供商」填入地址。'),
       marketLoading ? createElement('div', { style: { textAlign: 'center', padding: '20px' } }, '加载中...') :
       marketItems.length === 0 ? createElement('div', { style: { textAlign: 'center', padding: '20px', color: 'var(--ck-text-2)' } }, '暂无匹配的仓库。给仓库打上 cuko-api topic 即可出现在这里。') :
-      marketItems.map((it: any) =>
-        createElement('div', { key: it.id, style: cardStyle },
-          createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-            createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 4 } },
+      marketItems.map((it: any) => {
+        const repoUrl = it.url || ('https://github.com/' + it.id);
+        const openRepo = () => {
+          if (typeof (api as any).openExternal === 'function') (api as any).openExternal(repoUrl);
+          else window.open(repoUrl, '_blank');
+        };
+        return createElement('div', {
+          key: it.id,
+          style: { ...cardStyle, cursor: 'pointer' },
+          title: '进入 GitHub 主页：' + repoUrl,
+          onClick: openRepo,
+        },
+          createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 } },
+            createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 } },
               createElement('div', { style: { fontSize: '14px', fontWeight: 500, color: 'var(--ck-text)' } }, it.id),
               createElement('div', { style: { fontSize: '12px', color: 'var(--ck-text-2)' } }, it.description || '无描述'),
               createElement('div', { style: { fontSize: '12px', color: 'var(--ck-text-2)' } }, 'Star: ' + (it.stars || 0) + ' · 更新: ' + (it.updatedAt || '').slice(0, 10))
             ),
             createElement('button', {
               className: 'ck-btn ck-btn-primary',
-              onClick: () => {
-                setEditProvider({
-                  id: 'cuko-provider-' + Date.now().toString(36),
-                  name: it.name,
-                  baseUrl: it.url || 'http://127.0.0.1:3000',
-                  apiKey: '',
-                  protocol: 'cuko',
-                  models: []
-                });
-                setShowMarket(false);
-                setCukoEditing(true);
-              }
-            }, '使用')
+              style: { flexShrink: 0 },
+              onClick: (e: any) => { e.stopPropagation(); openRepo(); }
+            }, '进入 GitHub')
           )
-        )
-      )
+        );
+      })
     );
   }
 

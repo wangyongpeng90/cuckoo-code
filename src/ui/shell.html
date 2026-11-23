@@ -30644,38 +30644,46 @@ body {
           (0, import_react9.createElement)("button", { className: "ck-btn ck-btn-ghost", onClick: () => setShowMarket(false) }, "< \u8FD4\u56DE"),
           (0, import_react9.createElement)("div", { style: { marginLeft: "16px", fontSize: "16px", fontWeight: 500 } }, "Cuko API \u5E02\u573A (topic:cuko-api)")
         ),
-        marketLoading ? (0, import_react9.createElement)("div", { style: { textAlign: "center", padding: "20px" } }, "\u52A0\u8F7D\u4E2D...") : marketItems.length === 0 ? (0, import_react9.createElement)("div", { style: { textAlign: "center", padding: "20px", color: "var(--ck-text-2)" } }, "\u6682\u65E0\u5339\u914D\u7684\u4ED3\u5E93\u3002\u7ED9\u4ED3\u5E93\u6253\u4E0A cuko-api topic \u5373\u53EF\u51FA\u73B0\u5728\u8FD9\u91CC\u3002") : marketItems.map(
-          (it) => (0, import_react9.createElement)(
+        (0, import_react9.createElement)(
+          "div",
+          { style: { fontSize: "12px", color: "var(--ck-text-2)", marginBottom: "12px" } },
+          "\u70B9\u51FB\u4ED3\u5E93\u8FDB\u5165 GitHub \u4E3B\u9875\uFF0C\u6309\u5176 README \u81EA\u884C\u90E8\u7F72\uFF0C\u518D\u56DE\u5230\u4E0A\u4E00\u9875\u70B9\u300C\u6DFB\u52A0\u6A21\u578B\u63D0\u4F9B\u5546\u300D\u586B\u5165\u5730\u5740\u3002"
+        ),
+        marketLoading ? (0, import_react9.createElement)("div", { style: { textAlign: "center", padding: "20px" } }, "\u52A0\u8F7D\u4E2D...") : marketItems.length === 0 ? (0, import_react9.createElement)("div", { style: { textAlign: "center", padding: "20px", color: "var(--ck-text-2)" } }, "\u6682\u65E0\u5339\u914D\u7684\u4ED3\u5E93\u3002\u7ED9\u4ED3\u5E93\u6253\u4E0A cuko-api topic \u5373\u53EF\u51FA\u73B0\u5728\u8FD9\u91CC\u3002") : marketItems.map((it) => {
+          const repoUrl = it.url || "https://github.com/" + it.id;
+          const openRepo = () => {
+            if (typeof api.openExternal === "function") api.openExternal(repoUrl);
+            else window.open(repoUrl, "_blank");
+          };
+          return (0, import_react9.createElement)(
             "div",
-            { key: it.id, style: cardStyle },
+            {
+              key: it.id,
+              style: { ...cardStyle, cursor: "pointer" },
+              title: "\u8FDB\u5165 GitHub \u4E3B\u9875\uFF1A" + repoUrl,
+              onClick: openRepo
+            },
             (0, import_react9.createElement)(
               "div",
-              { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } },
+              { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 } },
               (0, import_react9.createElement)(
                 "div",
-                { style: { display: "flex", flexDirection: "column", gap: 4 } },
+                { style: { display: "flex", flexDirection: "column", gap: 4, minWidth: 0 } },
                 (0, import_react9.createElement)("div", { style: { fontSize: "14px", fontWeight: 500, color: "var(--ck-text)" } }, it.id),
                 (0, import_react9.createElement)("div", { style: { fontSize: "12px", color: "var(--ck-text-2)" } }, it.description || "\u65E0\u63CF\u8FF0"),
                 (0, import_react9.createElement)("div", { style: { fontSize: "12px", color: "var(--ck-text-2)" } }, "Star: " + (it.stars || 0) + " \xB7 \u66F4\u65B0: " + (it.updatedAt || "").slice(0, 10))
               ),
               (0, import_react9.createElement)("button", {
                 className: "ck-btn ck-btn-primary",
-                onClick: () => {
-                  setEditProvider({
-                    id: "cuko-provider-" + Date.now().toString(36),
-                    name: it.name,
-                    baseUrl: it.url || "http://127.0.0.1:3000",
-                    apiKey: "",
-                    protocol: "cuko",
-                    models: []
-                  });
-                  setShowMarket(false);
-                  setCukoEditing(true);
+                style: { flexShrink: 0 },
+                onClick: (e2) => {
+                  e2.stopPropagation();
+                  openRepo();
                 }
-              }, "\u4F7F\u7528")
+              }, "\u8FDB\u5165 GitHub")
             )
-          )
-        )
+          );
+        })
       );
     }
     if (!cukoEditing) {
