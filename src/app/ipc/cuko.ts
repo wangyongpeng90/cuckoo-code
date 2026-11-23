@@ -15,6 +15,8 @@ import { jsRunner } from '../../tools/index.js';
 import { pickJsResultPhrase } from '../../overlay/js-result-phrases.js';
 import { nowLocalIso } from '../../infra/time.js';
 import { splitPromptByH1 } from '../cuko-run-protocol.js';
+import { normalizeProtocol, joinApiUrl, parseJsonObjectParam, parseModelList, listedToApiMeta, effectiveModelMeta } from '../cuko-openai.js';
+import type { ListedModel } from '../cuko-openai.js';
 import {
   startCukoRun,
   cancelCukoRun,
@@ -33,6 +35,111 @@ function getDb() {
   return (global as any).__globalDb;
 }
 
+
+// ================= [261123-q4h7tn-cuko-openai] Provider / 模型目录辅助 =================
+
+function parseMetaText(text: unknown): any {
+  if (typeof text !== 'string' || !text.trim()) return null;
+  try {
+    const v = JSON.parse(text);
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 只保留有值的字段；空对象返回 null */
+function cleanMeta(v: any): any {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const out: Record<string, any> = {};
+  for (const k of Object.keys(v)) {
+    if (v[k] !== undefined && v[k] !== null && v[k] !== '') out[k] = v[k];
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function displayName(m: any, apiMeta: any, userMeta: any): string {
+  return String((userMeta && userMeta.name) || (apiMeta && apiMeta.name) || m.name || m.id || '');
+}
+
+/** cuko_models 行 → 界面用的模型（id / name 保持旧字段，模型选择器不受影响） */
+function modelRowToUi(m: any): any {
+  const apiMeta = parseMetaText(m.api_meta) || {};
+  const userMeta = parseMetaText(m.user_meta) || {};
+  return {
+    id: m.model_id,
+    name: displayName({ name: m.name, id: m.model_id }, apiMeta, userMeta),
+    apiMeta,
+    userMeta,
+    source: m.source === 'manual' ? 'manual' : 'api',
+    listed: m.listed !== 0,
+    meta: effectiveModelMeta(apiMeta, userMeta),
+  };
+}
+
+/** 请求 GET {baseUrl}/v1/models（地址末尾已有 /v1 时不重复），解析标准字段 + 扩展字段 */
+async function requestModelList(baseUrl: string, apiKey: string | null): Promise<ListedModel[]> {
+  const httpGet = createElectronHttpGet();
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
+  const res = await httpGet({ url: joinApiUrl(baseUrl, '/v1/models'), headers });
+  if (res.status !== 200) throw new Error('HTTP ' + res.status);
+  const text = res.body ? res.body.toString('utf-8') : '';
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    throw new Error('返回的不是 JSON');
+  }
+  return parseModelList(json);
+}
+
+/** 刷新：只更新接口信息；接口没返回的标 listed=0，不删除，不碰用户修改 */
+function mergeListedModels(db: any, providerId: string, listed: ListedModel[]): void {
+  const now = nowLocalIso();
+  db.exec('BEGIN');
+  try {
+    const upsert = db.prepare('INSERT INTO cuko_models (provider_id, model_id, name, api_meta, source, listed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?) ON CONFLICT(provider_id, model_id) DO UPDATE SET api_meta = excluded.api_meta, listed = 1, updated_at = excluded.updated_at');
+    const ids = new Set<string>();
+    for (const m of listed) {
+      ids.add(m.id);
+      const apiMeta = cleanMeta(listedToApiMeta(m));
+      upsert.run(providerId, m.id, m.name || m.id, apiMeta ? JSON.stringify(apiMeta) : null, 'api', now, now);
+    }
+    const rows = db.prepare('SELECT model_id FROM cuko_models WHERE provider_id = ?').all(providerId) as any[];
+    const mark = db.prepare('UPDATE cuko_models SET listed = 0, updated_at = ? WHERE provider_id = ? AND model_id = ?');
+    for (const r of rows) {
+      if (!ids.has(r.model_id)) mark.run(now, providerId, r.model_id);
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+    throw err;
+  }
+}
+
+/** 表单里「获取可用模型」：已有模型保留用户修改、更新接口信息；新模型追加；接口没返回的标 listed=false（不写库） */
+function mergeFetchedForForm(current: any[], listed: ListedModel[]): any[] {
+  const byId = new Map<string, ListedModel>();
+  for (const m of listed) byId.set(m.id, m);
+  const out: any[] = [];
+  const seen = new Set<string>();
+  for (const m of current) {
+    if (!m || typeof m.id !== 'string' || !m.id) continue;
+    seen.add(m.id);
+    const hit = byId.get(m.id);
+    if (hit) out.push({ ...m, apiMeta: cleanMeta(listedToApiMeta(hit)) || {}, listed: true });
+    else out.push({ ...m, listed: m.source === 'manual' ? m.listed !== false : false });
+  }
+  for (const l of listed) {
+    if (!seen.has(l.id)) out.push({ id: l.id, name: l.name || l.id, apiMeta: cleanMeta(listedToApiMeta(l)) || {}, userMeta: {}, source: 'api', listed: true });
+  }
+  return out.map((m) => {
+    const apiMeta = m.apiMeta || {};
+    const userMeta = m.userMeta || {};
+    return { ...m, apiMeta, userMeta, name: displayName(m, apiMeta, userMeta), meta: effectiveModelMeta(apiMeta, userMeta) };
+  });
+}
 
 export function registerCukoIpc(): void {
   // ====== 市场 ======
@@ -67,20 +174,24 @@ export function registerCukoIpc(): void {
   });
 
   // ====== Provider 管理 ======
+  // [261123-q4h7tn-cuko-openai] 协议 / 额外参数 / 模型设置；模型合并写入，刷新不删模型、不覆盖用户修改
   ipcMain.handle('cuko:list-providers', () => {
     const db = getDb();
     if (!db) return [];
     try {
       const rows = db.prepare('SELECT * FROM cuko_providers').all() as any[];
-      return rows.map(p => {
-        const models = db.prepare('SELECT * FROM cuko_models WHERE provider_id = ?').all(p.id) as any[];
+      return rows.map((p: any) => {
+        const models = db.prepare('SELECT * FROM cuko_models WHERE provider_id = ? ORDER BY rowid ASC').all(p.id) as any[];
         return {
           id: p.id,
           name: p.name,
           baseUrl: p.base_url,
           apiKey: p.api_key,
-          protocol: p.protocol,
-          models: models.map(m => ({ id: m.model_id, name: m.name }))
+          protocol: normalizeProtocol(p.protocol),
+          extraParams: p.extra_params || '',
+          reasoningField: p.reasoning_field || '',
+          disableReasoningParams: p.disable_reasoning_params || '',
+          models: models.map(modelRowToUi),
         };
       });
     } catch { return []; }
@@ -89,86 +200,92 @@ export function registerCukoIpc(): void {
   ipcMain.handle('cuko:save-provider', (_event: any, provider: any) => {
     const db = getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
-    try {
-      const now = nowLocalIso();
-      const existing = db.prepare('SELECT id FROM cuko_providers WHERE id = ?').get(provider.id);
-      
-      if (existing) {
-        db.prepare(`
-          UPDATE cuko_providers 
-          SET name = ?, base_url = ?, api_key = ?, protocol = ?, updated_at = ?
-          WHERE id = ?
-        `).run(provider.name, provider.baseUrl, provider.apiKey || null, provider.protocol || 'cuko', now, provider.id);
-      } else {
-        db.prepare(`
-          INSERT INTO cuko_providers (id, name, base_url, api_key, protocol, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(provider.id, provider.name, provider.baseUrl, provider.apiKey || null, provider.protocol || 'cuko', now, now);
+    if (!provider || !provider.id) return { success: false, error: '缺少 Provider ID' };
+    const protocol = normalizeProtocol(provider.protocol);
+    const extraText = String(provider.extraParams || '').trim();
+    const disableText = String(provider.disableReasoningParams || '').trim();
+    const fieldText = String(provider.reasoningField || '').trim();
+    const extra = parseJsonObjectParam(extraText);
+    if (!extra.ok) return { success: false, error: '额外请求参数：' + extra.error };
+    const disable = parseJsonObjectParam(disableText);
+    if (!disable.ok) return { success: false, error: '关闭思考参数：' + disable.error };
+    const models: any[] | null = Array.isArray(provider.models)
+      ? provider.models.filter((m: any) => m && typeof m.id === 'string' && m.id.trim())
+      : null;
+    if (models) {
+      const ids = new Set<string>();
+      for (const m of models) {
+        const id = m.id.trim();
+        if (ids.has(id)) return { success: false, error: '模型 ID 重复：' + id };
+        ids.add(id);
       }
-      
-      // 同步模型列表（先清空旧的）
-      if (provider.models && Array.isArray(provider.models)) {
-        db.prepare('DELETE FROM cuko_models WHERE provider_id = ?').run(provider.id);
-        const stmt = db.prepare(`
-          INSERT INTO cuko_models (provider_id, model_id, name, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?)
-        `);
-        for (const m of provider.models) {
-          stmt.run(provider.id, m.id, m.name || m.id, now, now);
+    }
+    const now = nowLocalIso();
+    try {
+      db.exec('BEGIN');
+      const existing = db.prepare('SELECT id FROM cuko_providers WHERE id = ?').get(provider.id);
+      if (existing) {
+        db.prepare('UPDATE cuko_providers SET name = ?, base_url = ?, api_key = ?, protocol = ?, extra_params = ?, reasoning_field = ?, disable_reasoning_params = ?, updated_at = ? WHERE id = ?')
+          .run(provider.name, provider.baseUrl, provider.apiKey || null, protocol, extraText || null, fieldText || null, disableText || null, now, provider.id);
+      } else {
+        db.prepare('INSERT INTO cuko_providers (id, name, base_url, api_key, protocol, extra_params, reasoning_field, disable_reasoning_params, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(provider.id, provider.name, provider.baseUrl, provider.apiKey || null, protocol, extraText || null, fieldText || null, disableText || null, now, now);
+      }
+      if (models) {
+        const keep = new Set<string>();
+        const upsert = db.prepare('INSERT INTO cuko_models (provider_id, model_id, name, api_meta, user_meta, source, listed, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(provider_id, model_id) DO UPDATE SET name = excluded.name, api_meta = excluded.api_meta, user_meta = excluded.user_meta, source = excluded.source, listed = excluded.listed, updated_at = excluded.updated_at');
+        for (const m of models) {
+          const id = m.id.trim();
+          keep.add(id);
+          const apiMeta = cleanMeta(m.apiMeta);
+          const userMeta = cleanMeta(m.userMeta);
+          upsert.run(provider.id, id, displayName({ name: m.name, id }, apiMeta, userMeta), apiMeta ? JSON.stringify(apiMeta) : null, userMeta ? JSON.stringify(userMeta) : null, m.source === 'manual' ? 'manual' : 'api', m.listed === false ? 0 : 1, now, now);
+        }
+        // 表单里删掉的模型，库里也删掉
+        const rows = db.prepare('SELECT model_id FROM cuko_models WHERE provider_id = ?').all(provider.id) as any[];
+        const del = db.prepare('DELETE FROM cuko_models WHERE provider_id = ? AND model_id = ?');
+        for (const r of rows) {
+          if (!keep.has(r.model_id)) del.run(provider.id, r.model_id);
         }
       }
-      
-      return { success: true };
+      db.exec('COMMIT');
+      return { success: true, ignoredKeys: [...extra.ignoredKeys, ...disable.ignoredKeys] };
     } catch (err: any) {
+      try { db.exec('ROLLBACK'); } catch { /* ignore */ }
       console.error('[cuko:save-provider]', err);
       return { success: false, error: err.message };
     }
   });
 
+  // 侧边栏「刷新模型」：逐个 Provider 请求模型列表，只更新接口信息
   ipcMain.handle('cuko:refresh-models', async () => {
     const db = getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
     try {
       const providers = db.prepare('SELECT * FROM cuko_providers').all() as any[];
-      const httpGet = createElectronHttpGet();
       const errors: string[] = [];
-
-      await Promise.all(providers.map(async (p) => {
+      await Promise.all(providers.map(async (p: any) => {
         try {
-          const headers: Record<string, string> = { Accept: 'application/json' };
-          if (p.api_key) headers.Authorization = 'Bearer ' + p.api_key;
-          const url = p.base_url.replace(/\/+$/, '') + '/v1/models';
-          
-          const res = await httpGet({ url, headers });
-          if (res.status !== 200) {
-            errors.push(`${p.name}: HTTP ${res.status}`);
-            return;
-          }
-          
-          const bodyText = res.body ? res.body.toString('utf-8') : '';
-          const json = JSON.parse(bodyText);
-          if (!json.data || !Array.isArray(json.data)) {
-            errors.push(`${p.name}: 返回格式不正确`);
-            return;
-          }
-
-          const now = nowLocalIso();
-          db.prepare('DELETE FROM cuko_models WHERE provider_id = ?').run(p.id);
-          const stmt = db.prepare(`
-            INSERT INTO cuko_models (provider_id, model_id, name, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?)
-          `);
-          for (const m of json.data) {
-            stmt.run(p.id, m.id, m.name || m.id, now, now);
-          }
+          const listed = await requestModelList(p.base_url, p.api_key || null);
+          mergeListedModels(db, p.id, listed);
         } catch (err: any) {
-          errors.push(`${p.name}: ${err.message}`);
+          errors.push(p.name + ': ' + (err?.message || String(err)));
         }
       }));
-
       return { success: true, errors };
     } catch (err: any) {
       return { success: false, error: err.message };
+    }
+  });
+
+  // 表单里「获取可用模型」：按表单填的地址 / 密钥请求（Provider 未保存也能用），返回合并后的列表，不写库
+  ipcMain.handle('cuko:fetch-models', async (_event: any, params: any) => {
+    try {
+      const listed = await requestModelList(String(params?.baseUrl || ''), params?.apiKey ? String(params.apiKey) : null);
+      const current: any[] = Array.isArray(params?.models) ? params.models : [];
+      return { success: true, count: listed.length, models: mergeFetchedForForm(current, listed) };
+    } catch (err: any) {
+      return { success: false, error: err?.message || '获取失败' };
     }
   });
 

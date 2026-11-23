@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   saveProvider: (provider: any) => ipcRenderer.invoke('cuko:save-provider', provider),
   deleteProvider: (id: string) => ipcRenderer.invoke('cuko:delete-provider', id),
   refreshModels: () => ipcRenderer.invoke('cuko:refresh-models'),
+  // [261123-q4h7tn-cuko-openai] 按表单地址 / 密钥获取模型（返回合并后的列表，不写库）
+  fetchModels: (params: any) => ipcRenderer.invoke('cuko:fetch-models', params),
   getActive: () => ipcRenderer.invoke('cuko:get-active'),
   setActive: (providerId: string, modelId: string) => ipcRenderer.invoke('cuko:set-active', providerId, modelId),
   
