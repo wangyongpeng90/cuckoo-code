@@ -1014,15 +1014,17 @@ function ChatApp() {
     };
     setMessages((prev) => [...prev, userMsg]);
     setRunningSessions((prev) => (prev.includes(activeThreadId) ? prev : [...prev, activeThreadId]));
-    window.cukoAPI.saveMessage({ id: userId, sessionId: activeThreadId, role: 'user', content: persistedContent });
+    // [261123-q4h7tn-cuko-openai] 用户消息由主进程随 startRun 落库（OpenAI 协议还要固定原文），界面不再自己保存
 
     // 如果当前标题是 New Chat，顺便改个名
     const currentThread = threads.find(t => t.id === activeThreadId);
     if (currentThread && currentThread.title === 'New Chat') {
       const titleSource = text.trim() || (hasAttachments ? '附件对话' : '');
       const newTitle = titleSource.slice(0, 15) + (titleSource.length > 15 ? '...' : '');
-      await window.cukoAPI.renameSession(activeThreadId, newTitle);
-      refreshThreads();
+      // [261123-q4h7tn-cuko-openai] 改标题失败不影响发送：不等待，只记日志
+      Promise.resolve(window.cukoAPI.renameSession(activeThreadId, newTitle))
+        .then(() => refreshThreads())
+        .catch((e: any) => console.error('改标题失败', e));
     }
 
     // Provider 请求内容：系统提示词由主进程按需注入，这里只给文本 + 附件
@@ -1034,7 +1036,8 @@ function ChatApp() {
     }
 
     try {
-      const res = await window.cukoAPI.startRun({ sessionId: activeThreadId, input: inputParts });
+      const runParams = { sessionId: activeThreadId, input: inputParts, userMessage: { id: userId, content: persistedContent } };
+      const res = await window.cukoAPI.startRun(runParams);
       if (!res?.success) {
         setRunningSessions((prev) => prev.filter((id) => id !== activeThreadId));
         setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ ' + (res?.error || '启动失败'), id: crypto.randomUUID() }]);
@@ -1051,6 +1054,8 @@ function ChatApp() {
     if (!api?.onRunEvent) return;
 
     const isCurrent = (sid: string) => currentThreadIdRef.current === sid;
+    // [261123-q4h7tn-cuko-openai] 正处于「正在重试」提示状态的回复 id
+    const retrying = new Set<string>();
     const statusOf = (status: string) =>
       status === 'cancelled'
         ? ({ type: 'incomplete', reason: 'cancelled' } as const)
@@ -1073,6 +1078,8 @@ function ChatApp() {
         }
         case 'delta': {
           if (!isCurrent(sid)) break;
+          // [261123-q4h7tn-cuko-openai] 重试后的第一段增量：先清掉「正在重试」提示和上一次尝试的内容
+          const reset = retrying.delete(ev.assistantId);
           setMessages((prev) => {
             if (!prev.some((m) => m.id === ev.assistantId)) {
               return [...prev, { role: 'assistant', content: ev.delta || '', id: ev.assistantId, status: { type: 'running' } } as Msg];
@@ -1081,8 +1088,8 @@ function ChatApp() {
               if (m.id !== ev.assistantId) return m;
               return {
                 ...m,
-                content: (m.content as string) + (ev.delta || ''),
-                think: ev.thinkDelta ? ((m.think || '') + ev.thinkDelta) : m.think,
+                content: (reset ? '' : (m.content as string)) + (ev.delta || ''),
+                think: ev.thinkDelta ? ((reset ? '' : (m.think || '')) + ev.thinkDelta) : (reset ? undefined : m.think),
               };
             });
           });
@@ -1099,6 +1106,14 @@ function ChatApp() {
                 status: statusOf(ev.status),
               }
             : m)));
+          break;
+        }
+        case 'round-retry': {
+          // [261123-q4h7tn-cuko-openai] OpenAI 协议临时错误自动重试：本轮先显示重试提示
+          if (!isCurrent(sid)) break;
+          retrying.add(ev.assistantId);
+          const notice = '⏳ 请求失败，正在重试（' + ev.attempt + '/' + ev.maxRetries + '）' + (ev.error ? '：' + String(ev.error).slice(0, 200) : '');
+          setMessages((prev) => prev.map((m) => (m.id === ev.assistantId ? { ...m, content: notice, think: undefined } : m)));
           break;
         }
         case 'tool-start': {
