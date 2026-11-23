@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-11-23
+## [0.9.1] - 2026-11-23
 
 ### Added
 - **Cuko API 市场**：设置 → Cuko API →「发现 Cuko API 市场」，按 GitHub `topic:cuko-api` 搜索仓库。
@@ -12,9 +12,9 @@
 ### Fixed
 - **点击会话不切换**：`switchThread` 引用了未声明的 `runtimeRef`，每次点击都在
   `setThreadId` 之前抛 `ReferenceError`。补上声明并接通草稿保存 / 还原（原先只写不读）。
-- **围栏带属性时 `cuckoo` 块不执行**：模型把围栏写成「三个反引号 + cuckoo + `id="…"`」时，
-  整行 `cuckoo id="58216"` 被当作语言标记与 `'cuckoo'` 严格比较，块被整条丢弃。
-  改为只取第一个 token，并识别 `cuckoo-js` / `cuckoo_js` 变体。
+- **围栏带属性时 `cuckoo` 块不执行**：围栏写成「三个反引号 + cuckoo + `id="…"`」时，
+  整行被当作语言标记与 `'cuckoo'` 严格比较，块被整条丢弃。改为只取第一个 token，
+  并识别 `cuckoo-js` / `cuckoo_js` 变体。
 - **围栏挤在正文行内时 `cuckoo` 块不执行**：开围栏贴在正文行尾时，按行首匹配会整块漏掉。
   改为扫描行内任意位置的围栏，主进程与渲染层两条路径同步修正。
 - **市场「进入 GitHub」点击无响应**：Cuko 独立窗口的 preload 未暴露 `openExternal`，
