@@ -208,6 +208,26 @@ function initDatabase(userDataDir: string): DatabaseSync {
     console.error('[db] 补充 cuko_workspaces 列失败:', e);
   }
 
+  // [261123-q4h7tn-cuko-openai] OpenAI 兼容协议新增列（无条件执行，幂等；不升 CURRENT_DB_VERSION）
+  const ensureColumns = (table: string, defs: Array<[string, string]>): void => {
+    try {
+      const names = (db.prepare('PRAGMA table_info(' + table + ')').all() as any[]).map((c: any) => c.name);
+      for (const [name, type] of defs) {
+        if (!names.includes(name)) db.exec('ALTER TABLE ' + table + ' ADD COLUMN ' + name + ' ' + type);
+      }
+    } catch (e) {
+      console.error('[db] 补充 ' + table + ' 列失败:', e);
+    }
+  };
+  // 发给模型的原文（写入即固定，OpenAI 协议每轮原样重放）
+  ensureColumns('cuko_messages', [['sent_role', 'TEXT'], ['sent_text', 'TEXT']]);
+  // 会话级思考强度
+  ensureColumns('cuko_sessions', [['reasoning_effort', 'TEXT']]);
+  // Provider：额外请求参数 / 推理强度字段名 / 关闭思考参数（JSON 文本）
+  ensureColumns('cuko_providers', [['extra_params', 'TEXT'], ['reasoning_field', 'TEXT'], ['disable_reasoning_params', 'TEXT']]);
+  // 模型：接口返回的信息 / 用户修改 / 来源（api | manual）/ 最近一次刷新接口是否返回
+  ensureColumns('cuko_models', [['api_meta', 'TEXT'], ['user_meta', 'TEXT'], ['source', "TEXT DEFAULT 'api'"], ['listed', 'INTEGER DEFAULT 1']]);
+
   // 一次性迁移：从已有会话的 project_dir 回填 cuko_workspaces（仅在表为空时执行，幂等）
   try {
     const cnt = db.prepare('SELECT COUNT(*) as c FROM cuko_workspaces').get() as any;

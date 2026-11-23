@@ -371,6 +371,8 @@ async function streamRound(
       if (done) break;
       decoder.push(textDecoder.decode(value, { stream: true }));
     }
+    decoder.push(textDecoder.decode());
+    decoder.flush();
   } catch (err: any) {
     if (err?.name === 'AbortError' || run.aborted) {
       aborted = true;
@@ -381,6 +383,11 @@ async function streamRound(
     }
   }
 
+  // [261123-q4h7tn-cuko-openai] 流读完却没收到 done / error：连接中途断开，回复不完整
+  if (!aborted && !error && !sawDone) {
+    error = '连接中断，回复不完整';
+    content += '\n\n⚠️ ' + error;
+  }
   run.content = content;
   run.think = think;
   run.usage = usage;
@@ -517,7 +524,12 @@ async function runLoop(run: CukoRun, initialContent?: string): Promise<void> {
       });
 
       // 中断 / 出错不执行工具
-      if (round.aborted || !round.sawDone) break;
+      // [261123-q4h7tn-cuko-openai] 中断不执行工具；出错 / 中途断开同样不执行，并以 error 结束运行
+      if (round.aborted) break;
+      if (round.error || !round.sawDone) {
+        finishRun(run, 'error', round.error || '连接中断，回复不完整');
+        return;
+      }
 
       const blocks = extractCuckooBlocks(round.content);
       if (blocks.length === 0) break;
@@ -830,6 +842,8 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
       if (done) break;
       decoder.push(textDecoder.decode(value, { stream: true }));
     }
+    decoder.push(textDecoder.decode());
+    decoder.flush();
   } catch (err: any) {
     return fail(err?.message || '历史同步请求失败');
   }
