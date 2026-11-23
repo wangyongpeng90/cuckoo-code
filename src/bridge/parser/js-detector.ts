@@ -69,7 +69,7 @@ function extractJsToolBlocks(text: any): string[] {
     const code = buf.join(String.fromCharCode(10)).trim();
     const l = (lang || '').toLowerCase();
     if (code) {
-      if (l === 'cuckoo') {
+      if (l === 'cuckoo' || l.startsWith('cuckoo-') || l.startsWith('cuckoo_')) {
         blocks.push(code);
       } else if ((l === 'js' || l === 'javascript') && onlyFences && looksLikeToolScript(code)) {
         blocks.push(code);
@@ -82,24 +82,29 @@ function extractJsToolBlocks(text: any): string[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const trimmed = line.trim();
+    // 围栏可能出现在行内（模型常写成 "…说明。```cuckoo id=\"x\""），
+    // 只按行首匹配会整块漏掉，所以这里找行内第一个围栏。
+    const fenceAt = line.indexOf(FENCE);
+    if (fenceAt < 0) {
+      if (inBlock) buf.push(line.replace(String.fromCharCode(13), ''));
+      continue;
+    }
+    // 围栏前的正文：块内保留（罕见），块外丢弃
+    if (inBlock && fenceAt > 0) buf.push(line.slice(0, fenceAt));
+    const fenceLine = line.slice(fenceAt);
     if (!inBlock) {
-      if (trimmed.startsWith(FENCE)) {
-        // 围栏可能不止 3 个反引号（Markdown 允许；实测 ChatGPT 流因 snapshot+append
-        // 叠加会产生 6 个反引号 ``````cuckoo）——按实际反引号数剥离，避免语言标记变成 "```cuckoo"。
-        let bt = 0;
-        while (bt < trimmed.length && trimmed[bt] === '`') bt++;
-        lang = (trimmed.slice(bt) || '').split(' ')[0];
-        inBlock = true;
-        buf = [];
-      }
-      continue;
-    }
-    if (trimmed.startsWith(FENCE)) {
+      // 围栏可能不止 3 个反引号（Markdown 允许；实测 ChatGPT 流因 snapshot+append
+      // 叠加会产生 6 个反引号 ``````cuckoo）——按实际反引号数剥离，避免语言标记变成 "```cuckoo"。
+      let bt = 0;
+      while (bt < fenceLine.length && fenceLine[bt] === '`') bt++;
+      // 只取第一个 token：模型会写 ```cuckoo id="58216" / ```cuckoo,js，
+      // 按空格切分遇到 tab 或整行匹配都会漏掉语言标记。
+      lang = (fenceLine.slice(bt) || '').trim().split(/[\s,;=]+/)[0];
+      inBlock = true;
+      buf = [];
+    } else {
       flush();
-      continue;
     }
-    buf.push(line.replace(String.fromCharCode(13), ''));
   }
   if (inBlock) flush();
   return blocks;

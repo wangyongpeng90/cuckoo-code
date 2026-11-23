@@ -7,34 +7,66 @@
  * 都需要脱离 React 与 Electron 单独测试。
  */
 
-/** 从 AI 回复中提取 ```cuckoo 代码块 */
+/**
+ * 解析围栏行（``` 之后的部分）的语言标记。
+ * 只取第一个 token：模型经常把围栏写成 ```cuckoo id="58216"（带属性）或
+ * ```cuckoo,js，整行 lowercase 后会变成 "cuckoo id=..."，导致块被漏掉。
+ */
+export function parseFenceLang(line: string): string {
+  const rest = String(line || '').trim().replace(/^`+/, '').trim();
+  if (!rest) return '';
+  return rest.split(/[\s,;=]+/)[0].toLowerCase();
+}
+
+/** 语言标记是否表示 cuckoo 工具脚本（cuckoo / cuckoo-js / cuckoo_js …） */
+export function isCuckooLang(lang: string): boolean {
+  return lang === 'cuckoo' || lang.startsWith('cuckoo-') || lang.startsWith('cuckoo_');
+}
+
+const FENCE = '```';
+
+/**
+ * 从 AI 回复中提取 ```cuckoo 代码块。
+ *
+ * 兼容模型常见的两种写法：
+ *  1) 围栏独占一行（标准 Markdown）；
+ *  2) 围栏挤在正文末尾（`…说明文字。```cuckoo id="x"`），
+ *     此时整行 trim 后不以围栏开头，按行首匹配会整块漏掉。
+ * 所以这里按「围栏可以在行内任意位置出现」扫描，围栏外的前缀文字不影响识别。
+ */
 export function extractCuckooBlocks(text: string): string[] {
   const blocks: string[] = [];
   if (!text) return blocks;
-  const lines = text.split('\n');
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
   let inBlock = false;
   let lang = '';
   let buf: string[] = [];
   for (const line of lines) {
-    const t = line.trim();
-    if (t.startsWith('```')) {
-      if (!inBlock) {
-        inBlock = true;
-        lang = t.slice(3).trim().toLowerCase();
-        buf = [];
-      } else {
-        inBlock = false;
-        const code = buf.join('\n').trim();
-        if (code && lang === 'cuckoo') blocks.push(code);
-        buf = [];
-        lang = '';
-      }
+    // 行内第一个围栏的位置；找不到就是纯正文行
+    const idx = line.indexOf(FENCE);
+    if (idx < 0) {
+      if (inBlock) buf.push(line);
       continue;
     }
-    if (inBlock) buf.push(line);
+    // 围栏前的文字：块内属于正文（罕见），块外直接丢弃
+    if (inBlock && idx > 0) buf.push(line.slice(0, idx));
+    const fenceLine = line.slice(idx);
+    if (!inBlock) {
+      // 开围栏：语言标记之后的 info 内容（如 id="x"）一律丢弃，不当作代码
+      inBlock = true;
+      lang = parseFenceLang(fenceLine);
+      buf = [];
+    } else {
+      inBlock = false;
+      const code = buf.join('\n').trim();
+      if (code && isCuckooLang(lang)) blocks.push(code);
+      buf = [];
+      lang = '';
+    }
   }
   return blocks;
 }
+
 
 /** 从代码块里提取所有被调用的工具名（去重） */
 export function extractToolNames(code: string): string[] {

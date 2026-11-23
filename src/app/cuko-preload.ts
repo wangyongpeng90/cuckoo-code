@@ -11,8 +11,10 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   saveConfig: (config: Record<string, string>) => ipcRenderer.invoke('cuko:save-config', config),
   
   listProviders: () => ipcRenderer.invoke('cuko:list-providers'),
+  marketList: (topic: string) => ipcRenderer.invoke('cuko:market-list', topic),
   saveProvider: (provider: any) => ipcRenderer.invoke('cuko:save-provider', provider),
   deleteProvider: (id: string) => ipcRenderer.invoke('cuko:delete-provider', id),
+  refreshModels: () => ipcRenderer.invoke('cuko:refresh-models'),
   getActive: () => ipcRenderer.invoke('cuko:get-active'),
   setActive: (providerId: string, modelId: string) => ipcRenderer.invoke('cuko:set-active', providerId, modelId),
   
@@ -76,6 +78,8 @@ const shellAPI = {
   onPluginSlotRegister: (cb: (m: any) => void) => { ipcRenderer.on('shell-slot-register', (_e: any, m: any) => cb(m)); },
   onPluginSlotUnregister: (cb: (m: any) => void) => { ipcRenderer.on('shell-slot-unregister', (_e: any, m: any) => cb(m)); },
   setAiViewVisible: (visible: boolean) => ipcRenderer.invoke('shell-set-ai-view-visible', { visible }),
+  // Cuko 窗口里也有设置弹窗（市场卡片要跳 GitHub），必须和壳窗口一样暴露
+  openExternal: (url: string) => ipcRenderer.invoke('open-external', { url }),
 };
 
 contextBridge.exposeInMainWorld('shellAPI', shellAPI);

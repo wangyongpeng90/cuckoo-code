@@ -28,10 +28,12 @@ async function main() {
   // 引入主界面的样式（含 --ck-* 变量和设置页布局）
   const baseCssPath = path.join(ROOT, 'src', 'ui', 'shell', 'styles', 'base.css');
   const compCssPath = path.join(ROOT, 'src', 'ui', 'shell', 'styles', 'components.css');
+  const pagesCssPath = path.join(ROOT, 'src', 'ui', 'shell', 'styles', 'pages.css');
   const baseCss = fs.existsSync(baseCssPath) ? fs.readFileSync(baseCssPath, 'utf8') : '';
   const compCss = fs.existsSync(compCssPath) ? fs.readFileSync(compCssPath, 'utf8') : '';
+  const pagesCss = fs.existsSync(pagesCssPath) ? fs.readFileSync(pagesCssPath, 'utf8') : '';
   
-  const css = baseCss + '\n' + compCss + '\n' + twCss;
+  const css = baseCss + '\n' + compCss + '\n' + pagesCss + '\n' + twCss;
 
   // 2. esbuild 打包 JS（加 @/ alias）
   console.log('[build-cuko] 打包 JS...');
