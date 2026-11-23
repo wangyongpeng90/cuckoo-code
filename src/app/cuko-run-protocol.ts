@@ -119,30 +119,41 @@ export function splitPromptByH1(prompt: string): string[] {
 export interface SseDecoder {
   /** 喂一段文本，凑满 `\n\n` 就回调一条事件 */
   push(chunk: string): void;
+  /** [261123-q4h7tn-cuko-openai] 流结束时调用一次：处理最后一帧后面没有空行的情况 */
+  flush(): void;
 }
 
 /**
  * 解析 Provider 的 SSE 流。
  * 只处理 `event:` / `data:` 两种行，空行分隔事件；同一事件的多个 data 行用换行拼接。
+ * CRLF 被拆在两个 chunk 里到达（\r 与 \n 分开）也能归一。
  */
 export function createSseDecoder(onEvent: (eventName: string, data: string) => void): SseDecoder {
   let buffer = '';
+  const dispatch = (raw: string) => {
+    let eventName = 'message';
+    const dataLines: string[] = [];
+    for (const line of raw.split('\n')) {
+      if (line.startsWith('event:')) eventName = line.slice(6).trim();
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
+    }
+    if (dataLines.length) onEvent(eventName, dataLines.join('\n'));
+  };
   return {
     push(chunk: string) {
       if (!chunk) return;
-      buffer += chunk.replace(/\r\n/g, '\n');
+      buffer = (buffer + chunk).replace(/\r\n/g, '\n');
       let idx: number;
       while ((idx = buffer.indexOf('\n\n')) >= 0) {
         const raw = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
-        let eventName = 'message';
-        const dataLines: string[] = [];
-        for (const line of raw.split('\n')) {
-          if (line.startsWith('event:')) eventName = line.slice(6).trim();
-          else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''));
-        }
-        if (dataLines.length) onEvent(eventName, dataLines.join('\n'));
+        dispatch(raw);
       }
+    },
+    flush() {
+      const rest = buffer;
+      buffer = '';
+      if (rest.trim()) dispatch(rest);
     },
   };
 }
