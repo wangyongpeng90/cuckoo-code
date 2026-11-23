@@ -3,7 +3,7 @@ import type { ToolApiMeta } from '../core/Tool.js';
 import { ToolResult } from '../core/ToolResult.js';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { streamRipgrep } from './ripgrep-stream.js';
 
 // ========== D12：API 契约元数据（构建期生成 api.d.ts）==========
 export const apiMetas: ToolApiMeta[] = [
@@ -32,22 +32,9 @@ export const apiMetas: ToolApiMeta[] = [
 // 对齐 dsh 默认上限
 const GREP_MAX_MATCHES = 250;
 const GREP_MAX_LINE_BYTES = 2000;
-
-let rgPathPromise: Promise<string> | null = null;
-function getRgPath(): Promise<string> {
-  if (!rgPathPromise) {
-    rgPathPromise = import('@vscode/ripgrep').then(m => {
-      // 打包后 @vscode/ripgrep 返回的路径在 app.asar 内，Windows 无法 spawn；
-      // 通过 asarUnpack 解包到 app.asar.unpacked，这里做路径替换。
-      let p = m.rgPath;
-      if (p && p.includes('app.asar' + path.sep)) {
-        p = p.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
-      }
-      return p;
-    });
-  }
-  return rgPathPromise;
-}
+// 字节兜底：非匹配行极多（如 --json 的 summary/begin/end 记录）时也停，
+// 避免「一条 match 都没有、却要读完整个仓库」的极端情况。
+const GREP_MAX_STREAM_BYTES = 32 * 1024 * 1024;
 
 /**
  * 对齐 dsh validateInclude：只允许单个正向 glob。
@@ -101,35 +88,6 @@ function buildGrepCommand(input: { pattern: string; path?: string; include?: str
   if (input.include !== undefined) parts.push('--glob=' + input.include);
   if (input.path !== undefined) parts.push('--', input.path);
   return parts;
-}
-
-/**
- * 执行 ripgrep，返回完整 stdout。
- */
-function runRipgrep(args: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number | null }> {
-  return new Promise((resolve, reject) => {
-    getRgPath().then(rgPath => {
-      const child = spawn(rgPath, ['--no-config', ...args], {
-        cwd,
-        windowsHide: true,
-        // stdin 必须忽略：无显式 path 参数时，rg 若发现 stdin 是管道（非 TTY）
-        // 会改为从 stdin 读取搜索目标，导致无限等待、grep 卡死。
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let stdout = '';
-      let stderr = '';
-      child.stdout.on('data', (d: Buffer) => { stdout += d; });
-      child.stderr.on('data', (d: Buffer) => { stderr += d; });
-      child.on('error', reject);
-      child.on('close', code => {
-        if (code === 0 || code === 1) {
-          resolve({ stdout, stderr, code });
-        } else {
-          reject(new Error(stderr.trim() || ('ripgrep exited with code ' + code)));
-        }
-      });
-    }).catch(reject);
-  });
 }
 
 interface GrepMatch {
@@ -219,13 +177,21 @@ function previewLine(line: string, maxBytes: number): string {
  * 对齐 dsh formatGrepOutput：header + body + footer（无 spill）。
  */
 function formatGrepOutput(retained: { items: GrepMatch[]; seen: number; kept: number; truncated: boolean }): string {
-  const header = retained.truncated
-    ? 'Found ' + retained.kept + ' of ' + retained.seen + ' matches'
-    : 'Found ' + retained.seen + ' ' + (retained.seen === 1 ? 'match' : 'matches');
   const body = formatGrepMatches(retained.items);
-  if (!retained.truncated) return header + '\n\n' + body;
-  const recovery = 'The complete result could not be saved; narrow pattern, path, or include to see more.';
-  return header + '\n\n' + body + '\n\n(' + recovery + ')';
+  if (!retained.truncated) {
+    const header = 'Found ' + retained.seen + ' ' + (retained.seen === 1 ? 'match' : 'matches');
+    return header + '\n\n' + body;
+  }
+  // 截断时不给「总数」：数量在读取上限处就停了，给个可能不准的数字不如不给。
+  // 明确要求 AI 收窄条件，否则它容易误以为「就这么多」。
+  const header = 'Showing the first ' + retained.kept + ' matches (results were truncated)';
+  const hint = [
+    'Only part of the result is shown. Narrow the search to get a complete answer:',
+    '- make the pattern more specific (e.g. anchor keywords, avoid "." or overly generic words)',
+    '- set path to the directory that actually matters',
+    '- set include to a single file glob (e.g. "*.ts")',
+  ].join('\n');
+  return header + '\n\n' + body + '\n\n(' + hint + ')';
 }
 
 /**
@@ -287,11 +253,24 @@ class GrepToolNew extends Tool {
         return ToolResult.error('目录不存在: ' + baseDir);
       }
 
-      // 执行 ripgrep
+      // 执行 ripgrep（流式：边读边解析，攒够 GREP_MAX_MATCHES 就停，
+      // 避免宽泛 pattern 时 rg --json 输出几百 MB 把主进程撑爆）
       const args = buildGrepCommand(input);
+      const collected: GrepMatch[] = [];
       let run;
       try {
-        run = await runRipgrep(args, baseDir);
+        run = await streamRipgrep({
+          args,
+          cwd: baseDir,
+          maxBytes: GREP_MAX_STREAM_BYTES,
+          onLine: (line) => {
+            const match = parseRecord(line);
+            if (match === undefined) return true;
+            // 路径统一为 / 分隔
+            collected.push({ ...match, path: match.path.replace(/\\/g, '/') });
+            return collected.length < GREP_MAX_MATCHES;
+          },
+        });
       } catch (err: any) {
         const msg = String(err.message || err);
         if (/regex parse error|error parsing glob/i.test(msg)) {
@@ -300,30 +279,32 @@ class GrepToolNew extends Tool {
         return ToolResult.error('grep search failed: ' + msg);
       }
 
-      if (run.code === 1) {
+      // 被主动停止时退出码是 null（kill 掉了）；非 0/1 的其它退出码才算失败
+      if (!run.stopped && run.code !== 0 && run.code !== 1) {
+        const msg = run.stderr.trim() || ('ripgrep exited with code ' + run.code);
+        if (/regex parse error|error parsing glob/i.test(msg)) {
+          return ToolResult.error('grep pattern rejected by ripgrep: ' + msg);
+        }
+        return ToolResult.error('grep search failed: ' + msg);
+      }
+
+      if (collected.length === 0) {
         return ToolResult.success('No matches found');
       }
 
-      // 解析匹配
-      let all;
-      try {
-        all = parseGrepMatches(run.stdout);
-      } catch (err: any) {
-        return ToolResult.error(err.message);
-      }
+      const retained = retainGrepMatches(collected, GREP_MAX_MATCHES, GREP_MAX_LINE_BYTES);
+      // 攒满上限或字节超限都算截断——真实匹配数可能更多
+      const truncated = run.stopped || collected.length >= GREP_MAX_MATCHES;
+      const output = formatGrepOutput({
+        items: retained.items,
+        seen: collected.length,
+        kept: retained.items.length,
+        truncated,
+      });
 
-      // 路径统一为 / 分隔
-      all = all.map(m => ({ ...m, path: m.path.replace(/\\/g, '/') }));
+      console.log('[GrepTool] 搜索完成: pattern=' + input.pattern + ', 保留 ' + retained.items.length + ' 条' + (truncated ? '（已截断）' : ''));
 
-      const retained = retainGrepMatches(all, GREP_MAX_MATCHES, GREP_MAX_LINE_BYTES);
-
-      console.log('[GrepTool] 搜索完成: pattern=' + input.pattern + ', 匹配 ' + all.length + ' 条');
-
-      if (all.length === 0) {
-        return ToolResult.success('No matches found');
-      }
-
-      return ToolResult.success(formatGrepOutput(retained));
+      return ToolResult.success(output);
     } catch (err: any) {
       return ToolResult.error('Grep 搜索失败: ' + err.message);
     }
