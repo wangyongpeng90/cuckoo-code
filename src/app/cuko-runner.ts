@@ -38,6 +38,9 @@ import {
   isContextOverflowError,
   effectiveModelMeta,
   reasoningRequestOf,
+  backfillSentRows,
+  parseToolCardParts,
+  resolveEffortAfterSwitch,
 } from './cuko-openai.js';
 import type { CukoProtocol, ToolRunItem, ModelMeta, ReasoningRequest } from './cuko-openai.js';
 
@@ -544,7 +547,8 @@ async function runLoop(run: CukoRun, initialContent?: string): Promise<void> {
         content: round.content,
         think: round.think,
         usage: round.usage,
-        sentRole: round.sentText ? 'assistant' : null,
+        // [261123-q4h7tn-cuko-openai] OpenAI 协议：出错 / 断开 / 停止无输出的回复标 none（不进历史，切模型补齐时也不再处理）
+        sentRole: run.protocol === 'openai' ? (round.sentText ? 'assistant' : 'none') : null,
         sentText: round.sentText || null,
       });
       emit({
@@ -798,6 +802,8 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
   }
   if (!session) return { success: false, error: '会话不存在' };
   if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在' };
+  // [261123-q4h7tn-cuko-openai] 目标是 OpenAI 协议：历史本来就在本地，不发 compress，直接改绑定并补齐原文
+  if (normalizeProtocol(provider.protocol) === 'openai') return switchToOpenAiModel(db, session, providerId, modelId);
 
   const history = Array.isArray(params.history)
     ? params.history.filter((p) => p && p.type === 'text' && typeof p.text === 'string' && p.text.trim())
@@ -1216,4 +1222,70 @@ async function streamOpenAiRound(run: CukoRun): Promise<RoundResult> {
     if (kind === 'retry') error = '已重试 ' + MAX_RETRIES + ' 次仍失败：' + error;
     return { content: (a.content ? a.content + '\n\n' : '') + '⚠️ ' + error, think: a.think, usage: a.usage, sawDone: false, aborted: false, error };
   }
+}
+
+// ================= [261123-q4h7tn-cuko-openai] 切换到 OpenAI 协议模型 =================
+
+/**
+ * 切到 OpenAI 协议模型：不发 compress，直接改绑定；缺原文的旧消息按规则补齐（补好即固定）。
+ * - 已有 sent_role 的行（含 none）不动，保证已经发过的前缀不变
+ * - 判断为不需要补的旧行标 none，以后不再处理
+ * - 补齐 + 改绑定在一个事务里，失败整体回滚，原绑定不变
+ */
+function switchToOpenAiModel(db: any, session: any, providerId: string, modelId: string): { success: boolean; error?: string; inputCount?: number } {
+  const sessionId = String(session.id);
+  let rows: any[] = [];
+  try {
+    rows = db.prepare('SELECT id, role, content, sent_role, sent_text FROM cuko_messages WHERE session_id = ? ORDER BY rowid ASC').all(sessionId) as any[];
+  } catch (err: any) {
+    return { success: false, error: '读取历史失败：' + (err?.message || String(err)) };
+  }
+
+  // 第一条用户消息还没原文时才需要系统提示词：优先用会话留档，没有就现在组装并留档
+  let systemPrompt = String(session.system_prompt || '').trim();
+  const firstUser = rows.find((r) => r.role === 'user');
+  if (firstUser && !firstUser.sent_role && !systemPrompt) {
+    systemPrompt = buildSystemPromptText(String(session.project_dir || ''));
+    if (systemPrompt) persistSystemPrompt(sessionId, systemPrompt);
+  }
+
+  const pending = new Set<string>();
+  const prepared = rows.map((r) => {
+    if (r.sent_role) return { id: String(r.id), role: String(r.role), content: String(r.content ?? ''), sent_text: r.sent_text || '(fixed)' };
+    if (r.role === 'user' || r.role === 'assistant') pending.add(String(r.id));
+    let content = String(r.content ?? '');
+    if (r.role === 'assistant') {
+      const parts = parseToolCardParts(content);
+      if (parts) content = JSON.stringify(parts.map((p: any) => (typeof p?.result === 'string' ? { ...p, result: truncateToolOutput(p.result) } : p)));
+    }
+    return { id: String(r.id), role: String(r.role), content, sent_text: null };
+  });
+  const filled = backfillSentRows(prepared, systemPrompt);
+  const filledIds = new Set(filled.map((f) => f.id));
+
+  // 思考强度：新模型有同名档位就沿用，否则用新模型的默认档位
+  let effort: string | undefined;
+  try {
+    const model = db.prepare('SELECT api_meta, user_meta FROM cuko_models WHERE provider_id = ? AND model_id = ?').get(providerId, modelId) as any;
+    const meta = effectiveModelMeta(parseMetaJson(model?.api_meta), parseMetaJson(model?.user_meta));
+    effort = resolveEffortAfterSwitch(session.reasoning_effort || null, meta);
+  } catch (err: any) {
+    console.error('[Cuko] 读取模型档位失败:', err?.message || err);
+  }
+
+  try {
+    db.exec('BEGIN');
+    const upd = db.prepare('UPDATE cuko_messages SET sent_role = ?, sent_text = ? WHERE id = ? AND sent_role IS NULL');
+    for (const f of filled) upd.run(f.sentRole, f.sentText, f.id);
+    for (const id of pending) {
+      if (!filledIds.has(id)) upd.run('none', null, id);
+    }
+    db.prepare('UPDATE cuko_sessions SET provider_id = ?, model_id = ?, reasoning_effort = ?, updated_at = ? WHERE id = ?')
+      .run(providerId, modelId, effort ?? null, nowLocalIso(), sessionId);
+    db.exec('COMMIT');
+  } catch (err: any) {
+    try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+    return { success: false, error: '切换模型失败：' + (err?.message || String(err)) };
+  }
+  return { success: true, inputCount: filled.length };
 }
