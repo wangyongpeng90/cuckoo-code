@@ -143,14 +143,21 @@ export function CukoSettings() {
           onClick: openRepo,
         },
           createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 } },
-            createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 } },
+            createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0, flex: 1 } },
               createElement('div', { style: { fontSize: '14px', fontWeight: 500, color: 'var(--ck-text)' } }, it.id),
               createElement('div', { style: { fontSize: '12px', color: 'var(--ck-text-2)' } }, it.description || '无描述'),
               createElement('div', { style: { fontSize: '12px', color: 'var(--ck-text-2)' } }, 'Star: ' + (it.stars || 0) + ' · 更新: ' + (it.updatedAt || '').slice(0, 10))
             ),
             createElement('button', {
               className: 'ck-btn ck-btn-primary',
-              style: { flexShrink: 0 },
+              style: {
+                flex: '0 0 auto',        // .ck-btn 默认 flex:1 会撑满整行
+                width: 'auto',
+                padding: '5px 14px',
+                fontSize: '12px',
+                letterSpacing: 0,
+                whiteSpace: 'nowrap' as const,
+              },
               onClick: (e: any) => { e.stopPropagation(); openRepo(); }
             }, '进入 GitHub')
           )
