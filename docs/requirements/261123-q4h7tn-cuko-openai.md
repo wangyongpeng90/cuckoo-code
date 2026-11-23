@@ -127,7 +127,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - 2294d82 docs(req): 新增 261123-q4h7tn Cuko 接入 OpenAI 兼容接口需求档案
 - （本次）请求日志原始报文 / 用量 / 缓存命中；完善需求档案；新增交接文档
 
-待确认 / 未完成：步骤 2-4 内容、步骤 4（聊天窗口思考强度选择器、命中率、60% 提醒、附件拦截）、请求日志测试、DeepSeek 真实缓存命中验证、DeepSeek /models 扩展字段实测。
+待确认 / 未完成：步骤 4（聊天窗口思考强度选择器、命中率、60% 提醒、附件拦截）、请求日志测试、DeepSeek 真实缓存命中验证、DeepSeek /models 扩展字段实测。
 
 交接文档：`docs/handover/261123-q4h7tn-cuko-openai-handover.md`
 

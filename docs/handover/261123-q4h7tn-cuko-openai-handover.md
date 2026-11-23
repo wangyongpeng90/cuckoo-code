@@ -29,10 +29,11 @@
 | 状态 | 内容 | 依据 |
 |---|---|---|
 | ✅ | 需求讨论 21 题 + 请求日志 2 题全部确认（见第 3 节） | 对话 |
-| ✅ | 步骤 1：`src/app/cuko-openai.ts`（纯函数）+ SSE 解码器 `flush()` + `test/cuko-openai.test.js` | 后台检查全绿 |
+| ✅ | 步骤 1：`src/app/cuko-openai.ts`（纯函数）+ SSE 解码器 `flush()` + `test/cuko-openai.test.js` | 提交 `38db2bc`（需求档案 `2294d82`）；后台检查全绿 |
 | ✅ | 2-1 / 2-2：补列、flush、出错不执行工具、断开标记不完整 | 提交 `1cb6b18` |
 | ✅ | 2-3：运行器接入 OpenAI 协议（原文重放 / 停止出错 / 自动重试） | 提交 `3c0ac66` |
 | ✅ | 2-3b：切到 OpenAI 模型时直接改绑定并补齐旧原文 | 提交 `f5c1c40` |
+| ✅ | 2-4：用户消息改由主进程落库 / 改标题不阻塞发送 / 显示自动重试 | 提交 `1189cd6` |
 | ✅ | 2-5：`test/cuko-runner-openai.test.js`（5 个用例：前缀不变 / 工具循环 / 503 重试 / 401 / 停止） | 提交 `278375e` |
 | ✅ | 3-1：Provider 协议与参数读写、模型目录合并写入、按表单获取模型 | 提交 `4c36f3d` |
 | ✅ | 3-2：设置页支持 OpenAI 协议、请求参数、可编辑模型目录与推理档位 | 提交 `98dcb1d`；用户确认页面已有 |
@@ -41,7 +42,7 @@
 > 2-x / 3-x 的提交不是本对话写的代码，执行者待确认。完整提交列表：`git log master..HEAD`。
 
 ### 待确认 / 未开始
-- ❓ 步骤 2-4：没看到对应提交，内容待确认。
+- ✅ 步骤 2-4 已完成（提交 `1189cd6`，见上表）。
 - ❓ 步骤 4 聊天窗口：思考强度选择器、输入框下方「上下文 x.xx k · 缓存命中 xx%」、60% 提醒、OpenAI 会话附件拦截，是否已做待确认。
 - ⬜ 请求日志的测试断言。
 - ⬜ 用户重启（`npm start`）后验证请求日志面板。
@@ -94,7 +95,7 @@ DeepSeek 推荐配置：字段名 `reasoning_effort`；关闭思考参数 `{"thi
 - 生成物禁止手改：`src/ui/shell.html`、`src/ui/cuko/built.html`、`*.generated.ts`、`src/tools/api.d.ts`。
 - 需求档案 `docs/requirements/`；`npm run docs:index` 生成 `INDEX.md`。
 - 常用命令：`npm run typecheck`、`npx vitest run cuko`、`npm run compile`、`node scripts/build-cuko.mjs`、`npm start`。
-- 远程 `origin`（地址见 `git remote -v`）。未跟踪目录 `deepseek-web-attachments/`：不要动、不要提交。
+- 远程：`origin` = `git@codeup.aliyun.com:69f689c1ed93e361ad3c51d6/cuckoo-ai-pro.git`（阿里云 Codeup，本分支 push 的目标）；`github` = `git@github.com:wangyongpeng90/cuckoo-code.git`（本分支没推，是否同步待用户决定）。两个都是 SSH 地址。未跟踪目录 `deepseek-web-attachments/`：不要动、不要提交。
 - 参考项目 `C:\d\SourceCode\2026\deepseek-harness2`：停在标签 `dsh-v0.2.2-rc.5`（`9c2670d3bc`，detached HEAD），远程 github.com/deepseek-ai/deepseek-harness。
 - 当前版本 `cuckoo-code@0.9.2`。
 
@@ -117,7 +118,7 @@ DeepSeek 推荐配置：字段名 `reasoning_effort`；关闭思考参数 `{"thi
 ### 4.5 后台任务的写法（已验证可行）
 - 用 `pwsh` 把一个 `.cmd` 写到 `%TEMP%`，再用 `Start-Process -WindowStyle Hidden` 启动。
 - 每步输出写 `%TEMP%\cukoN-<步骤>.log`，末行 `EXIT=0` / `EXIT=1`；全部完成写 `%TEMP%\cukoN.done`（第一批叫 `cuko-check.done`）。
-- 已用批次：`cuko`、`cuko2`、`cuko3`、`cuko4`（请求日志改动的检查）、`cuko5`（上一次提交尝试，结果待确认）、`cuko6`（本次提交 + push）。
+- 已用批次：`cuko`、`cuko2`、`cuko3`、`cuko4`（请求日志改动的检查）、`cuko5`（上一次提交尝试，实际没有执行）、`cuko6`（请求日志提交 + push）、`cuko7`（交接文档补充提交 + push，push 带 SSH BatchMode）。
 - 中文提交说明要先用 PowerShell 按 UTF-8（无 BOM）写成文件再 `git commit -F`；`.cmd` 文件本身用 ASCII 编码，不能含中文。
 
 ## 5. 产出物清单
@@ -144,7 +145,7 @@ DeepSeek 推荐配置：字段名 `reasoning_effort`；关闭思考参数 `{"thi
    - `friendlyError` 缺 `idempotency_conflict`；
    - `db.ts:217` 回填工作区用 UTC 时间；
    - 旧需求档案 `261109-8ms69z-cuko-api.md` 有 4 处与代码不一致。
-6. push 需要凭据时会直接失败（已关闭交互提示），需要用户自己配置。
+6. push 走 SSH：`GIT_TERMINAL_PROMPT=0` 对 SSH 无效，SSH 密钥有密码或首次连接要确认主机指纹时，后台 push 会一直卡住。后台 push 要设 `GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=20`，让它直接报错而不是卡住。
 7. pre-commit 钩子耗时不确定，所以提交放在后台执行。
 
 ## 7. 下一步行动清单（按优先级）
@@ -173,7 +174,7 @@ DeepSeek 推荐配置：字段名 `reasoning_effort`；关闭思考参数 `{"thi
 接手前先读：本文件 → 需求档案 → `git log master..HEAD --stat` → `src/app/cuko-openai.ts` → `src/app/cuko-runner.ts` 的 `streamOpenAiRound` 与请求日志部分。
 
 ## 9. 需要用户补充的信息
-1. 2-x / 3-x 是哪个 AI 或对话做的，有没有它的交接记录；步骤 2-4 和步骤 4 是否已完成。
-2. `origin` 能否直接 push，是否需要提 PR。
+1. 2-x / 3-x 是哪个 AI 或对话做的，有没有它的交接记录；步骤 4 是否已完成。
+2. 除了 `origin`（Codeup），是否还要推到 `github`；是否需要提合并请求。
 3. 是否、何时把 `feat/261123-q4h7tn-cuko-openai` 合并回 `master`，版本号怎么定。
 4. 重启后请求日志面板的验证结果（截图或文字）。
