@@ -23,6 +23,7 @@ import {
 } from './cuko-run-protocol.js';
 import {
   normalizeProtocol,
+  normalizeUsage,
   joinApiUrl,
   composeFirstUserText,
   buildToolSentText,
@@ -99,44 +100,188 @@ export interface CukoRequestLogEntry {
   sessionId: string;
   model: string;
   url: string;
-  /** 请求体里的 type（普通对话轮次为空，切模型压缩是 compress） */
+  /** 请求体里的 type（Cuko：user / tool / compress；OpenAI 协议为 openai 或「第 N 次重试」） */
   type?: string;
+  /** [261123-q4h7tn-cuko-openai] 请求所用协议 */
+  protocol?: 'cuko' | 'openai';
+  /** 第几次尝试（从 1 开始）与最多尝试次数；只有 OpenAI 协议会自动重试 */
+  attempt?: number;
+  maxAttempts?: number;
+  /** 本次请求的条数 / 字数（OpenAI 协议是完整历史） */
   inputCount: number;
   inputChars: number;
-  /** 每条 input 的截断预览（最多 10 条，每条 300 字） */
-  inputPreview: Array<{ type: string; text: string }>;
+  /** 和同会话上一轮相比新增的条数 / 字数（仅 OpenAI 协议；重试沿用该轮第一次尝试的值） */
+  inputNewCount?: number;
+  inputNewChars?: number;
+  /** 最后 10 条的截断预览（每条 300 字）；index 是该条在本次请求里的序号（从 1 开始） */
+  inputPreview: Array<{ index: number; type: string; text: string }>;
+  /** 实际发出的请求参数：请求体里除 messages / input 以外的全部字段（密钥在请求头里，不会记录） */
+  requestParams?: Record<string, any>;
+  /** 用量（已归一：input_tokens / output_tokens / cache_read_tokens / cache_miss_tokens，原字段保留） */
+  usage?: any;
   providerSessionId?: string;
   status: 'pending' | 'ok' | 'error';
   httpStatus?: number;
   error?: string;
   durationMs?: number;
+  /** [261123-q4h7tn-cuko-openai] 原始报文（像开发者工具的网络面板）；只保留最近 20 条，列表接口不返回，点开时用 getCukoRequestLogRaw 取 */
+  method?: string;
+  /** 请求头（密钥已打码） */
+  requestHeaders?: Record<string, string>;
+  /** 实际发出的请求体原文 */
+  requestBody?: string;
+  /** 服务端返回的原始文本（SSE 流 / 错误正文） */
+  responseText?: string;
+  responseTruncated?: boolean;
+  /** 原文已因超出保留条数被释放 */
+  rawReleased?: boolean;
+  /** 列表接口用：这一条当前是否还有原文 */
+  hasRaw?: boolean;
 }
 
 const REQUEST_LOG_MAX = 100;
+const REQUEST_LOG_PREVIEW = 10;
 const requestLogs: CukoRequestLogEntry[] = [];
 
 const truncate = (text: string, max: number): string =>
   text.length > max ? text.slice(0, max) + '…' : text;
 
-function pushRequestLog(entry: Omit<CukoRequestLogEntry, 'id' | 'ts' | 'status' | 'inputCount' | 'inputChars' | 'inputPreview'> & {
+/** [261123-q4h7tn-cuko-openai] 请求体里除内容数组以外的字段（实际发出的参数） */
+function requestParamsOf(body: Record<string, any>, contentKey: 'messages' | 'input'): Record<string, any> {
+  const out: Record<string, any> = {};
+  for (const key of Object.keys(body || {})) {
+    if (key !== contentKey) out[key] = body[key];
+  }
+  return out;
+}
+
+/** 一条内容的文字：Cuko 的 text / OpenAI 的 content / 附件文件名 */
+const partText = (p: any): string => {
+  if (typeof p?.text === 'string') return p.text;
+  if (typeof p?.content === 'string') return p.content;
+  return String(p?.filename ?? '');
+};
+
+function pushRequestLog(entry: Omit<CukoRequestLogEntry, 'id' | 'ts' | 'status' | 'inputCount' | 'inputChars' | 'inputPreview' | 'inputNewCount' | 'inputNewChars'> & {
   input: any[];
 }): string {
+  // 只保留统计、预览和参数；完整 input 不进日志（OpenAI 协议每轮是完整历史）
+  const { input: rawInput, ...rest } = entry;
   const id = randomUUID();
-  const input = Array.isArray(entry.input) ? entry.input : [];
+  const input = Array.isArray(rawInput) ? rawInput : [];
+  const inputCount = input.length;
+  const inputChars = input.reduce((sum: number, p: any) => sum + partText(p).length, 0);
+  const start = Math.max(0, input.length - REQUEST_LOG_PREVIEW);
+  const inputPreview = input.slice(start).map((p: any, i: number) => ({
+    index: start + i + 1,
+    type: String(p?.type || p?.role || ''),
+    text: truncate(partText(p), 300),
+  }));
+  let inputNewCount: number | undefined;
+  let inputNewChars: number | undefined;
+  if (rest.protocol === 'openai') {
+    // requestLogs 最新在前：找同会话最近一轮的第一次尝试
+    const prev = requestLogs.find((item) => item.sessionId === rest.sessionId && item.protocol === 'openai' && (item.attempt ?? 1) === 1);
+    if ((rest.attempt ?? 1) > 1) {
+      inputNewCount = prev?.inputNewCount;
+      inputNewChars = prev?.inputNewChars;
+    } else {
+      inputNewCount = prev ? Math.max(0, inputCount - prev.inputCount) : inputCount;
+      inputNewChars = prev ? Math.max(0, inputChars - prev.inputChars) : inputChars;
+    }
+  }
   requestLogs.unshift({
+    ...rest,
     id,
     ts: nowLocalIso(),
     status: 'pending',
-    inputCount: input.length,
-    inputChars: input.reduce((sum, p) => sum + (typeof p?.text === 'string' ? p.text.length : 0), 0),
-    inputPreview: input.slice(0, 10).map((p) => ({
-      type: String(p?.type || ''),
-      text: truncate(String(p?.text ?? p?.filename ?? ''), 300),
-    })),
-    ...entry,
+    inputCount,
+    inputChars,
+    inputNewCount,
+    inputNewChars,
+    inputPreview,
   });
   if (requestLogs.length > REQUEST_LOG_MAX) requestLogs.length = REQUEST_LOG_MAX;
+  releaseOldRaw();
   return id;
+}
+
+// ===== [261123-q4h7tn-cuko-openai] 原始报文（请求头 / 请求体 / 响应） =====
+
+/** 只保留最近这么多条请求的原文，更早的只留摘要 */
+const REQUEST_LOG_RAW_KEEP = 20;
+/** 单条响应原文最多保留的字符数 */
+const RESPONSE_RAW_MAX = 2000000;
+
+/** 请求头打码：Authorization / api-key 只保留最后 4 位 */
+function redactHeaders(headers: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers || {})) {
+    const v = String(value ?? '');
+    if (/^(authorization|api-key|x-api-key)$/i.test(key)) {
+      const m = /^(Bearer\s+)?([\s\S]*)$/i.exec(v);
+      const prefix = m && m[1] ? m[1] : '';
+      const secret = m ? m[2] : v;
+      out[key] = prefix + '****' + (secret.length > 8 ? secret.slice(-4) : '');
+    } else {
+      out[key] = v;
+    }
+  }
+  return out;
+}
+
+/** 记录请求原文，并原样返回请求体（直接包在 fetch 的 body 上） */
+function tapRequestRaw(id: string, headers: Record<string, string>, body: string): string {
+  const entry = requestLogs.find((item) => item.id === id);
+  if (entry && !entry.rawReleased) {
+    entry.method = 'POST';
+    entry.requestHeaders = redactHeaders(headers);
+    entry.requestBody = body;
+  }
+  return body;
+}
+
+/** 追加响应原文，并原样返回（直接包在解析器的 push 上） */
+function tapResponseRaw(id: string, text: string): string {
+  if (!text) return text;
+  const entry = requestLogs.find((item) => item.id === id);
+  if (!entry || entry.rawReleased || entry.responseTruncated) return text;
+  const current = entry.responseText || '';
+  if (current.length + text.length > RESPONSE_RAW_MAX) {
+    entry.responseText = current + text.slice(0, Math.max(0, RESPONSE_RAW_MAX - current.length));
+    entry.responseTruncated = true;
+  } else {
+    entry.responseText = current + text;
+  }
+  return text;
+}
+
+/** 超出保留条数的旧日志释放原文，只留摘要 */
+function releaseOldRaw(): void {
+  for (let i = REQUEST_LOG_RAW_KEEP; i < requestLogs.length; i++) {
+    const entry = requestLogs[i];
+    if (entry.requestBody === undefined && entry.responseText === undefined && entry.requestHeaders === undefined) continue;
+    delete entry.requestHeaders;
+    delete entry.requestBody;
+    delete entry.responseText;
+    entry.rawReleased = true;
+  }
+}
+
+/** 日志面板点开某一条时读取原文 */
+export function getCukoRequestLogRaw(id: string): Record<string, any> | null {
+  const entry = requestLogs.find((item) => item.id === String(id || ''));
+  if (!entry) return null;
+  return {
+    method: entry.method,
+    url: entry.url,
+    httpStatus: entry.httpStatus,
+    requestHeaders: entry.requestHeaders,
+    requestBody: entry.requestBody,
+    responseText: entry.responseText,
+    responseTruncated: entry.responseTruncated,
+    rawReleased: entry.rawReleased,
+  };
 }
 
 function finishRequestLog(id: string, patch: Partial<CukoRequestLogEntry>): void {
@@ -147,7 +292,14 @@ function finishRequestLog(id: string, patch: Partial<CukoRequestLogEntry>): void
 
 /** 页面里的请求日志列表（最新在前） */
 export function listCukoRequestLogs(): CukoRequestLogEntry[] {
-  return requestLogs.map((item) => ({ ...item }));
+  // 列表只给摘要（每 1.5 秒刷新一次），原文点开时再用 getCukoRequestLogRaw 取
+  return requestLogs.map((item) => {
+    const copy: CukoRequestLogEntry = { ...item, hasRaw: item.requestBody !== undefined };
+    delete copy.requestHeaders;
+    delete copy.requestBody;
+    delete copy.responseText;
+    return copy;
+  });
 }
 
 export function clearCukoRequestLogs(): void {
@@ -378,6 +530,8 @@ async function streamRound(
     model: run.modelId,
     url,
     type: requestType,
+    protocol: 'cuko',
+    requestParams: requestParamsOf(body, 'input'),
     input,
     providerSessionId: providerSessionId || undefined,
   });
@@ -386,13 +540,13 @@ async function streamRound(
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: tapRequestRaw(logId, headers, JSON.stringify(body)),
       signal: run.abort.signal,
     });
     finishRequestLog(logId, { httpStatus: response.status });
     if (!response.ok || !response.body) {
       let errText = 'HTTP ' + response.status;
-      try { const t = await response.text(); if (t) errText += ': ' + t; } catch { /* ignore */ }
+      try { const t = tapResponseRaw(logId, await response.text()); if (t) errText += ': ' + t; } catch { /* ignore */ }
       throw new Error(errText);
     }
     const reader = response.body.getReader();
@@ -400,9 +554,9 @@ async function streamRound(
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      decoder.push(textDecoder.decode(value, { stream: true }));
+      decoder.push(tapResponseRaw(logId, textDecoder.decode(value, { stream: true })));
     }
-    decoder.push(textDecoder.decode());
+    decoder.push(tapResponseRaw(logId, textDecoder.decode()));
     decoder.flush();
   } catch (err: any) {
     if (err?.name === 'AbortError' || run.aborted) {
@@ -426,6 +580,7 @@ async function streamRound(
     status: error || aborted ? 'error' : 'ok',
     error: error || (aborted ? '已停止' : undefined),
     providerSessionId: run.providerSessionId || undefined,
+    usage: normalizeUsage(usage),
     durationMs: Date.now() - startedAt,
   });
   return { content, think, usage, sawDone, aborted, error };
@@ -869,6 +1024,8 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
     model: modelId,
     url,
     type: 'compress',
+    protocol: 'cuko',
+    requestParams: requestParamsOf(body, 'input'),
     input,
   });
   const fail = (message: string) => {
@@ -880,12 +1037,12 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
     const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body),
+      body: tapRequestRaw(logId, headers, JSON.stringify(body)),
     });
     finishRequestLog(logId, { httpStatus: response.status });
     if (!response.ok || !response.body) {
       let errText = 'HTTP ' + response.status;
-      try { const t = await response.text(); if (t) errText += ': ' + t; } catch { /* ignore */ }
+      try { const t = tapResponseRaw(logId, await response.text()); if (t) errText += ': ' + t; } catch { /* ignore */ }
       return fail(errText);
     }
     const reader = response.body.getReader();
@@ -893,9 +1050,9 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      decoder.push(textDecoder.decode(value, { stream: true }));
+      decoder.push(tapResponseRaw(logId, textDecoder.decode(value, { stream: true })));
     }
-    decoder.push(textDecoder.decode());
+    decoder.push(tapResponseRaw(logId, textDecoder.decode()));
     decoder.flush();
   } catch (err: any) {
     return fail(err?.message || '历史同步请求失败');
@@ -929,6 +1086,7 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
   finishRequestLog(logId, {
     status: 'ok',
     providerSessionId: providerSessionId || undefined,
+    usage: normalizeUsage(replyUsage),
     durationMs: Date.now() - startedAt,
   });
   return {
@@ -1101,7 +1259,7 @@ interface OpenAiAttempt {
 }
 
 /** 一次 Chat Completions 请求（流式）；每次尝试都记一条请求日志 */
-async function openAiAttempt(run: CukoRun, url: string, headers: Record<string, string>, bodyText: string, logInput: any[], attempt: number): Promise<OpenAiAttempt> {
+async function openAiAttempt(run: CukoRun, url: string, headers: Record<string, string>, bodyText: string, logInput: any[], attempt: number, requestParams?: Record<string, any>): Promise<OpenAiAttempt> {
   const parser = createChatStreamParser((delta, thinkDelta) => {
     run.content += delta;
     run.think += thinkDelta;
@@ -1114,6 +1272,10 @@ async function openAiAttempt(run: CukoRun, url: string, headers: Record<string, 
     model: run.modelId,
     url,
     type: attempt > 0 ? 'openai（第 ' + attempt + ' 次重试）' : 'openai',
+    protocol: 'openai',
+    attempt: attempt + 1,
+    maxAttempts: MAX_RETRIES + 1,
+    requestParams,
     input: logInput,
   });
   let httpStatus: number | undefined;
@@ -1121,13 +1283,13 @@ async function openAiAttempt(run: CukoRun, url: string, headers: Record<string, 
   let aborted = false;
   let errorText: string | undefined;
   try {
-    const response = await fetch(url, { method: 'POST', headers, body: bodyText, signal: run.abort.signal });
+    const response = await fetch(url, { method: 'POST', headers, body: tapRequestRaw(logId, headers, bodyText), signal: run.abort.signal });
     httpStatus = response.status;
     finishRequestLog(logId, { httpStatus });
     if (!response.ok || !response.body) {
       let detail = '';
       try {
-        detail = await response.text();
+        detail = tapResponseRaw(logId, await response.text());
       } catch { /* ignore */ }
       errorText = 'HTTP ' + response.status + (detail ? ': ' + detail.slice(0, 2000) : '');
     } else {
@@ -1136,9 +1298,9 @@ async function openAiAttempt(run: CukoRun, url: string, headers: Record<string, 
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        parser.push(textDecoder.decode(value, { stream: true }));
+        parser.push(tapResponseRaw(logId, textDecoder.decode(value, { stream: true })));
       }
-      parser.push(textDecoder.decode());
+      parser.push(tapResponseRaw(logId, textDecoder.decode()));
     }
   } catch (err: any) {
     if (err?.name === 'AbortError' || run.aborted) {
@@ -1154,6 +1316,7 @@ async function openAiAttempt(run: CukoRun, url: string, headers: Record<string, 
   finishRequestLog(logId, {
     status: failed ? 'error' : 'ok',
     error: aborted ? '已停止' : (errorText || res.error || (res.sawDone ? undefined : '连接中断，回复不完整')),
+    usage: res.usage,
     durationMs: Date.now() - startedAt,
   });
   return {
@@ -1195,12 +1358,13 @@ async function streamOpenAiRound(run: CukoRun): Promise<RoundResult> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
   if (run.apiKey) headers.Authorization = 'Bearer ' + run.apiKey;
   const logInput = messages.map((m) => ({ type: m.role, text: m.content }));
+  const requestParams = requestParamsOf(body, 'messages');
 
   for (let attempt = 0; ; attempt++) {
     run.content = '';
     run.think = '';
     run.usage = undefined;
-    const a = await openAiAttempt(run, url, headers, bodyText, logInput, attempt);
+    const a = await openAiAttempt(run, url, headers, bodyText, logInput, attempt, requestParams);
     const kind = classifyFailure({ aborted: a.aborted, httpStatus: a.httpStatus, networkError: a.networkError, streamError: a.streamError, sawDone: a.sawDone });
     if (kind === 'none') {
       return { content: a.content, think: a.think, usage: a.usage, sawDone: true, aborted: false, sentText: assistantSentText(a.content) };
@@ -1289,3 +1453,4 @@ function switchToOpenAiModel(db: any, session: any, providerId: string, modelId:
   }
   return { success: true, inputCount: filled.length };
 }
+

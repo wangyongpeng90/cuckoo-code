@@ -26,6 +26,7 @@ import {
   switchModelWithHistory,
   continueAfterSwitch,
   listCukoRequestLogs,
+  getCukoRequestLogRaw,
   clearCukoRequestLogs,
 } from '../cuko-runner.js';
 const require = createRequire(import.meta.url);
@@ -615,6 +616,8 @@ export function registerCukoIpc(): void {
 
   // 请求日志（请求由主进程发出，渲染进程 DevTools Network 看不到）
   ipcMain.handle('cuko:get-request-logs', () => listCukoRequestLogs());
+  // [261123-q4h7tn-cuko-openai] 点开某一条时读取原始报文
+  ipcMain.handle('cuko:get-request-log-raw', (_event: any, id: string) => getCukoRequestLogRaw(id));
   ipcMain.handle('cuko:clear-request-logs', () => {
     clearCukoRequestLogs();
     return { success: true };

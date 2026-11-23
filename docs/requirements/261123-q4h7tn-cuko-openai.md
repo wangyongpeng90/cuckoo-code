@@ -93,9 +93,41 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 
 ## 验收标准
 
-- [ ] 步骤 1：纯函数单测通过（原文重放前缀不变、流解析、usage、请求体优先级、重试判定、模型列表、档位）
+- [x] 步骤 1：纯函数单测通过（原文重放前缀不变、流解析、usage、请求体优先级、重试判定、模型列表、档位）
 - [ ] 步骤 2：OpenAI 协议多轮对话 + 工具循环可用；DeepSeek 第二轮起缓存命中 > 0
 - [ ] 步骤 3：设置页可选协议、刷新不丢用户修改
 - [ ] 步骤 4：思考强度选择、命中率、60% 提醒、附件拦截
 - [ ] Cuko 协议行为不变
 - [ ] typecheck / test / lint / compile 全绿
+
+## 12. 请求日志（2026-11-23 追加）
+
+- 列表摘要：协议、第几次尝试（§attempt§ / §maxAttempts§，显示「第 2/4 次」）、用量（归一后含 §cache_read_tokens§ / §cache_miss_tokens§）与命中率、总条数 / 字数、OpenAI 协议本轮新增条数 / 字数、HTTP 状态、耗时。
+- 点开看原始报文（像开发者工具的网络面板）：
+  - 请求头：方法 + URL + 全部请求头，§Authorization§ 打码为 §Bearer ****§ + 后 4 位；
+  - 请求体：实际发出的 JSON 原文，可切「原文 / 格式化」，可复制；
+  - 响应：服务端返回的原始文本（SSE 原样），可复制，单条最多保留 200 万字符。
+- 主进程只保留最近 20 条请求的原文（§REQUEST_LOG_RAW_KEEP§），更早的显示「原文已释放」；列表接口只返回摘要，点开时经 IPC §cuko:get-request-log-raw§（preload §getRequestLogRaw§）读取。
+- 日志不再保存完整的 input / messages 数组。
+
+## 进度记录（截至 2026-11-24）
+
+已提交：
+
+- 98dcb1d feat(cuko): 设置页支持 OpenAI 协议、请求参数、可编辑模型目录与推理档位（261123-q4h7tn 步骤 3-2）
+- 4c36f3d feat(cuko): Provider 协议与参数读写、模型目录合并写入、按表单获取模型（261123-q4h7tn 步骤 3-1）
+- 278375e test(cuko): 运行器 OpenAI 协议集成测试（假服务 + 内存库：前缀不变 / 工具循环 / 重试 / 401 / 停止）（261123-q4h7tn 步骤 2-5）
+- 1189cd6 fix(cuko): 用户消息改由主进程落库 / 改标题不阻塞发送 / 显示自动重试（261123-q4h7tn 步骤 2-4）
+- f5c1c40 feat(cuko): 切到 OpenAI 协议模型时直接改绑定并补齐原文（261123-q4h7tn 步骤 2-3b）
+- 3c0ac66 feat(cuko): 运行器接入 OpenAI 协议（原文重放 / 停止出错处理 / 自动重试）（261123-q4h7tn 步骤 2-3）
+- 1cb6b18 fix(cuko): 补列 + 运行器 flush / 出错不执行工具 / 断开标记不完整（261123-q4h7tn 步骤 2-1、2-2）
+- 38db2bc feat(cuko): OpenAI 兼容协议纯函数 + SSE 解码器 flush（261123-q4h7tn 步骤 1）
+- a2ebf65 merge: 合入 grep/glob 流式读取修复（RangeError: Invalid string length）
+- 0a96d37 fix(tools): grep/glob 改流式读取，修复主进程 RangeError: Invalid string length
+- 2294d82 docs(req): 新增 261123-q4h7tn Cuko 接入 OpenAI 兼容接口需求档案
+- （本次）请求日志原始报文 / 用量 / 缓存命中；完善需求档案；新增交接文档
+
+待确认 / 未完成：步骤 2-4 内容、步骤 4（聊天窗口思考强度选择器、命中率、60% 提醒、附件拦截）、请求日志测试、DeepSeek 真实缓存命中验证、DeepSeek /models 扩展字段实测。
+
+交接文档：`docs/handover/261123-q4h7tn-cuko-openai-handover.md`
+
