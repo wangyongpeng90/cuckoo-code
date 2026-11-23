@@ -3,6 +3,156 @@ import { Select } from '../components/select.js';
 import { api } from '../shared.js';
 import { CukoIntegrationDialog } from './cuko-integration.js';
 
+// ================= [261123-q4h7tn-cuko-openai] OpenAI 请求参数 + 模型卡片 =================
+
+const DEEPSEEK_DISABLE_PARAMS = '{"thinking":{"type":"disabled"}}';
+const PRESET_LEVELS = [
+  { id: 'off', value: '' },
+  { id: 'low', value: 'low' },
+  { id: 'high', value: 'high' },
+  { id: 'max', value: 'max' },
+];
+const linkBtnStyle = { background: 'none', border: 'none', color: 'var(--ck-text-2)', fontSize: '12px', cursor: 'pointer', padding: 0 };
+const fullInput = { width: '100%', boxSizing: 'border-box' as const };
+const fieldLabel = (text: string) => createElement('div', { style: { fontSize: '13px', marginBottom: '8px', color: 'var(--ck-text)' } }, text);
+const fieldHint = (text: string) => createElement('div', { style: { fontSize: '12px', marginTop: '4px', color: 'var(--ck-text-2)' } }, text);
+const errLine = (msg: string) => (msg ? createElement('div', { style: { color: 'var(--ck-danger)', fontSize: 12, marginTop: 4 } }, msg) : null);
+
+function jsonError(text: any): string {
+  const t = String(text || '').trim();
+  if (!t) return '';
+  try {
+    const v = JSON.parse(t);
+    return v && typeof v === 'object' && !Array.isArray(v) ? '' : '必须是 JSON 对象';
+  } catch (e: any) {
+    return 'JSON 格式不正确：' + (e?.message || '');
+  }
+}
+
+function toPositiveInt(text: any): number | undefined {
+  const n = Number(String(text || '').trim());
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+function OpenAiParams({ provider, onChange }: { provider: any; onChange: (p: any) => void }) {
+  const area = (key: string, placeholder: string) => createElement('textarea', {
+    className: 'ck-set-textarea',
+    style: { ...fullInput, minHeight: '64px', fontFamily: 'monospace', fontSize: '12px' },
+    placeholder,
+    value: provider[key] || '',
+    onChange: (e: any) => onChange({ ...provider, [key]: e.target.value }),
+  });
+  return createElement('div', { style: { marginBottom: '24px', padding: '16px', border: '1px solid var(--ck-border)', borderRadius: '8px', background: 'var(--ck-bg)' } },
+    createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' } },
+      createElement('div', { style: { fontSize: '13px', fontWeight: 500, color: 'var(--ck-text)' } }, 'OpenAI 请求参数'),
+      createElement('button', {
+        style: linkBtnStyle,
+        onClick: () => onChange({ ...provider, reasoningField: 'reasoning_effort', disableReasoningParams: DEEPSEEK_DISABLE_PARAMS }),
+      }, '填入 DeepSeek 推荐配置'),
+    ),
+    createElement('div', { style: { marginBottom: '12px' } },
+      fieldLabel('推理强度字段名'),
+      createElement('input', { className: 'ck-set-input', style: fullInput, placeholder: 'reasoning_effort', value: provider.reasoningField || '', onChange: (e: any) => onChange({ ...provider, reasoningField: e.target.value }) }),
+      fieldHint('选中的思考档位，会把它的 API 参数值写进这个字段；留空 = reasoning_effort'),
+    ),
+    createElement('div', { style: { marginBottom: '12px' } },
+      fieldLabel('关闭思考参数（JSON）'),
+      area('disableReasoningParams', DEEPSEEK_DISABLE_PARAMS),
+      errLine(jsonError(provider.disableReasoningParams)),
+      fieldHint('选 off 档位时合并进请求体。DeepSeek 默认会思考，要填这段才能关掉'),
+    ),
+    createElement('div', null,
+      fieldLabel('额外请求参数（JSON）'),
+      area('extraParams', '{"temperature": 0.3}'),
+      errLine(jsonError(provider.extraParams)),
+      fieldHint('每次请求都会合并进请求体；model / messages / stream 不能被覆盖'),
+    ),
+  );
+}
+
+function ModelCard({ model, onChange, onRemove }: { model: any; onChange: (m: any) => void; onRemove: () => void }) {
+  const [open, setOpen] = useState(false);
+  const apiMeta = model.apiMeta || {};
+  const user = model.userMeta || {};
+  const eff: any = { ...apiMeta };
+  for (const k of Object.keys(user)) {
+    if (user[k] !== undefined && user[k] !== null) eff[k] = user[k];
+  }
+  const setUser = (patch: any) => {
+    const next: any = { ...user, ...patch };
+    for (const k of Object.keys(next)) {
+      if (next[k] === undefined || next[k] === '') delete next[k];
+    }
+    onChange({ ...model, userMeta: next, name: next.name || apiMeta.name || model.id });
+  };
+  const levels: any[] = Array.isArray(eff.reasoningLevels) ? eff.reasoningLevels : [];
+  const enabled = !!eff.reasoningEnabled;
+  const setLevels = (next: any[]) => setUser({ reasoningLevels: next });
+  const toggleReasoning = (on: boolean) => {
+    if (on && levels.length === 0) setUser({ reasoningEnabled: true, reasoningLevels: PRESET_LEVELS.map((l) => ({ ...l })), defaultEffort: 'high' });
+    else setUser({ reasoningEnabled: on });
+  };
+  const mods: any[] = Array.isArray(eff.inputModalities) ? eff.inputModalities : ['text'];
+  const badge = model.source === 'manual' ? '手动' : model.listed === false ? '接口未返回' : '';
+  const numberInput = (key: string) => createElement('input', {
+    className: 'ck-set-input',
+    style: fullInput,
+    type: 'number',
+    value: user[key] ?? '',
+    placeholder: apiMeta[key] ? String(apiMeta[key]) + '（接口值）' : '未设置',
+    onChange: (e: any) => setUser({ [key]: toPositiveInt(e.target.value) }),
+  });
+
+  return createElement('div', { style: { background: 'var(--ck-bg)', border: '1px solid var(--ck-border)', borderRadius: '8px', padding: '8px 12px', marginBottom: '8px' } },
+    createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '8px' } },
+      createElement('button', { style: linkBtnStyle, title: open ? '收起' : '展开', onClick: () => setOpen(!open) }, open ? '▾' : '▸'),
+      createElement('input', { className: 'ck-set-input', style: { flex: 1 }, placeholder: '模型 ID', value: model.id || '', disabled: !model._key, onChange: (e: any) => onChange({ ...model, id: e.target.value.trim() }) }),
+      createElement('input', { className: 'ck-set-input', style: { flex: 1 }, placeholder: apiMeta.name || model.id || '显示名称', value: user.name || '', onChange: (e: any) => setUser({ name: e.target.value }) }),
+      badge ? createElement('span', { style: { fontSize: '12px', color: 'var(--ck-text-2)', whiteSpace: 'nowrap' } }, badge) : null,
+      createElement('button', { style: { ...linkBtnStyle, color: 'var(--ck-danger)' }, onClick: onRemove }, '删除'),
+    ),
+    open ? createElement('div', { style: { marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '12px' } },
+      createElement('div', { style: { display: 'flex', gap: '12px' } },
+        createElement('div', { style: { flex: 1 } }, fieldLabel('上下文窗口'), numberInput('contextWindow')),
+        createElement('div', { style: { flex: 1 } }, fieldLabel('最大输出 token 数'), numberInput('maxTokens')),
+      ),
+      createElement('div', null,
+        fieldLabel('输入类型（暂未生效）'),
+        createElement('div', { style: { display: 'flex', gap: '16px', fontSize: '13px', color: 'var(--ck-text)' } },
+          createElement('label', null, createElement('input', { type: 'checkbox', checked: true, disabled: true }), ' 文本'),
+          createElement('label', null, createElement('input', { type: 'checkbox', checked: mods.includes('image'), onChange: (e: any) => setUser({ inputModalities: e.target.checked ? ['text', 'image'] : ['text'] }) }), ' 图片'),
+        ),
+      ),
+      createElement('div', null,
+        createElement('label', { style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--ck-text)', marginBottom: '8px' } },
+          createElement('input', { type: 'checkbox', checked: enabled, onChange: (e: any) => toggleReasoning(e.target.checked) }),
+          '推理档位（思考强度）',
+        ),
+        enabled ? createElement('div', null,
+          createElement('div', { style: { display: 'flex', gap: '8px', fontSize: '12px', color: 'var(--ck-text-2)', marginBottom: '4px' } },
+            createElement('div', { style: { flex: 1 } }, '档位'),
+            createElement('div', { style: { flex: 1 } }, 'API 参数值'),
+            createElement('div', { style: { width: '96px' } }, ''),
+          ),
+          ...levels.map((l: any, i: number) => createElement('div', { key: i, style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '6px' } },
+            createElement('input', { className: 'ck-set-input', style: { flex: 1 }, placeholder: '档位名', value: l.id || '', onChange: (e: any) => setLevels(levels.map((x: any, j: number) => (j === i ? { ...x, id: e.target.value.trim() } : x))) }),
+            createElement('input', { className: 'ck-set-input', style: { flex: 1 }, disabled: l.id === 'off', placeholder: l.id === 'off' ? '关闭思考' : (l.id || 'API 参数值'), value: l.value || '', onChange: (e: any) => setLevels(levels.map((x: any, j: number) => (j === i ? { ...x, value: e.target.value } : x))) }),
+            createElement('label', { style: { width: '48px', fontSize: '12px', color: 'var(--ck-text-2)', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' } },
+              createElement('input', { type: 'radio', checked: eff.defaultEffort === l.id, onChange: () => setUser({ defaultEffort: l.id }) }),
+              '默认',
+            ),
+            createElement('button', { style: { ...linkBtnStyle, width: '40px' }, onClick: () => setLevels(levels.filter((_: any, j: number) => j !== i)) }, '删除'),
+          )),
+          createElement('button', { style: linkBtnStyle, onClick: () => setLevels([...levels, { id: '', value: '' }]) }, '+ 添加档位'),
+        ) : null,
+      ),
+      Object.keys(user).length > 0
+        ? createElement('button', { style: { ...linkBtnStyle, alignSelf: 'flex-start' }, onClick: () => onChange({ ...model, userMeta: {}, name: apiMeta.name || model.id }) }, '恢复默认（丢弃这个模型的修改）')
+        : null,
+    ) : null,
+  );
+}
+
 export function CukoSettings() {
   const [cukoProviders, setCukoProviders] = useState<any[]>([]);
   const [cukoEditing, setCukoEditing] = useState(false);
@@ -52,18 +202,15 @@ export function CukoSettings() {
     loadProviders();
   }, []);
 
+  // [261123-q4h7tn-cuko-openai] 改走主进程：不受跨域限制；地址带不带 /v1 都行；保留已改过的模型设置
   const fetchModels = async () => {
     setCukoLoading(true);
     setCukoErr('');
     try {
-      const headers: Record<string, string> = { Accept: 'application/json' };
-      if (editProvider.apiKey) headers.Authorization = 'Bearer ' + editProvider.apiKey;
-      const res = await fetch(editProvider.baseUrl.replace(/\/+$/, '') + '/v1/models', { headers });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const json = await res.json();
-      if (!json.data || !Array.isArray(json.data)) throw new Error('返回格式不正确');
-      setEditProvider({ ...editProvider, models: json.data });
-      showTip('已获取 ' + json.data.length + ' 个模型');
+      const res = await (window as any).cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, apiKey: editProvider.apiKey || '', models: editProvider.models || [] });
+      if (!res || !res.success) throw new Error((res && res.error) || '获取失败');
+      setEditProvider((prev: any) => ({ ...prev, models: res.models || [] }));
+      showTip('已获取 ' + res.count + ' 个模型');
     } catch (e: any) {
       setCukoErr(e.message || '获取失败');
     } finally {
@@ -81,7 +228,8 @@ export function CukoSettings() {
       if (!res.success) throw new Error(res.error || '未知错误');
       await loadProviders();
       setCukoEditing(false);
-      showTip('配置已保存');
+      const ignored = Array.isArray(res.ignoredKeys) && res.ignoredKeys.length ? '（已忽略不能覆盖的字段：' + res.ignoredKeys.join('、') + '）' : '';
+      showTip('配置已保存' + ignored);
     } catch (e: any) {
       setCukoErr('保存失败: ' + e.message);
     }
@@ -109,6 +257,17 @@ export function CukoSettings() {
     }
     setCukoErr('');
     setCukoEditing(true);
+  };
+
+  // [261123-q4h7tn-cuko-openai] 模型目录编辑
+  const updateModel = (idx: number, next: any) => {
+    setEditProvider((prev: any) => ({ ...prev, models: (prev.models || []).map((m: any, i: number) => (i === idx ? next : m)) }));
+  };
+  const removeModel = (idx: number) => {
+    setEditProvider((prev: any) => ({ ...prev, models: (prev.models || []).filter((_: any, i: number) => i !== idx) }));
+  };
+  const addManualModel = () => {
+    setEditProvider((prev: any) => ({ ...prev, models: [...(prev.models || []), { id: '', name: '', apiMeta: {}, userMeta: {}, source: 'manual', listed: true, _key: 'manual-' + Date.now().toString(36) }] }));
   };
 
   const cardStyle = {
@@ -230,14 +389,14 @@ export function CukoSettings() {
       ),
       createElement('div', { style: { marginBottom: '16px' } },
         createElement('div', { style: { fontSize: '13px', marginBottom: '8px', color: 'var(--ck-text)' } }, 'API 地址'),
-        createElement('input', { className: 'ck-set-input', style: { width: '100%', boxSizing: 'border-box' as const }, placeholder: 'http://127.0.0.1:3000', value: editProvider.baseUrl, onChange: (e: any) => setEditProvider({ ...editProvider, baseUrl: e.target.value }) })
+        createElement('input', { className: 'ck-set-input', style: { width: '100%', boxSizing: 'border-box' as const }, placeholder: editProvider.protocol === 'openai' ? 'https://api.deepseek.com/v1' : 'http://127.0.0.1:3000', value: editProvider.baseUrl, onChange: (e: any) => setEditProvider({ ...editProvider, baseUrl: e.target.value }) })
       ),
       createElement('div', { style: { marginBottom: '16px' } },
         createElement('div', { style: { fontSize: '13px', marginBottom: '8px', color: 'var(--ck-text)' } }, 'API 协议'),
         createElement(Select, {
-          value: 'cuko-api',
-          options: [{ value: 'cuko-api', label: 'Cuko API (SSE)' }],
-          onChange: () => {},
+          value: editProvider.protocol === 'openai' ? 'openai' : 'cuko',
+          options: [{ value: 'cuko', label: 'Cuko API (SSE)' }, { value: 'openai', label: 'OpenAI Chat Completions' }],
+          onChange: (v: string) => setEditProvider({ ...editProvider, protocol: v }),
         })
       ),
       createElement('div', { style: { marginBottom: '24px' } },
@@ -245,22 +404,20 @@ export function CukoSettings() {
         createElement('input', { className: 'ck-set-input', style: { width: '100%', boxSizing: 'border-box' as const }, type: 'password', placeholder: '输入 API 密钥', value: editProvider.apiKey || '', onChange: (e: any) => setEditProvider({ ...editProvider, apiKey: e.target.value }) })
       ),
 
+      editProvider.protocol === 'openai' ? createElement(OpenAiParams, { provider: editProvider, onChange: setEditProvider }) : null,
       createElement('div', { style: { marginBottom: '24px' } },
         createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' } },
           createElement('div', { style: { fontSize: '13px', color: 'var(--ck-text)' } }, '模型目录'),
-          createElement('button', { style: { background: 'none', border: 'none', color: 'var(--ck-text-2)', fontSize: '12px', cursor: 'pointer' }, onClick: fetchModels, disabled: cukoLoading }, cukoLoading ? '获取中...' : '获取可用模型')
+          createElement('div', { style: { display: 'flex', gap: '12px' } },
+            createElement('button', { style: linkBtnStyle, onClick: addManualModel }, '+ 添加模型'),
+            createElement('button', { style: linkBtnStyle, onClick: fetchModels, disabled: cukoLoading }, cukoLoading ? '获取中...' : '获取可用模型')
+          )
         ),
         cukoErr ? createElement('div', { style: { color: 'var(--ck-danger)', fontSize: 12, marginBottom: 8 } }, cukoErr) : null,
         createElement('div', { style: { border: '1px dashed var(--ck-border)', borderRadius: '8px', padding: '12px' } },
           (!editProvider.models || editProvider.models.length === 0) ? createElement('div', { style: { color: 'var(--ck-text-2)', fontSize: '12px', textAlign: 'center' as const } }, '暂无模型，请点击右上角获取') :
-          editProvider.models.map((m: any) =>
-            createElement('div', {
-              key: m.id,
-              style: { display: 'flex', alignItems: 'center', gap: '8px', background: 'var(--ck-bg)', border: '1px solid var(--ck-border)', borderRadius: '8px', padding: '8px 12px', marginBottom: '8px' }
-            },
-              createElement('div', { style: { flex: 1, fontSize: '13px', color: 'var(--ck-text-2)' } }, m.id),
-              createElement('div', { style: { flex: 1, fontSize: '13px', color: 'var(--ck-text)' } }, m.name || m.id)
-            )
+          editProvider.models.map((m: any, idx: number) =>
+            createElement(ModelCard, { key: m._key || m.id || 'idx-' + idx, model: m, onChange: (next: any) => updateModel(idx, next), onRemove: () => removeModel(idx) })
           )
         )
       ),

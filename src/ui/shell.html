@@ -30518,6 +30518,180 @@ body {
   }
 
   // src/ui/shell/scripts/pages/settings-cuko.tsx
+  var DEEPSEEK_DISABLE_PARAMS = '{"thinking":{"type":"disabled"}}';
+  var PRESET_LEVELS = [
+    { id: "off", value: "" },
+    { id: "low", value: "low" },
+    { id: "high", value: "high" },
+    { id: "max", value: "max" }
+  ];
+  var linkBtnStyle = { background: "none", border: "none", color: "var(--ck-text-2)", fontSize: "12px", cursor: "pointer", padding: 0 };
+  var fullInput = { width: "100%", boxSizing: "border-box" };
+  var fieldLabel = (text) => (0, import_react9.createElement)("div", { style: { fontSize: "13px", marginBottom: "8px", color: "var(--ck-text)" } }, text);
+  var fieldHint = (text) => (0, import_react9.createElement)("div", { style: { fontSize: "12px", marginTop: "4px", color: "var(--ck-text-2)" } }, text);
+  var errLine = (msg) => msg ? (0, import_react9.createElement)("div", { style: { color: "var(--ck-danger)", fontSize: 12, marginTop: 4 } }, msg) : null;
+  function jsonError(text) {
+    const t = String(text || "").trim();
+    if (!t) return "";
+    try {
+      const v = JSON.parse(t);
+      return v && typeof v === "object" && !Array.isArray(v) ? "" : "\u5FC5\u987B\u662F JSON \u5BF9\u8C61";
+    } catch (e2) {
+      return "JSON \u683C\u5F0F\u4E0D\u6B63\u786E\uFF1A" + (e2?.message || "");
+    }
+  }
+  function toPositiveInt(text) {
+    const n = Number(String(text || "").trim());
+    return Number.isInteger(n) && n > 0 ? n : void 0;
+  }
+  function OpenAiParams({ provider, onChange }) {
+    const area = (key2, placeholder) => (0, import_react9.createElement)("textarea", {
+      className: "ck-set-textarea",
+      style: { ...fullInput, minHeight: "64px", fontFamily: "monospace", fontSize: "12px" },
+      placeholder,
+      value: provider[key2] || "",
+      onChange: (e2) => onChange({ ...provider, [key2]: e2.target.value })
+    });
+    return (0, import_react9.createElement)(
+      "div",
+      { style: { marginBottom: "24px", padding: "16px", border: "1px solid var(--ck-border)", borderRadius: "8px", background: "var(--ck-bg)" } },
+      (0, import_react9.createElement)(
+        "div",
+        { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" } },
+        (0, import_react9.createElement)("div", { style: { fontSize: "13px", fontWeight: 500, color: "var(--ck-text)" } }, "OpenAI \u8BF7\u6C42\u53C2\u6570"),
+        (0, import_react9.createElement)("button", {
+          style: linkBtnStyle,
+          onClick: () => onChange({ ...provider, reasoningField: "reasoning_effort", disableReasoningParams: DEEPSEEK_DISABLE_PARAMS })
+        }, "\u586B\u5165 DeepSeek \u63A8\u8350\u914D\u7F6E")
+      ),
+      (0, import_react9.createElement)(
+        "div",
+        { style: { marginBottom: "12px" } },
+        fieldLabel("\u63A8\u7406\u5F3A\u5EA6\u5B57\u6BB5\u540D"),
+        (0, import_react9.createElement)("input", { className: "ck-set-input", style: fullInput, placeholder: "reasoning_effort", value: provider.reasoningField || "", onChange: (e2) => onChange({ ...provider, reasoningField: e2.target.value }) }),
+        fieldHint("\u9009\u4E2D\u7684\u601D\u8003\u6863\u4F4D\uFF0C\u4F1A\u628A\u5B83\u7684 API \u53C2\u6570\u503C\u5199\u8FDB\u8FD9\u4E2A\u5B57\u6BB5\uFF1B\u7559\u7A7A = reasoning_effort")
+      ),
+      (0, import_react9.createElement)(
+        "div",
+        { style: { marginBottom: "12px" } },
+        fieldLabel("\u5173\u95ED\u601D\u8003\u53C2\u6570\uFF08JSON\uFF09"),
+        area("disableReasoningParams", DEEPSEEK_DISABLE_PARAMS),
+        errLine(jsonError(provider.disableReasoningParams)),
+        fieldHint("\u9009 off \u6863\u4F4D\u65F6\u5408\u5E76\u8FDB\u8BF7\u6C42\u4F53\u3002DeepSeek \u9ED8\u8BA4\u4F1A\u601D\u8003\uFF0C\u8981\u586B\u8FD9\u6BB5\u624D\u80FD\u5173\u6389")
+      ),
+      (0, import_react9.createElement)(
+        "div",
+        null,
+        fieldLabel("\u989D\u5916\u8BF7\u6C42\u53C2\u6570\uFF08JSON\uFF09"),
+        area("extraParams", '{"temperature": 0.3}'),
+        errLine(jsonError(provider.extraParams)),
+        fieldHint("\u6BCF\u6B21\u8BF7\u6C42\u90FD\u4F1A\u5408\u5E76\u8FDB\u8BF7\u6C42\u4F53\uFF1Bmodel / messages / stream \u4E0D\u80FD\u88AB\u8986\u76D6")
+      )
+    );
+  }
+  function ModelCard({ model, onChange, onRemove }) {
+    const [open, setOpen] = (0, import_react9.useState)(false);
+    const apiMeta = model.apiMeta || {};
+    const user = model.userMeta || {};
+    const eff = { ...apiMeta };
+    for (const k2 of Object.keys(user)) {
+      if (user[k2] !== void 0 && user[k2] !== null) eff[k2] = user[k2];
+    }
+    const setUser = (patch2) => {
+      const next = { ...user, ...patch2 };
+      for (const k2 of Object.keys(next)) {
+        if (next[k2] === void 0 || next[k2] === "") delete next[k2];
+      }
+      onChange({ ...model, userMeta: next, name: next.name || apiMeta.name || model.id });
+    };
+    const levels = Array.isArray(eff.reasoningLevels) ? eff.reasoningLevels : [];
+    const enabled = !!eff.reasoningEnabled;
+    const setLevels = (next) => setUser({ reasoningLevels: next });
+    const toggleReasoning = (on) => {
+      if (on && levels.length === 0) setUser({ reasoningEnabled: true, reasoningLevels: PRESET_LEVELS.map((l) => ({ ...l })), defaultEffort: "high" });
+      else setUser({ reasoningEnabled: on });
+    };
+    const mods = Array.isArray(eff.inputModalities) ? eff.inputModalities : ["text"];
+    const badge = model.source === "manual" ? "\u624B\u52A8" : model.listed === false ? "\u63A5\u53E3\u672A\u8FD4\u56DE" : "";
+    const numberInput = (key2) => (0, import_react9.createElement)("input", {
+      className: "ck-set-input",
+      style: fullInput,
+      type: "number",
+      value: user[key2] ?? "",
+      placeholder: apiMeta[key2] ? String(apiMeta[key2]) + "\uFF08\u63A5\u53E3\u503C\uFF09" : "\u672A\u8BBE\u7F6E",
+      onChange: (e2) => setUser({ [key2]: toPositiveInt(e2.target.value) })
+    });
+    return (0, import_react9.createElement)(
+      "div",
+      { style: { background: "var(--ck-bg)", border: "1px solid var(--ck-border)", borderRadius: "8px", padding: "8px 12px", marginBottom: "8px" } },
+      (0, import_react9.createElement)(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: "8px" } },
+        (0, import_react9.createElement)("button", { style: linkBtnStyle, title: open ? "\u6536\u8D77" : "\u5C55\u5F00", onClick: () => setOpen(!open) }, open ? "\u25BE" : "\u25B8"),
+        (0, import_react9.createElement)("input", { className: "ck-set-input", style: { flex: 1 }, placeholder: "\u6A21\u578B ID", value: model.id || "", disabled: !model._key, onChange: (e2) => onChange({ ...model, id: e2.target.value.trim() }) }),
+        (0, import_react9.createElement)("input", { className: "ck-set-input", style: { flex: 1 }, placeholder: apiMeta.name || model.id || "\u663E\u793A\u540D\u79F0", value: user.name || "", onChange: (e2) => setUser({ name: e2.target.value }) }),
+        badge ? (0, import_react9.createElement)("span", { style: { fontSize: "12px", color: "var(--ck-text-2)", whiteSpace: "nowrap" } }, badge) : null,
+        (0, import_react9.createElement)("button", { style: { ...linkBtnStyle, color: "var(--ck-danger)" }, onClick: onRemove }, "\u5220\u9664")
+      ),
+      open ? (0, import_react9.createElement)(
+        "div",
+        { style: { marginTop: "12px", display: "flex", flexDirection: "column", gap: "12px" } },
+        (0, import_react9.createElement)(
+          "div",
+          { style: { display: "flex", gap: "12px" } },
+          (0, import_react9.createElement)("div", { style: { flex: 1 } }, fieldLabel("\u4E0A\u4E0B\u6587\u7A97\u53E3"), numberInput("contextWindow")),
+          (0, import_react9.createElement)("div", { style: { flex: 1 } }, fieldLabel("\u6700\u5927\u8F93\u51FA token \u6570"), numberInput("maxTokens"))
+        ),
+        (0, import_react9.createElement)(
+          "div",
+          null,
+          fieldLabel("\u8F93\u5165\u7C7B\u578B\uFF08\u6682\u672A\u751F\u6548\uFF09"),
+          (0, import_react9.createElement)(
+            "div",
+            { style: { display: "flex", gap: "16px", fontSize: "13px", color: "var(--ck-text)" } },
+            (0, import_react9.createElement)("label", null, (0, import_react9.createElement)("input", { type: "checkbox", checked: true, disabled: true }), " \u6587\u672C"),
+            (0, import_react9.createElement)("label", null, (0, import_react9.createElement)("input", { type: "checkbox", checked: mods.includes("image"), onChange: (e2) => setUser({ inputModalities: e2.target.checked ? ["text", "image"] : ["text"] }) }), " \u56FE\u7247")
+          )
+        ),
+        (0, import_react9.createElement)(
+          "div",
+          null,
+          (0, import_react9.createElement)(
+            "label",
+            { style: { display: "flex", alignItems: "center", gap: "8px", fontSize: "13px", color: "var(--ck-text)", marginBottom: "8px" } },
+            (0, import_react9.createElement)("input", { type: "checkbox", checked: enabled, onChange: (e2) => toggleReasoning(e2.target.checked) }),
+            "\u63A8\u7406\u6863\u4F4D\uFF08\u601D\u8003\u5F3A\u5EA6\uFF09"
+          ),
+          enabled ? (0, import_react9.createElement)(
+            "div",
+            null,
+            (0, import_react9.createElement)(
+              "div",
+              { style: { display: "flex", gap: "8px", fontSize: "12px", color: "var(--ck-text-2)", marginBottom: "4px" } },
+              (0, import_react9.createElement)("div", { style: { flex: 1 } }, "\u6863\u4F4D"),
+              (0, import_react9.createElement)("div", { style: { flex: 1 } }, "API \u53C2\u6570\u503C"),
+              (0, import_react9.createElement)("div", { style: { width: "96px" } }, "")
+            ),
+            ...levels.map((l, i2) => (0, import_react9.createElement)(
+              "div",
+              { key: i2, style: { display: "flex", gap: "8px", alignItems: "center", marginBottom: "6px" } },
+              (0, import_react9.createElement)("input", { className: "ck-set-input", style: { flex: 1 }, placeholder: "\u6863\u4F4D\u540D", value: l.id || "", onChange: (e2) => setLevels(levels.map((x, j) => j === i2 ? { ...x, id: e2.target.value.trim() } : x)) }),
+              (0, import_react9.createElement)("input", { className: "ck-set-input", style: { flex: 1 }, disabled: l.id === "off", placeholder: l.id === "off" ? "\u5173\u95ED\u601D\u8003" : l.id || "API \u53C2\u6570\u503C", value: l.value || "", onChange: (e2) => setLevels(levels.map((x, j) => j === i2 ? { ...x, value: e2.target.value } : x)) }),
+              (0, import_react9.createElement)(
+                "label",
+                { style: { width: "48px", fontSize: "12px", color: "var(--ck-text-2)", display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap" } },
+                (0, import_react9.createElement)("input", { type: "radio", checked: eff.defaultEffort === l.id, onChange: () => setUser({ defaultEffort: l.id }) }),
+                "\u9ED8\u8BA4"
+              ),
+              (0, import_react9.createElement)("button", { style: { ...linkBtnStyle, width: "40px" }, onClick: () => setLevels(levels.filter((_, j) => j !== i2)) }, "\u5220\u9664")
+            )),
+            (0, import_react9.createElement)("button", { style: linkBtnStyle, onClick: () => setLevels([...levels, { id: "", value: "" }]) }, "+ \u6DFB\u52A0\u6863\u4F4D")
+          ) : null
+        ),
+        Object.keys(user).length > 0 ? (0, import_react9.createElement)("button", { style: { ...linkBtnStyle, alignSelf: "flex-start" }, onClick: () => onChange({ ...model, userMeta: {}, name: apiMeta.name || model.id }) }, "\u6062\u590D\u9ED8\u8BA4\uFF08\u4E22\u5F03\u8FD9\u4E2A\u6A21\u578B\u7684\u4FEE\u6539\uFF09") : null
+      ) : null
+    );
+  }
   function CukoSettings() {
     const [cukoProviders, setCukoProviders] = (0, import_react9.useState)([]);
     const [cukoEditing, setCukoEditing] = (0, import_react9.useState)(false);
@@ -30571,14 +30745,10 @@ body {
       setCukoLoading(true);
       setCukoErr("");
       try {
-        const headers = { Accept: "application/json" };
-        if (editProvider.apiKey) headers.Authorization = "Bearer " + editProvider.apiKey;
-        const res = await fetch(editProvider.baseUrl.replace(/\/+$/, "") + "/v1/models", { headers });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const json = await res.json();
-        if (!json.data || !Array.isArray(json.data)) throw new Error("\u8FD4\u56DE\u683C\u5F0F\u4E0D\u6B63\u786E");
-        setEditProvider({ ...editProvider, models: json.data });
-        showTip("\u5DF2\u83B7\u53D6 " + json.data.length + " \u4E2A\u6A21\u578B");
+        const res = await window.cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, apiKey: editProvider.apiKey || "", models: editProvider.models || [] });
+        if (!res || !res.success) throw new Error(res && res.error || "\u83B7\u53D6\u5931\u8D25");
+        setEditProvider((prev) => ({ ...prev, models: res.models || [] }));
+        showTip("\u5DF2\u83B7\u53D6 " + res.count + " \u4E2A\u6A21\u578B");
       } catch (e2) {
         setCukoErr(e2.message || "\u83B7\u53D6\u5931\u8D25");
       } finally {
@@ -30595,7 +30765,8 @@ body {
         if (!res.success) throw new Error(res.error || "\u672A\u77E5\u9519\u8BEF");
         await loadProviders();
         setCukoEditing(false);
-        showTip("\u914D\u7F6E\u5DF2\u4FDD\u5B58");
+        const ignored = Array.isArray(res.ignoredKeys) && res.ignoredKeys.length ? "\uFF08\u5DF2\u5FFD\u7565\u4E0D\u80FD\u8986\u76D6\u7684\u5B57\u6BB5\uFF1A" + res.ignoredKeys.join("\u3001") + "\uFF09" : "";
+        showTip("\u914D\u7F6E\u5DF2\u4FDD\u5B58" + ignored);
       } catch (e2) {
         setCukoErr("\u4FDD\u5B58\u5931\u8D25: " + e2.message);
       }
@@ -30623,6 +30794,15 @@ body {
       }
       setCukoErr("");
       setCukoEditing(true);
+    };
+    const updateModel = (idx, next) => {
+      setEditProvider((prev) => ({ ...prev, models: (prev.models || []).map((m2, i2) => i2 === idx ? next : m2) }));
+    };
+    const removeModel = (idx) => {
+      setEditProvider((prev) => ({ ...prev, models: (prev.models || []).filter((_, i2) => i2 !== idx) }));
+    };
+    const addManualModel = () => {
+      setEditProvider((prev) => ({ ...prev, models: [...prev.models || [], { id: "", name: "", apiMeta: {}, userMeta: {}, source: "manual", listed: true, _key: "manual-" + Date.now().toString(36) }] }));
     };
     const cardStyle = {
       display: "flex",
@@ -30793,17 +30973,16 @@ body {
           "div",
           { style: { marginBottom: "16px" } },
           (0, import_react9.createElement)("div", { style: { fontSize: "13px", marginBottom: "8px", color: "var(--ck-text)" } }, "API \u5730\u5740"),
-          (0, import_react9.createElement)("input", { className: "ck-set-input", style: { width: "100%", boxSizing: "border-box" }, placeholder: "http://127.0.0.1:3000", value: editProvider.baseUrl, onChange: (e2) => setEditProvider({ ...editProvider, baseUrl: e2.target.value }) })
+          (0, import_react9.createElement)("input", { className: "ck-set-input", style: { width: "100%", boxSizing: "border-box" }, placeholder: editProvider.protocol === "openai" ? "https://api.deepseek.com/v1" : "http://127.0.0.1:3000", value: editProvider.baseUrl, onChange: (e2) => setEditProvider({ ...editProvider, baseUrl: e2.target.value }) })
         ),
         (0, import_react9.createElement)(
           "div",
           { style: { marginBottom: "16px" } },
           (0, import_react9.createElement)("div", { style: { fontSize: "13px", marginBottom: "8px", color: "var(--ck-text)" } }, "API \u534F\u8BAE"),
           (0, import_react9.createElement)(Select, {
-            value: "cuko-api",
-            options: [{ value: "cuko-api", label: "Cuko API (SSE)" }],
-            onChange: () => {
-            }
+            value: editProvider.protocol === "openai" ? "openai" : "cuko",
+            options: [{ value: "cuko", label: "Cuko API (SSE)" }, { value: "openai", label: "OpenAI Chat Completions" }],
+            onChange: (v) => setEditProvider({ ...editProvider, protocol: v })
           })
         ),
         (0, import_react9.createElement)(
@@ -30812,6 +30991,7 @@ body {
           (0, import_react9.createElement)("div", { style: { fontSize: "13px", marginBottom: "8px", color: "var(--ck-text)" } }, "API \u5BC6\u94A5"),
           (0, import_react9.createElement)("input", { className: "ck-set-input", style: { width: "100%", boxSizing: "border-box" }, type: "password", placeholder: "\u8F93\u5165 API \u5BC6\u94A5", value: editProvider.apiKey || "", onChange: (e2) => setEditProvider({ ...editProvider, apiKey: e2.target.value }) })
         ),
+        editProvider.protocol === "openai" ? (0, import_react9.createElement)(OpenAiParams, { provider: editProvider, onChange: setEditProvider }) : null,
         (0, import_react9.createElement)(
           "div",
           { style: { marginBottom: "24px" } },
@@ -30819,22 +30999,19 @@ body {
             "div",
             { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" } },
             (0, import_react9.createElement)("div", { style: { fontSize: "13px", color: "var(--ck-text)" } }, "\u6A21\u578B\u76EE\u5F55"),
-            (0, import_react9.createElement)("button", { style: { background: "none", border: "none", color: "var(--ck-text-2)", fontSize: "12px", cursor: "pointer" }, onClick: fetchModels, disabled: cukoLoading }, cukoLoading ? "\u83B7\u53D6\u4E2D..." : "\u83B7\u53D6\u53EF\u7528\u6A21\u578B")
+            (0, import_react9.createElement)(
+              "div",
+              { style: { display: "flex", gap: "12px" } },
+              (0, import_react9.createElement)("button", { style: linkBtnStyle, onClick: addManualModel }, "+ \u6DFB\u52A0\u6A21\u578B"),
+              (0, import_react9.createElement)("button", { style: linkBtnStyle, onClick: fetchModels, disabled: cukoLoading }, cukoLoading ? "\u83B7\u53D6\u4E2D..." : "\u83B7\u53D6\u53EF\u7528\u6A21\u578B")
+            )
           ),
           cukoErr ? (0, import_react9.createElement)("div", { style: { color: "var(--ck-danger)", fontSize: 12, marginBottom: 8 } }, cukoErr) : null,
           (0, import_react9.createElement)(
             "div",
             { style: { border: "1px dashed var(--ck-border)", borderRadius: "8px", padding: "12px" } },
             !editProvider.models || editProvider.models.length === 0 ? (0, import_react9.createElement)("div", { style: { color: "var(--ck-text-2)", fontSize: "12px", textAlign: "center" } }, "\u6682\u65E0\u6A21\u578B\uFF0C\u8BF7\u70B9\u51FB\u53F3\u4E0A\u89D2\u83B7\u53D6") : editProvider.models.map(
-              (m2) => (0, import_react9.createElement)(
-                "div",
-                {
-                  key: m2.id,
-                  style: { display: "flex", alignItems: "center", gap: "8px", background: "var(--ck-bg)", border: "1px solid var(--ck-border)", borderRadius: "8px", padding: "8px 12px", marginBottom: "8px" }
-                },
-                (0, import_react9.createElement)("div", { style: { flex: 1, fontSize: "13px", color: "var(--ck-text-2)" } }, m2.id),
-                (0, import_react9.createElement)("div", { style: { flex: 1, fontSize: "13px", color: "var(--ck-text)" } }, m2.name || m2.id)
-              )
+              (m2, idx) => (0, import_react9.createElement)(ModelCard, { key: m2._key || m2.id || "idx-" + idx, model: m2, onChange: (next) => updateModel(idx, next), onRemove: () => removeModel(idx) })
             )
           )
         ),
@@ -61388,9 +61565,9 @@ body {
   function getCoordSysInfoBySeries(seriesModel) {
     var coordSysName = seriesModel.get("coordinateSystem");
     var result = new SeriesModelCoordSysInfo(coordSysName);
-    var fetch2 = fetchers[coordSysName];
-    if (fetch2) {
-      fetch2(seriesModel, result, result.axisMap, result.categoryAxisMap);
+    var fetch = fetchers[coordSysName];
+    if (fetch) {
+      fetch(seriesModel, result, result.axisMap, result.categoryAxisMap);
       return result;
     }
   }
