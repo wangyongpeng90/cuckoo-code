@@ -6,7 +6,7 @@
  */
 const { spawnSync } = require('node:child_process');
 const port = process.argv[2] || '9334';
-function run(cmd, args) { try { return spawnSync(cmd, args, { encoding: 'utf-8', windowsHide: true }).stdout || ''; } catch (_) { return ''; } }
+function run(cmd, args) { try { return spawnSync(cmd, args, { encoding: 'utf-8', windowsHide: true }).stdout || ''; } catch { return ''; } }
 const netstatOut = run('netstat', ['-ano']);
 const pids = new Set();
 for (const line of netstatOut.split(/\r?\n/)) {

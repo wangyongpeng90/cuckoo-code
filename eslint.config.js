@@ -71,4 +71,18 @@ export default [
     files: ['eslint-rules/**/*.js'],
     rules: { 'no-unused-vars': 'off' },
   },
+  {
+    // .cjs 是 CommonJS 脚本（scripts/ 下的运维脚本），offset 不在 '**/*.js' 之内，
+    // 这里单独给 Node 全局，否则 process / console 会报 no-undef。
+    files: ['**/*.cjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'commonjs',
+      globals: COMMON_GLOBALS,
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
 ];

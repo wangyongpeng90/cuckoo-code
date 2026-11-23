@@ -29,7 +29,7 @@ function sanitize(text) {
         // user-supplied names into logEvent (bundle-order order entries, trial
         // messages), so strip them at the single choke point (issue #98
         // analysis: log filtering).
-        .replace(/[\u0000-\u001f\u007f]/g, '')
+        .replace(/[\x00-\x1f\x7f]/g, '') // eslint-disable-line no-control-regex -- 过滤日志里的控制字符是刻意行为
         .replace(/sk-[A-Za-z0-9_-]{8,}/g, 'sk-***')
         .replace(/gh[pousr]_[A-Za-z0-9]{16,}/g, 'gh*_***')
         .replace(/npm_[A-Za-z0-9]{16,}/g, 'npm_***')

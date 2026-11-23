@@ -578,7 +578,7 @@ function flattenEntries(nodes) {
 function disabledState(value) {
     if (isRecord(value) && typeof value.__jsExpr === 'string')
         return 'conditional';
-    return Boolean(value) ? 'disabled' : 'active';
+    return value ? 'disabled' : 'active';
 }
 function combineDisabled(parent, own) {
     if (parent === 'disabled' || own === 'disabled')
