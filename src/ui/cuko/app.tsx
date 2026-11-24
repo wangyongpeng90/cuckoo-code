@@ -66,7 +66,10 @@ interface CukoProvider {
   id: string;
   name: string;
   baseUrl: string;
-  apiKey?: string;
+  // [261123-q4h7tn-cuko-openai] 密钥不再回显到渲染进程：只给「是否已设置」与掩码
+  apiKeySet?: boolean;
+  apiKeyMask?: string;
+  apiKeyReadable?: boolean;
   models: CukoModel[];
   // [261123-q4h7tn-cuko-openai] 协议：openai 走 Chat Completions，其余按 Cuko
   protocol?: string;
@@ -79,6 +82,9 @@ declare global {
   interface Window {
     cukoAPI: {
       listProviders: () => Promise<CukoProvider[]>;
+      // [261123-q4h7tn-cuko-openai] 密钥加密状态（设置页用）
+      getEncryptionStatus?: () => Promise<{ success: boolean; available: boolean; backend: string; reason: string }>;
+      migrateSecrets?: () => Promise<{ success: boolean; migrated?: number; failed?: number; skipped?: boolean }>;
       getActive: () => Promise<{ providerId?: string, modelId?: string }>;
       setActive: (providerId: string, modelId: string) => Promise<{ success: boolean }>;
       listSessions: () => Promise<Array<{ id: string; title: string; provider_id: string; model_id: string; project_dir?: string; provider_session_id?: string; archived?: number; updated_at: string }>>;

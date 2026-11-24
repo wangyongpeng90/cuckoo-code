@@ -16,7 +16,12 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   deleteProvider: (id: string) => ipcRenderer.invoke('cuko:delete-provider', id),
   refreshModels: () => ipcRenderer.invoke('cuko:refresh-models'),
   // [261123-q4h7tn-cuko-openai] 按表单地址 / 密钥获取模型（返回合并后的列表，不写库）
+  // 未填 apiKey 时会用库里已存的（不把明文回显到界面）
   fetchModels: (params: any) => ipcRenderer.invoke('cuko:fetch-models', params),
+  // [261123-q4h7tn-cuko-openai] 系统加密是否可用（设置页据此提示能否安全保存密钥）
+  getEncryptionStatus: () => ipcRenderer.invoke('cuko:get-encryption-status'),
+  // [261123-q4h7tn-cuko-openai] 把已有的明文密钥迁移成密文（幂等）
+  migrateSecrets: () => ipcRenderer.invoke('cuko:migrate-secrets'),
   getActive: () => ipcRenderer.invoke('cuko:get-active'),
   setActive: (providerId: string, modelId: string) => ipcRenderer.invoke('cuko:set-active', providerId, modelId),
   

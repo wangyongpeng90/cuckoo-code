@@ -18,6 +18,7 @@ import { splitPromptByH1 } from '../cuko-run-protocol.js';
 import { normalizeProtocol, joinApiUrl, parseJsonObjectParam, parseModelList, guessProtocolFromModelList, listedToApiMeta, effectiveModelMeta, resolveEffortAfterSwitch } from '../cuko-openai.js';
 import type { ProtocolGuess } from '../cuko-openai.js';
 import type { ListedModel } from '../cuko-openai.js';
+import { getEncryptionStatus, encryptSecret, decryptSecret, isEncryptedSecret, readProviderSecret, maskSecret, migratePlaintextSecrets } from '../secrets.js';
 import {
   startCukoRun,
   cancelCukoRun,
@@ -180,29 +181,47 @@ export function registerCukoIpc(): void {
 
   // ====== Provider 管理 ======
   // [261123-q4h7tn-cuko-openai] 协议 / 额外参数 / 模型设置；模型合并写入，刷新不删模型、不覆盖用户修改
-  ipcMain.handle('cuko:list-providers', () => {
+  // [261123-q4h7tn-cuko-openai] 密钥一律不出主进程：这里只返回「是否已设置」与掩码，
+  // 不再把 api_key 原文送到渲染进程（渲染进程加载插件 / Markdown，攻击面比主进程大得多）
+  ipcMain.handle('cuko:list-providers', async () => {
     const db = getDb();
     if (!db) return [];
     try {
       const rows = db.prepare('SELECT * FROM cuko_providers').all() as any[];
-      return rows.map((p: any) => {
+      const out: any[] = [];
+      for (const p of rows) {
         const models = db.prepare('SELECT * FROM cuko_models WHERE provider_id = ? ORDER BY rowid ASC').all(p.id) as any[];
-        return {
+        // 掩码需要解密后取后 4 位；解不开（换机器 / 密钥环变了）就当已设置但显示不可读
+        let masked = '';
+        let readable = true;
+        if (p.api_key) {
+          try {
+            masked = maskSecret(await decryptSecret(p.api_key));
+          } catch {
+            readable = false;
+            masked = '（无法解密）';
+          }
+        }
+        out.push({
           id: p.id,
           name: p.name,
           baseUrl: p.base_url,
-          apiKey: p.api_key,
+          // 不返回明文；界面据 apiKeySet 判断要不要显示「已设置」
+          apiKeySet: !!p.api_key,
+          apiKeyMask: masked,
+          apiKeyReadable: readable,
           protocol: normalizeProtocol(p.protocol),
           extraParams: p.extra_params || '',
           reasoningField: p.reasoning_field || '',
           disableReasoningParams: p.disable_reasoning_params || '',
           models: models.map(modelRowToUi),
-        };
-      });
+        });
+      }
+      return out;
     } catch { return []; }
   });
 
-  ipcMain.handle('cuko:save-provider', (_event: any, provider: any) => {
+  ipcMain.handle('cuko:save-provider', async (_event: any, provider: any) => {
     const db = getDb();
     if (!db) return { success: false, error: 'Database unavailable' };
     if (!provider || !provider.id) return { success: false, error: '缺少 Provider ID' };
@@ -226,15 +245,38 @@ export function registerCukoIpc(): void {
       }
     }
     const now = nowLocalIso();
+    // [261123-q4h7tn-cuko-openai] 密钥语义：
+    //   apiKey 字段缺省 / null → 不修改（界面不再回显明文，编辑时不填就保持原密钥）
+    //   apiKey 为空串          → 清除密钥
+    //   其它                   → 加密后入库
+    const rawKey = provider.apiKey;
+    let storedKey: string | null | undefined; // undefined = 不改
+    if (rawKey === undefined || rawKey === null) {
+      storedKey = undefined;
+    } else if (String(rawKey).trim() === '') {
+      storedKey = null;
+    } else {
+      try {
+        storedKey = await encryptSecret(String(rawKey));
+      } catch (err: any) {
+        // 加密不可用（如 Linux 无密钥环）：拒绝保存，绝不静默存明文
+        return { success: false, error: '无法加密保存 API 密钥：' + String((err && err.message) || err) };
+      }
+    }
     try {
       db.exec('BEGIN');
       const existing = db.prepare('SELECT id FROM cuko_providers WHERE id = ?').get(provider.id);
       if (existing) {
-        db.prepare('UPDATE cuko_providers SET name = ?, base_url = ?, api_key = ?, protocol = ?, extra_params = ?, reasoning_field = ?, disable_reasoning_params = ?, updated_at = ? WHERE id = ?')
-          .run(provider.name, provider.baseUrl, provider.apiKey || null, protocol, extraText || null, fieldText || null, disableText || null, now, provider.id);
+        if (storedKey === undefined) {
+          db.prepare('UPDATE cuko_providers SET name = ?, base_url = ?, protocol = ?, extra_params = ?, reasoning_field = ?, disable_reasoning_params = ?, updated_at = ? WHERE id = ?')
+            .run(provider.name, provider.baseUrl, protocol, extraText || null, fieldText || null, disableText || null, now, provider.id);
+        } else {
+          db.prepare('UPDATE cuko_providers SET name = ?, base_url = ?, api_key = ?, protocol = ?, extra_params = ?, reasoning_field = ?, disable_reasoning_params = ?, updated_at = ? WHERE id = ?')
+            .run(provider.name, provider.baseUrl, storedKey, protocol, extraText || null, fieldText || null, disableText || null, now, provider.id);
+        }
       } else {
         db.prepare('INSERT INTO cuko_providers (id, name, base_url, api_key, protocol, extra_params, reasoning_field, disable_reasoning_params, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .run(provider.id, provider.name, provider.baseUrl, provider.apiKey || null, protocol, extraText || null, fieldText || null, disableText || null, now, now);
+          .run(provider.id, provider.name, provider.baseUrl, storedKey === undefined ? null : storedKey, protocol, extraText || null, fieldText || null, disableText || null, now, now);
       }
       if (models) {
         const keep = new Set<string>();
@@ -271,7 +313,17 @@ export function registerCukoIpc(): void {
       const errors: string[] = [];
       await Promise.all(providers.map(async (p: any) => {
         try {
-          const fetched = await requestModelList(p.base_url, p.api_key || null);
+          // [261123-q4h7tn-cuko-openai] 密钥在库里是密文，用前先解密
+          let key: string | null = null;
+          if (p.api_key) {
+            try {
+              key = (await decryptSecret(p.api_key)) || null;
+            } catch (err: any) {
+              errors.push(p.name + ': 无法解密密钥（' + String((err && err.message) || err) + '）');
+              return;
+            }
+          }
+          const fetched = await requestModelList(p.base_url, key);
           mergeListedModels(db, p.id, fetched.listed);
         } catch (err: any) {
           errors.push(p.name + ': ' + (err?.message || String(err)));
@@ -286,12 +338,46 @@ export function registerCukoIpc(): void {
   // 表单里「获取可用模型」：按表单填的地址 / 密钥请求（Provider 未保存也能用），返回合并后的列表，不写库
   ipcMain.handle('cuko:fetch-models', async (_event: any, params: any) => {
     try {
-      const fetched = await requestModelList(String(params?.baseUrl || ''), params?.apiKey ? String(params.apiKey) : null);
+      // [261123-q4h7tn-cuko-openai] 密钥来源优先级：表单里新填的 > 库里已存的（界面不再回显明文）
+      let key: string | null = params?.apiKey ? String(params.apiKey) : null;
+      const providerId = params?.providerId ? String(params.providerId) : '';
+      if (!key && providerId) {
+        const db = getDb();
+        if (db) {
+          try {
+            key = (await readProviderSecret(db, providerId)) || null;
+          } catch (err: any) {
+            return { success: false, error: '无法解密已保存的 API 密钥：' + String((err && err.message) || err) };
+          }
+        }
+      }
+      const fetched = await requestModelList(String(params?.baseUrl || ''), key);
       const current: any[] = Array.isArray(params?.models) ? params.models : [];
       // protocolGuess 只给界面提示用（'openai' / 'cuko' / null = 判断不了）
       return { success: true, count: fetched.listed.length, models: mergeFetchedForForm(current, fetched.listed), protocolGuess: fetched.protocolGuess };
     } catch (err: any) {
       return { success: false, error: err?.message || '获取失败' };
+    }
+  });
+
+  // [261123-q4h7tn-cuko-openai] 系统加密是否可用（设置页据此提示「本机无法安全保存密钥」）
+  ipcMain.handle('cuko:get-encryption-status', async () => {
+    try {
+      return { success: true, ...(await getEncryptionStatus()) };
+    } catch (err: any) {
+      return { success: false, error: String((err && err.message) || err) };
+    }
+  });
+
+  // [261123-q4h7tn-cuko-openai] 把库里已有的明文密钥迁移成密文（幂等；加密不可用时跳过）
+  ipcMain.handle('cuko:migrate-secrets', async () => {
+    const db = getDb();
+    if (!db) return { success: false, error: 'Database unavailable' };
+    try {
+      const res = await migratePlaintextSecrets(db);
+      return { success: true, ...res };
+    } catch (err: any) {
+      return { success: false, error: String((err && err.message) || err) };
     }
   });
 

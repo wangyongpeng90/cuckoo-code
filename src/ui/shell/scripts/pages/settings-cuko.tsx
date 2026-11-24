@@ -165,6 +165,8 @@ export function CukoSettings() {
   const [protocolGuess, setProtocolGuess] = useState<'openai' | 'cuko' | null>(null);
   // 当前地址 / 密钥是否已经探过协议（推断不出结果也算探过）；换地址或密钥时重置
   const [protocolProbed, setProtocolProbed] = useState(false);
+  // [261123-q4h7tn-cuko-openai] 系统加密是否可用（不可用时拒绝保存密钥，不静默存明文）
+  const [enc, setEnc] = useState<{ available: boolean; backend: string; reason: string } | null>(null);
   const [tip, setTip] = useState('');
   const [showGuide, setShowGuide] = useState(false);
   
@@ -174,8 +176,10 @@ export function CukoSettings() {
   const [marketLoading, setMarketLoading] = useState(false);
 
   // 当前正在编辑的表单数据
+  // [261123-q4h7tn-cuko-openai] apiKey 用 undefined 表示「不修改」：界面永远不回显明文，
+  // 保存时该字段缺省 = 保持库里原密文；空串才是「清除密钥」。
   const [editProvider, setEditProvider] = useState<any>({
-    id: '', name: '', baseUrl: 'http://127.0.0.1:3000', apiKey: '', protocol: 'cuko', models: []
+    id: '', name: '', baseUrl: 'http://127.0.0.1:3000', apiKey: undefined, protocol: 'cuko', models: []
   });
 
   const showTip = (msg: string) => {
@@ -207,6 +211,13 @@ export function CukoSettings() {
 
   useEffect(() => {
     loadProviders();
+    // [261123-q4h7tn-cuko-openai] 查一次系统加密可用性（Linux 无密钥环时要提示）
+    const anyApi = window as any;
+    if (anyApi.cukoAPI && typeof anyApi.cukoAPI.getEncryptionStatus === 'function') {
+      anyApi.cukoAPI.getEncryptionStatus()
+        .then((r: any) => { if (r && r.success) setEnc({ available: !!r.available, backend: String(r.backend || ''), reason: String(r.reason || '') }); })
+        .catch(() => {});
+    }
   }, []);
 
   // [261123-q4h7tn-cuko-openai] 改走主进程：不受跨域限制；地址带不带 /v1 都行；保留已改过的模型设置
@@ -214,7 +225,7 @@ export function CukoSettings() {
     setCukoLoading(true);
     setCukoErr('');
     try {
-      const res = await (window as any).cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, apiKey: editProvider.apiKey || '', models: editProvider.models || [] });
+      const res = await (window as any).cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, providerId: editProvider.id, apiKey: editProvider.apiKey || '', models: editProvider.models || [] });
       if (!res || !res.success) throw new Error((res && res.error) || '获取失败');
       setEditProvider((prev: any) => ({ ...prev, models: res.models || [] }));
       setProtocolGuess(res.protocolGuess === 'openai' || res.protocolGuess === 'cuko' ? res.protocolGuess : null);
@@ -243,7 +254,7 @@ export function CukoSettings() {
     let guess: 'openai' | 'cuko' | null = protocolGuess;
     if (!protocolProbed) {
       try {
-        const probe = await (window as any).cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, apiKey: editProvider.apiKey || '', models: [] });
+        const probe = await (window as any).cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, providerId: editProvider.id, apiKey: editProvider.apiKey || '', models: [] });
         if (probe && probe.success) {
           guess = probe.protocolGuess === 'openai' || probe.protocolGuess === 'cuko' ? probe.protocolGuess : null;
         }
@@ -268,12 +279,18 @@ export function CukoSettings() {
       if (!ok) return;
     }
     try {
-      const res = await (window as any).cukoAPI.saveProvider(editProvider);
+      // [261123-q4h7tn-cuko-openai] 密钥语义：没动过就不传该字段（保持库里原密文）；
+      // 传空串表示清除；传新值由主进程加密后入库。界面永远不接触明文密文。
+      const payload: any = { ...editProvider };
+      if (payload.apiKey === undefined || payload.apiKey === null) delete payload.apiKey;
+      const res = await (window as any).cukoAPI.saveProvider(payload);
       if (!res.success) throw new Error(res.error || '未知错误');
       await loadProviders();
       setCukoEditing(false);
       setProtocolGuess(null);
       setProtocolProbed(false);
+      // 密钥已落库，清掉表单里的临时值，避免下次打开时误以为还没保存
+      setEditProvider((prev: any) => ({ ...prev, apiKey: undefined }));
       const ignored = Array.isArray(res.ignoredKeys) && res.ignoredKeys.length ? '（已忽略不能覆盖的字段：' + res.ignoredKeys.join('、') + '）' : '';
       showTip('配置已保存' + ignored);
     } catch (e: any) {
@@ -290,13 +307,15 @@ export function CukoSettings() {
 
   const openEdit = (provider?: any) => {
     if (provider) {
-      setEditProvider({ ...provider, models: provider.models || [] });
+      // [261123-q4h7tn-cuko-openai] 不再回显明文密钥：apiKey 置空表示「不修改」，
+      // 用户真要换密钥才在输入框里输入；点「清除密钥」则传空串
+      setEditProvider({ ...provider, apiKey: undefined, models: provider.models || [] });
     } else {
       setEditProvider({
         id: 'cuko-provider-' + Date.now().toString(36),
         name: 'Stateful Provider',
         baseUrl: 'http://127.0.0.1:3000',
-        apiKey: '',
+        apiKey: undefined,
         protocol: 'cuko',
         models: []
       });
@@ -457,8 +476,36 @@ export function CukoSettings() {
           : null,
       ),
       createElement('div', { style: { marginBottom: '24px' } },
-        createElement('div', { style: { fontSize: '13px', marginBottom: '8px', color: 'var(--ck-text)' } }, 'API 密钥'),
-        createElement('input', { className: 'ck-set-input', style: { width: '100%', boxSizing: 'border-box' as const }, type: 'password', placeholder: '输入 API 密钥', value: editProvider.apiKey || '', onChange: (e: any) => { setEditProvider({ ...editProvider, apiKey: e.target.value }); setProtocolGuess(null); setProtocolProbed(false); } })
+        createElement('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
+          createElement('div', { style: { fontSize: '13px', color: 'var(--ck-text)' } }, 'API 密钥'),
+          editProvider.apiKeySet
+            ? createElement('button', {
+                style: { ...linkBtnStyle, color: 'var(--ck-danger)' },
+                // 点清除后同时把「已保存」标记去掉，否则按钮和占位符还在，看着像没清掉
+                onClick: () => { setEditProvider({ ...editProvider, apiKey: '', apiKeySet: false, apiKeyMask: '', apiKeyReadable: true }); setProtocolGuess(null); setProtocolProbed(false); },
+              }, '清除密钥')
+            : null,
+        ),
+        createElement('input', {
+          className: 'ck-set-input',
+          style: { width: '100%', boxSizing: 'border-box' as const },
+          type: 'password',
+          placeholder: editProvider.apiKeySet
+            ? '已保存 ' + (editProvider.apiKeyMask || '') + '，留空保持不变'
+            : '输入 API 密钥',
+          value: editProvider.apiKey === undefined ? '' : editProvider.apiKey,
+          onChange: (e: any) => { setEditProvider({ ...editProvider, apiKey: e.target.value }); setProtocolGuess(null); setProtocolProbed(false); },
+        }),
+        // 已保存但解不开（换机器 / 密钥环变了）
+        editProvider.apiKeySet && editProvider.apiKeyReadable === false
+          ? createElement('div', { style: { fontSize: '12px', marginTop: '4px', color: 'var(--ck-danger)' } }, '已保存的密钥在当前机器上无法解密（可能换了机器或系统密钥环），请重新填写。')
+          : null,
+        // [261123-q4h7tn-cuko-openai] 加密可用性提示：不可用时拒绝保存密钥，绝不静默存明文
+        enc
+          ? (enc.available
+              ? createElement('div', { style: { fontSize: '12px', marginTop: '4px', color: 'var(--ck-text-2)' } }, '密钥用系统加密保存（' + (enc.backend === 'dpapi' ? 'Windows DPAPI' : enc.backend === 'keychain' ? 'macOS Keychain' : 'Linux ' + enc.backend) + '），不会以明文落盘，也不会回显到界面。')
+              : createElement('div', { style: { fontSize: '12px', marginTop: '4px', color: 'var(--ck-danger)' } }, '本机无法安全保存密钥：' + (enc.reason || '系统加密不可用') + '。此时保存密钥会被拒绝。'))
+          : null,
       ),
 
       editProvider.protocol === 'openai' ? createElement(OpenAiParams, { provider: editProvider, onChange: setEditProvider }) : null,

@@ -1549,6 +1549,17 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(() => {
     setupAppMenu();
+    // [261123-q4h7tn-cuko-openai] 把库里已有的明文 API 密钥迁移成密文。
+    // 幂等：已加密的跳过；系统加密不可用（如 Linux 无密钥环）时整批跳过并告警，不静默降级。
+    import('./secrets.js').then((m: any) => {
+      m.migratePlaintextSecrets(globalDb)
+        .then((r: any) => {
+          if (r.skipped) {
+            console.warn('[secrets] 系统加密不可用，已跳过明文密钥迁移（密钥仍是明文存储）');
+          }
+        })
+        .catch((e: any) => console.error('[secrets] 迁移明文密钥失败:', (e && e.message) || e));
+    }).catch(() => {});
     // MCP 配置首次迁移（旧 userData/mcp.json → ~/.cuckoo/mcp.json，旧文件保留）
     try { mcpConfig.migrateLegacy(); } catch (_) { /* ignore */ }
     // 加载已启用的 Cuckoo 插件（DSH 兼容；注册其工具到全局工具表）

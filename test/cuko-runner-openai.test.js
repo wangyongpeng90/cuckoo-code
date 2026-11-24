@@ -126,14 +126,15 @@ function newSession() {
   return id;
 }
 
-function startTurn(sessionId, text) {
-  const r = startCukoRun({ sessionId, input: [{ type: 'text', text }], userMessage: { id: randomUUID(), content: text } });
+// [261123-q4h7tn-cuko-openai] startCukoRun 改成 async（要解密库里的密钥），这里跟着 await
+async function startTurn(sessionId, text) {
+  const r = await startCukoRun({ sessionId, input: [{ type: 'text', text }], userMessage: { id: randomUUID(), content: text } });
   expect(r).toMatchObject({ success: true });
   return r.runId;
 }
 
 async function runTurn(sessionId, text) {
-  const runId = startTurn(sessionId, text);
+  const runId = await startTurn(sessionId, text);
   return waitFor(() => events.find((e) => e.type === 'run-complete' && e.runId === runId));
 }
 
@@ -216,7 +217,7 @@ describe('cuko-runner：OpenAI 协议', () => {
       res.write(sse({ choices: [{ index: 0, delta: { content: 'partial' }, finish_reason: null }] }));
       openResponses.push(res);
     }];
-    const runId = startTurn(sid, 'hi');
+    const runId = await startTurn(sid, 'hi');
     await waitFor(() => events.find((e) => e.type === 'delta' && e.sessionId === sid && e.delta === 'partial'));
     expect(cancelCukoRun(sid)).toMatchObject({ success: true });
     const done = await waitFor(() => events.find((e) => e.type === 'run-complete' && e.runId === runId));

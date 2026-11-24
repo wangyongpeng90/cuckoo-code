@@ -30703,6 +30703,7 @@ body {
     const [cukoErr, setCukoErr] = (0, import_react9.useState)("");
     const [protocolGuess, setProtocolGuess] = (0, import_react9.useState)(null);
     const [protocolProbed, setProtocolProbed] = (0, import_react9.useState)(false);
+    const [enc, setEnc] = (0, import_react9.useState)(null);
     const [tip, setTip] = (0, import_react9.useState)("");
     const [showGuide, setShowGuide] = (0, import_react9.useState)(false);
     const [showMarket, setShowMarket] = (0, import_react9.useState)(false);
@@ -30712,7 +30713,7 @@ body {
       id: "",
       name: "",
       baseUrl: "http://127.0.0.1:3000",
-      apiKey: "",
+      apiKey: void 0,
       protocol: "cuko",
       models: []
     });
@@ -30746,12 +30747,19 @@ body {
     };
     (0, import_react9.useEffect)(() => {
       loadProviders();
+      const anyApi = window;
+      if (anyApi.cukoAPI && typeof anyApi.cukoAPI.getEncryptionStatus === "function") {
+        anyApi.cukoAPI.getEncryptionStatus().then((r) => {
+          if (r && r.success) setEnc({ available: !!r.available, backend: String(r.backend || ""), reason: String(r.reason || "") });
+        }).catch(() => {
+        });
+      }
     }, []);
     const fetchModels = async () => {
       setCukoLoading(true);
       setCukoErr("");
       try {
-        const res = await window.cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, apiKey: editProvider.apiKey || "", models: editProvider.models || [] });
+        const res = await window.cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, providerId: editProvider.id, apiKey: editProvider.apiKey || "", models: editProvider.models || [] });
         if (!res || !res.success) throw new Error(res && res.error || "\u83B7\u53D6\u5931\u8D25");
         setEditProvider((prev) => ({ ...prev, models: res.models || [] }));
         setProtocolGuess(res.protocolGuess === "openai" || res.protocolGuess === "cuko" ? res.protocolGuess : null);
@@ -30774,7 +30782,7 @@ body {
       let guess = protocolGuess;
       if (!protocolProbed) {
         try {
-          const probe = await window.cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, apiKey: editProvider.apiKey || "", models: [] });
+          const probe = await window.cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, providerId: editProvider.id, apiKey: editProvider.apiKey || "", models: [] });
           if (probe && probe.success) {
             guess = probe.protocolGuess === "openai" || probe.protocolGuess === "cuko" ? probe.protocolGuess : null;
           }
@@ -30798,12 +30806,15 @@ body {
         if (!ok) return;
       }
       try {
-        const res = await window.cukoAPI.saveProvider(editProvider);
+        const payload = { ...editProvider };
+        if (payload.apiKey === void 0 || payload.apiKey === null) delete payload.apiKey;
+        const res = await window.cukoAPI.saveProvider(payload);
         if (!res.success) throw new Error(res.error || "\u672A\u77E5\u9519\u8BEF");
         await loadProviders();
         setCukoEditing(false);
         setProtocolGuess(null);
         setProtocolProbed(false);
+        setEditProvider((prev) => ({ ...prev, apiKey: void 0 }));
         const ignored = Array.isArray(res.ignoredKeys) && res.ignoredKeys.length ? "\uFF08\u5DF2\u5FFD\u7565\u4E0D\u80FD\u8986\u76D6\u7684\u5B57\u6BB5\uFF1A" + res.ignoredKeys.join("\u3001") + "\uFF09" : "";
         showTip("\u914D\u7F6E\u5DF2\u4FDD\u5B58" + ignored);
       } catch (e2) {
@@ -30820,13 +30831,13 @@ body {
     };
     const openEdit = (provider) => {
       if (provider) {
-        setEditProvider({ ...provider, models: provider.models || [] });
+        setEditProvider({ ...provider, apiKey: void 0, models: provider.models || [] });
       } else {
         setEditProvider({
           id: "cuko-provider-" + Date.now().toString(36),
           name: "Stateful Provider",
           baseUrl: "http://127.0.0.1:3000",
-          apiKey: "",
+          apiKey: void 0,
           protocol: "cuko",
           models: []
         });
@@ -31044,12 +31055,36 @@ body {
         (0, import_react9.createElement)(
           "div",
           { style: { marginBottom: "24px" } },
-          (0, import_react9.createElement)("div", { style: { fontSize: "13px", marginBottom: "8px", color: "var(--ck-text)" } }, "API \u5BC6\u94A5"),
-          (0, import_react9.createElement)("input", { className: "ck-set-input", style: { width: "100%", boxSizing: "border-box" }, type: "password", placeholder: "\u8F93\u5165 API \u5BC6\u94A5", value: editProvider.apiKey || "", onChange: (e2) => {
-            setEditProvider({ ...editProvider, apiKey: e2.target.value });
-            setProtocolGuess(null);
-            setProtocolProbed(false);
-          } })
+          (0, import_react9.createElement)(
+            "div",
+            { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" } },
+            (0, import_react9.createElement)("div", { style: { fontSize: "13px", color: "var(--ck-text)" } }, "API \u5BC6\u94A5"),
+            editProvider.apiKeySet ? (0, import_react9.createElement)("button", {
+              style: { ...linkBtnStyle, color: "var(--ck-danger)" },
+              // 点清除后同时把「已保存」标记去掉，否则按钮和占位符还在，看着像没清掉
+              onClick: () => {
+                setEditProvider({ ...editProvider, apiKey: "", apiKeySet: false, apiKeyMask: "", apiKeyReadable: true });
+                setProtocolGuess(null);
+                setProtocolProbed(false);
+              }
+            }, "\u6E05\u9664\u5BC6\u94A5") : null
+          ),
+          (0, import_react9.createElement)("input", {
+            className: "ck-set-input",
+            style: { width: "100%", boxSizing: "border-box" },
+            type: "password",
+            placeholder: editProvider.apiKeySet ? "\u5DF2\u4FDD\u5B58 " + (editProvider.apiKeyMask || "") + "\uFF0C\u7559\u7A7A\u4FDD\u6301\u4E0D\u53D8" : "\u8F93\u5165 API \u5BC6\u94A5",
+            value: editProvider.apiKey === void 0 ? "" : editProvider.apiKey,
+            onChange: (e2) => {
+              setEditProvider({ ...editProvider, apiKey: e2.target.value });
+              setProtocolGuess(null);
+              setProtocolProbed(false);
+            }
+          }),
+          // 已保存但解不开（换机器 / 密钥环变了）
+          editProvider.apiKeySet && editProvider.apiKeyReadable === false ? (0, import_react9.createElement)("div", { style: { fontSize: "12px", marginTop: "4px", color: "var(--ck-danger)" } }, "\u5DF2\u4FDD\u5B58\u7684\u5BC6\u94A5\u5728\u5F53\u524D\u673A\u5668\u4E0A\u65E0\u6CD5\u89E3\u5BC6\uFF08\u53EF\u80FD\u6362\u4E86\u673A\u5668\u6216\u7CFB\u7EDF\u5BC6\u94A5\u73AF\uFF09\uFF0C\u8BF7\u91CD\u65B0\u586B\u5199\u3002") : null,
+          // [261123-q4h7tn-cuko-openai] 加密可用性提示：不可用时拒绝保存密钥，绝不静默存明文
+          enc ? enc.available ? (0, import_react9.createElement)("div", { style: { fontSize: "12px", marginTop: "4px", color: "var(--ck-text-2)" } }, "\u5BC6\u94A5\u7528\u7CFB\u7EDF\u52A0\u5BC6\u4FDD\u5B58\uFF08" + (enc.backend === "dpapi" ? "Windows DPAPI" : enc.backend === "keychain" ? "macOS Keychain" : "Linux " + enc.backend) + "\uFF09\uFF0C\u4E0D\u4F1A\u4EE5\u660E\u6587\u843D\u76D8\uFF0C\u4E5F\u4E0D\u4F1A\u56DE\u663E\u5230\u754C\u9762\u3002") : (0, import_react9.createElement)("div", { style: { fontSize: "12px", marginTop: "4px", color: "var(--ck-danger)" } }, "\u672C\u673A\u65E0\u6CD5\u5B89\u5168\u4FDD\u5B58\u5BC6\u94A5\uFF1A" + (enc.reason || "\u7CFB\u7EDF\u52A0\u5BC6\u4E0D\u53EF\u7528") + "\u3002\u6B64\u65F6\u4FDD\u5B58\u5BC6\u94A5\u4F1A\u88AB\u62D2\u7EDD\u3002") : null
         ),
         editProvider.protocol === "openai" ? (0, import_react9.createElement)(OpenAiParams, { provider: editProvider, onChange: setEditProvider }) : null,
         (0, import_react9.createElement)(

@@ -44,6 +44,8 @@ import {
   resolveEffortAfterSwitch,
 } from './cuko-openai.js';
 import type { CukoProtocol, ToolRunItem, ModelMeta, ReasoningRequest } from './cuko-openai.js';
+// [261123-q4h7tn-cuko-openai] 密钥在库里是密文，发请求前先解密；永不出主进程
+import { decryptSecret } from './secrets.js';
 
 export type CukoRunStatus = 'complete' | 'cancelled' | 'error';
 
@@ -748,7 +750,7 @@ function finishRun(run: CukoRun, status: CukoRunStatus, error?: string): void {
 }
 
 /** 启动一个会话的后台运行；同一会话同时只允许一个 */
-export function startCukoRun(params: StartRunParams): { success: boolean; runId?: string; error?: string } {
+export async function startCukoRun(params: StartRunParams): Promise<{ success: boolean; runId?: string; error?: string }> {
   const sessionId = String(params?.sessionId || '');
   if (!sessionId) return { success: false, error: '缺少会话 ID' };
   if (runs.has(sessionId)) return { success: false, error: '该会话正在运行，请先停止' };
@@ -772,6 +774,15 @@ export function startCukoRun(params: StartRunParams): { success: boolean; runId?
     return { success: false, error: err?.message || '读取 Provider 失败' };
   }
   if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在，请重新配置' };
+  // [261123-q4h7tn-cuko-openai] 库里的密钥是密文，用前解密；解不开就明确报错，不要拿空密钥去撞 401
+  let providerApiKey = '';
+  if (provider.api_key) {
+    try {
+      providerApiKey = await decryptSecret(provider.api_key);
+    } catch (err: any) {
+      return { success: false, error: '无法解密 API 密钥：' + String((err && err.message) || err) + '（可能在设置页重新填写）' };
+    }
+  }
 
   const input = Array.isArray(params.input) ? params.input.filter((p) => p && typeof p.type === 'string') : [];
   if (input.length === 0) return { success: false, error: '消息内容为空' };
@@ -811,7 +822,7 @@ export function startCukoRun(params: StartRunParams): { success: boolean; runId?
     providerSessionId,
     projectDir,
     baseUrl: provider.base_url,
-    apiKey: provider.api_key || '',
+    apiKey: providerApiKey,
     modelId: session.model_id,
     initialInput: firstInput,
     protocol,
@@ -834,12 +845,12 @@ export interface ContinueAfterSwitchParams {
  * 切模型压缩的回复里如果带 cuckoo 工具块，从这条助手消息继续：
  * 先执行工具，再把结果以顶层 type:"tool" 发给新模型，进入正常循环。
  */
-export function continueAfterSwitch(params: ContinueAfterSwitchParams): {
+export async function continueAfterSwitch(params: ContinueAfterSwitchParams): Promise<{
   success: boolean;
   runId?: string;
   skipped?: boolean;
   error?: string;
-} {
+}> {
   const sessionId = String(params?.sessionId || '');
   const assistantId = String(params?.assistantId || '');
   if (!sessionId || !assistantId) return { success: false, error: '参数不完整' };
@@ -865,6 +876,15 @@ export function continueAfterSwitch(params: ContinueAfterSwitchParams): {
     return { success: false, error: err?.message || '读取 Provider 失败' };
   }
   if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在，请重新配置' };
+  // [261123-q4h7tn-cuko-openai] 同上：密文先解密
+  let providerApiKey = '';
+  if (provider.api_key) {
+    try {
+      providerApiKey = await decryptSecret(provider.api_key);
+    } catch (err: any) {
+      return { success: false, error: '无法解密 API 密钥：' + String((err && err.message) || err) + '（可在设置页重新填写）' };
+    }
+  }
 
   let msg: any;
   try {
@@ -894,7 +914,7 @@ export function continueAfterSwitch(params: ContinueAfterSwitchParams): {
     providerSessionId: session.provider_session_id,
     projectDir: session.project_dir || '',
     baseUrl: provider.base_url,
-    apiKey: provider.api_key || '',
+    apiKey: providerApiKey,
     modelId: session.model_id,
     initialInput: [],
     windowId: typeof params.windowId === 'number' ? params.windowId : null,
@@ -973,7 +993,15 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
   const input = [...systemParts, ...history];
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
-  if (provider.api_key) headers.Authorization = 'Bearer ' + provider.api_key;
+  // [261123-q4h7tn-cuko-openai] 密文先解密再发
+  if (provider.api_key) {
+    try {
+      const key = await decryptSecret(provider.api_key);
+      if (key) headers.Authorization = 'Bearer ' + key;
+    } catch (err: any) {
+      return { success: false, error: '无法解密 API 密钥：' + String((err && err.message) || err) + '（可在设置页重新填写）' };
+    }
+  }
 
   const body: Record<string, any> = {
     cuckSessionId: sessionId,
