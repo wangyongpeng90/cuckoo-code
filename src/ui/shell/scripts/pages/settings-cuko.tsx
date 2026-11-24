@@ -159,6 +159,8 @@ export function CukoSettings() {
   const [cukoEditing, setCukoEditing] = useState(false);
   const [cukoLoading, setCukoLoading] = useState(false);
   const [cukoErr, setCukoErr] = useState('');
+  // [261123-q4h7tn-cuko-openai] 「获取模型」时顺带推断的协议：只用来提示，不自动改用户的选择
+  const [protocolGuess, setProtocolGuess] = useState<'openai' | 'cuko' | null>(null);
   const [tip, setTip] = useState('');
   const [showGuide, setShowGuide] = useState(false);
   
@@ -211,13 +213,19 @@ export function CukoSettings() {
       const res = await (window as any).cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, apiKey: editProvider.apiKey || '', models: editProvider.models || [] });
       if (!res || !res.success) throw new Error((res && res.error) || '获取失败');
       setEditProvider((prev: any) => ({ ...prev, models: res.models || [] }));
+      setProtocolGuess(res.protocolGuess === 'openai' || res.protocolGuess === 'cuko' ? res.protocolGuess : null);
       showTip('已获取 ' + res.count + ' 个模型');
     } catch (e: any) {
       setCukoErr(e.message || '获取失败');
+      setProtocolGuess(null);
     } finally {
       setCukoLoading(false);
     }
   };
+
+  // [261123-q4h7tn-cuko-openai] 当前所选协议（脏值一律按 cuko）与「接口返回更像哪个」的一致性
+  const curProtocol: 'openai' | 'cuko' = editProvider.protocol === 'openai' ? 'openai' : 'cuko';
+  const protocolGuessMismatch = !!protocolGuess && protocolGuess !== curProtocol;
 
   const saveProvider = async () => {
     if (!editProvider.id || !editProvider.name || !editProvider.baseUrl) {
@@ -397,8 +405,20 @@ export function CukoSettings() {
         createElement(Select, {
           value: editProvider.protocol === 'openai' ? 'openai' : 'cuko',
           options: [{ value: 'cuko', label: 'Cuko API (SSE)' }, { value: 'openai', label: 'OpenAI Chat Completions' }],
-          onChange: (v: string) => setEditProvider({ ...editProvider, protocol: v }),
-        })
+          // 手动改协议后，之前的提示就没意义了，清掉
+          onChange: (v: string) => { setEditProvider({ ...editProvider, protocol: v }); setProtocolGuess(null); },
+        }),
+        // [261123-q4h7tn-cuko-openai] 接口返回与所选协议不一致时提示（只提示，不自动改；判断不一定准）
+        protocolGuessMismatch
+          ? createElement('div', { style: { marginTop: '8px', padding: '8px 10px', borderRadius: '6px', background: 'rgba(255,193,7,.12)', border: '1px solid rgba(255,193,7,.4)', fontSize: '12px', lineHeight: 1.6, color: 'var(--ck-text)' } },
+            createElement('div', null, '接口返回的模型列表更像 ' + (protocolGuess === 'openai' ? 'OpenAI Chat Completions' : 'Cuko API') + ' 协议，当前选的是 ' + (curProtocol === 'openai' ? 'OpenAI Chat Completions' : 'Cuko API') + '。'),
+            createElement('div', { style: { color: 'var(--ck-text-2)', marginTop: '4px' } }, '如果发消息报错，多半是这里选错了。'),
+            createElement('div', { style: { display: 'flex', gap: '12px', marginTop: '6px' } },
+              createElement('button', { style: linkBtnStyle, onClick: () => { setEditProvider({ ...editProvider, protocol: protocolGuess }); setProtocolGuess(null); } }, '改为 ' + (protocolGuess === 'openai' ? 'OpenAI Chat Completions' : 'Cuko API')),
+              createElement('button', { style: linkBtnStyle, onClick: () => setProtocolGuess(null) }, '忽略'),
+            ),
+          )
+          : null
       ),
       createElement('div', { style: { marginBottom: '24px' } },
         createElement('div', { style: { fontSize: '13px', marginBottom: '8px', color: 'var(--ck-text)' } }, 'API 密钥'),

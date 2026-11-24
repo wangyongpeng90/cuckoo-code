@@ -544,6 +544,48 @@ export function parseModelList(json: any): ListedModel[] {
   return out;
 }
 
+// ================= 协议推断（只用来提示，不改配置） =================
+
+export type ProtocolGuess = 'openai' | 'cuko' | null;
+
+/**
+ * 从 GET /v1/models 的返回猜协议，只作提示用，不作为判断依据（猜错不能改坏配置）。
+ * 实测差异：
+ *   OpenAI（DeepSeek）：{ object: 'list', data: [{ id, object: 'model', owned_by, ... }] }
+ *   Cuko API：{ data: [{ id, name }] }
+ * 判据：
+ *   - 顶层 object=list、模型项 object=model、有 owned_by 任一成立 → 更像 OpenAI
+ *   - 所有模型项只有 id / name，且至少一项带 name → 更像 Cuko（Cuko 协议要求 id 与 name 必需）
+ *   - 其它（例如只有 id、或有未知字段）一律当作判断不了，返回 null，不打扰用户
+ */
+export function guessProtocolFromModelList(json: any): ProtocolGuess {
+  if (!isPlainObject(json)) return null;
+  const data = json.data;
+  if (!Array.isArray(data) || data.length === 0) return null;
+  const topIsList = String(json.object ?? '').trim().toLowerCase() === 'list';
+  let entries = 0;
+  let modelObjects = 0;
+  let ownedBy = 0;
+  let plainOnly = 0;
+  let withName = 0;
+  for (const entry of data) {
+    if (!isPlainObject(entry)) continue;
+    entries++;
+    if (String(entry.object ?? '').trim().toLowerCase() === 'model') modelObjects++;
+    if (typeof entry.owned_by === 'string' && entry.owned_by.trim()) ownedBy++;
+    const keys = Object.keys(entry);
+    const isPlain = keys.every((k) => k === 'id' || k === 'name');
+    if (isPlain) {
+      plainOnly++;
+      if (typeof entry.name === 'string' && entry.name.trim()) withName++;
+    }
+  }
+  if (entries === 0) return null;
+  if (topIsList || modelObjects > 0 || ownedBy > 0) return 'openai';
+  if (plainOnly === entries && withName > 0) return 'cuko';
+  return null;
+}
+
 export interface ReasoningLevel {
   /** 档位名（off 表示关闭思考） */
   id: string;

@@ -27,6 +27,7 @@ import {
   MAX_RETRIES,
   isContextOverflowError,
   parseModelList,
+  guessProtocolFromModelList,
   listedToApiMeta,
   effectiveModelMeta,
   defaultEffortOf,
@@ -319,6 +320,33 @@ describe('classifyFailure / retryDelayMs', () => {
     expect(isContextOverflowError('context_length_exceeded')).toBe(true);
     expect(isContextOverflowError('上下文长度超出限制')).toBe(true);
     expect(isContextOverflowError('invalid api key')).toBe(false);
+  });
+});
+
+describe('guessProtocolFromModelList 协议推断', () => {
+  // 2026-11-24 实测：DeepSeek（OpenAI 兼容）与本地 Cuko 服务的真实返回
+  const OPENAI = { object: 'list', data: [{ id: 'deepseek-flash', object: 'model', owned_by: 'deepseek', name: 'DeepSeek-V4.1-Flash' }] };
+  const CUKO = { data: [{ id: 'quick-main', name: 'Quick 主账号' }] };
+  it('OpenAI 的三种特征任一成立就判 openai', () => {
+    expect(guessProtocolFromModelList(OPENAI)).toBe('openai');
+    expect(guessProtocolFromModelList({ data: [{ id: 'x', object: 'model' }] })).toBe('openai');
+    expect(guessProtocolFromModelList({ data: [{ id: 'x', owned_by: 'y' }] })).toBe('openai');
+    expect(guessProtocolFromModelList({ object: 'list', data: [{ id: 'x' }] })).toBe('openai');
+  });
+  it('只有 id/name 且带 name 判 cuko', () => {
+    expect(guessProtocolFromModelList(CUKO)).toBe('cuko');
+    expect(guessProtocolFromModelList({ data: [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }] })).toBe('cuko');
+  });
+  it('判断不了就返回 null，不给错提示', () => {
+    // 只有 id，没有 name：既不像 OpenAI 也不像 Cuko
+    expect(guessProtocolFromModelList({ data: [{ id: 'x' }] })).toBeNull();
+    // 有未知扩展字段：可能有服务商模仿两种协议，不猜
+    expect(guessProtocolFromModelList({ data: [{ id: 'x', name: 'X', context_window: 100 }] })).toBeNull();
+    // 空 / 非对象 / 没有 data
+    expect(guessProtocolFromModelList({ data: [] })).toBeNull();
+    expect(guessProtocolFromModelList({})).toBeNull();
+    expect(guessProtocolFromModelList(null)).toBeNull();
+    expect(guessProtocolFromModelList('x')).toBeNull();
   });
 });
 

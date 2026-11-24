@@ -30698,6 +30698,7 @@ body {
     const [cukoEditing, setCukoEditing] = (0, import_react9.useState)(false);
     const [cukoLoading, setCukoLoading] = (0, import_react9.useState)(false);
     const [cukoErr, setCukoErr] = (0, import_react9.useState)("");
+    const [protocolGuess, setProtocolGuess] = (0, import_react9.useState)(null);
     const [tip, setTip] = (0, import_react9.useState)("");
     const [showGuide, setShowGuide] = (0, import_react9.useState)(false);
     const [showMarket, setShowMarket] = (0, import_react9.useState)(false);
@@ -30749,13 +30750,17 @@ body {
         const res = await window.cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, apiKey: editProvider.apiKey || "", models: editProvider.models || [] });
         if (!res || !res.success) throw new Error(res && res.error || "\u83B7\u53D6\u5931\u8D25");
         setEditProvider((prev) => ({ ...prev, models: res.models || [] }));
+        setProtocolGuess(res.protocolGuess === "openai" || res.protocolGuess === "cuko" ? res.protocolGuess : null);
         showTip("\u5DF2\u83B7\u53D6 " + res.count + " \u4E2A\u6A21\u578B");
       } catch (e2) {
         setCukoErr(e2.message || "\u83B7\u53D6\u5931\u8D25");
+        setProtocolGuess(null);
       } finally {
         setCukoLoading(false);
       }
     };
+    const curProtocol = editProvider.protocol === "openai" ? "openai" : "cuko";
+    const protocolGuessMismatch = !!protocolGuess && protocolGuess !== curProtocol;
     const saveProvider = async () => {
       if (!editProvider.id || !editProvider.name || !editProvider.baseUrl) {
         setCukoErr("\u8BF7\u586B\u5199\u5B8C\u6574\u7684 Provider ID\u3001\u540D\u79F0\u548C\u5730\u5740");
@@ -30983,8 +30988,28 @@ body {
           (0, import_react9.createElement)(Select, {
             value: editProvider.protocol === "openai" ? "openai" : "cuko",
             options: [{ value: "cuko", label: "Cuko API (SSE)" }, { value: "openai", label: "OpenAI Chat Completions" }],
-            onChange: (v) => setEditProvider({ ...editProvider, protocol: v })
-          })
+            // 手动改协议后，之前的提示就没意义了，清掉
+            onChange: (v) => {
+              setEditProvider({ ...editProvider, protocol: v });
+              setProtocolGuess(null);
+            }
+          }),
+          // [261123-q4h7tn-cuko-openai] 接口返回与所选协议不一致时提示（只提示，不自动改；判断不一定准）
+          protocolGuessMismatch ? (0, import_react9.createElement)(
+            "div",
+            { style: { marginTop: "8px", padding: "8px 10px", borderRadius: "6px", background: "rgba(255,193,7,.12)", border: "1px solid rgba(255,193,7,.4)", fontSize: "12px", lineHeight: 1.6, color: "var(--ck-text)" } },
+            (0, import_react9.createElement)("div", null, "\u63A5\u53E3\u8FD4\u56DE\u7684\u6A21\u578B\u5217\u8868\u66F4\u50CF " + (protocolGuess === "openai" ? "OpenAI Chat Completions" : "Cuko API") + " \u534F\u8BAE\uFF0C\u5F53\u524D\u9009\u7684\u662F " + (curProtocol === "openai" ? "OpenAI Chat Completions" : "Cuko API") + "\u3002"),
+            (0, import_react9.createElement)("div", { style: { color: "var(--ck-text-2)", marginTop: "4px" } }, "\u5982\u679C\u53D1\u6D88\u606F\u62A5\u9519\uFF0C\u591A\u534A\u662F\u8FD9\u91CC\u9009\u9519\u4E86\u3002"),
+            (0, import_react9.createElement)(
+              "div",
+              { style: { display: "flex", gap: "12px", marginTop: "6px" } },
+              (0, import_react9.createElement)("button", { style: linkBtnStyle, onClick: () => {
+                setEditProvider({ ...editProvider, protocol: protocolGuess });
+                setProtocolGuess(null);
+              } }, "\u6539\u4E3A " + (protocolGuess === "openai" ? "OpenAI Chat Completions" : "Cuko API")),
+              (0, import_react9.createElement)("button", { style: linkBtnStyle, onClick: () => setProtocolGuess(null) }, "\u5FFD\u7565")
+            )
+          ) : null
         ),
         (0, import_react9.createElement)(
           "div",

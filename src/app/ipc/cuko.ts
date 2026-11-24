@@ -15,7 +15,8 @@ import { jsRunner } from '../../tools/index.js';
 import { pickJsResultPhrase } from '../../overlay/js-result-phrases.js';
 import { nowLocalIso } from '../../infra/time.js';
 import { splitPromptByH1 } from '../cuko-run-protocol.js';
-import { normalizeProtocol, joinApiUrl, parseJsonObjectParam, parseModelList, listedToApiMeta, effectiveModelMeta, resolveEffortAfterSwitch } from '../cuko-openai.js';
+import { normalizeProtocol, joinApiUrl, parseJsonObjectParam, parseModelList, guessProtocolFromModelList, listedToApiMeta, effectiveModelMeta, resolveEffortAfterSwitch } from '../cuko-openai.js';
+import type { ProtocolGuess } from '../cuko-openai.js';
 import type { ListedModel } from '../cuko-openai.js';
 import {
   startCukoRun,
@@ -78,8 +79,11 @@ function modelRowToUi(m: any): any {
   };
 }
 
-/** 请求 GET {baseUrl}/v1/models（地址末尾已有 /v1 时不重复），解析标准字段 + 扩展字段 */
-async function requestModelList(baseUrl: string, apiKey: string | null): Promise<ListedModel[]> {
+/**
+ * 请求 GET {baseUrl}/v1/models（地址末尾已有 /v1 时不重复），解析标准字段 + 扩展字段。
+ * 顺带推断协议（只用于界面提示，猜错不影响任何配置）。
+ */
+async function requestModelList(baseUrl: string, apiKey: string | null): Promise<{ listed: ListedModel[]; protocolGuess: ProtocolGuess }> {
   const httpGet = createElectronHttpGet();
   const headers: Record<string, string> = { Accept: 'application/json' };
   if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
@@ -92,7 +96,7 @@ async function requestModelList(baseUrl: string, apiKey: string | null): Promise
   } catch {
     throw new Error('返回的不是 JSON');
   }
-  return parseModelList(json);
+  return { listed: parseModelList(json), protocolGuess: guessProtocolFromModelList(json) };
 }
 
 /** 刷新：只更新接口信息；接口没返回的标 listed=0，不删除，不碰用户修改 */
@@ -267,8 +271,8 @@ export function registerCukoIpc(): void {
       const errors: string[] = [];
       await Promise.all(providers.map(async (p: any) => {
         try {
-          const listed = await requestModelList(p.base_url, p.api_key || null);
-          mergeListedModels(db, p.id, listed);
+          const fetched = await requestModelList(p.base_url, p.api_key || null);
+          mergeListedModels(db, p.id, fetched.listed);
         } catch (err: any) {
           errors.push(p.name + ': ' + (err?.message || String(err)));
         }
@@ -282,9 +286,10 @@ export function registerCukoIpc(): void {
   // 表单里「获取可用模型」：按表单填的地址 / 密钥请求（Provider 未保存也能用），返回合并后的列表，不写库
   ipcMain.handle('cuko:fetch-models', async (_event: any, params: any) => {
     try {
-      const listed = await requestModelList(String(params?.baseUrl || ''), params?.apiKey ? String(params.apiKey) : null);
+      const fetched = await requestModelList(String(params?.baseUrl || ''), params?.apiKey ? String(params.apiKey) : null);
       const current: any[] = Array.isArray(params?.models) ? params.models : [];
-      return { success: true, count: listed.length, models: mergeFetchedForForm(current, listed) };
+      // protocolGuess 只给界面提示用（'openai' / 'cuko' / null = 判断不了）
+      return { success: true, count: fetched.listed.length, models: mergeFetchedForForm(current, fetched.listed), protocolGuess: fetched.protocolGuess };
     } catch (err: any) {
       return { success: false, error: err?.message || '获取失败' };
     }
