@@ -196,6 +196,12 @@ Cuko API 会话：
 2. 会话用量 tok 与 harness 的统计口径差异（见 3.1）。
 3. 请求日志面板（`src/ui/cuko/request-log-dialog.tsx`）有自己的一份命中率算法（取整），和 `composer-stats.ts` 不共用。
 4. OpenAI 会话的附件：界面按钮没置灰，发送时由主进程拦下并提示「当前模型暂不支持附件」。
+   - 已修（`d270edf`，2026-11-24）：主进程 / 启动器写控制台遇到断管道（EPIPE）不再弹未捕获异常窗。
+     原因是用 `npm start` 启动时 stdout 是管道，启动器窗口关掉后管道读端消失，之后任何 `console.log` 都会抛错；
+     开发版 `ipc/logs.ts` 直接 `return` 没有兜底。修法：`entry.ts` 与 `start.js` 给 stdout/stderr 挂 `error` 兜底，
+     并把 `console` 的 log/info/warn/error/debug/trace 包一层——Windows 上 stdout 指向管道时是同步写，
+     写失败会同步抛错（堆栈落在 `console.log` 上，所以光挂 `stream.on('error')` 兜不住）。
+     只拦写控制台这一步的失败，其余异常照旧上抛。
 5. DeepSeek `/models` 扩展字段已实测（2026-11-24）：`context_window` / `max_output_tokens` / `input_modalities` 与解析一致；`effort`（`supported_levels` / `default_level`）已接入，自动预填推理档位。仍有未读字段 `output_modalities` / `api_capabilities`，本版不需要。
 6. 旧问题清单（不在本次范围）：`runAgent` / `nameConversation` 在 Cuko 窗口必定失败；Cuko 协议切模型时 compress 没拿到 `providerSessionId` 会存 null；`switchModelWithHistory` 没有超时、不能取消；compress 历史时 `write` 的结果被替换；`select-directory` 用 `showOpenDialogSync` 会卡主进程；删 Provider 后绑定它的会话无人处理；自定义回复语在主进程不生效；`api_key` 明文保存且会返回给界面；`friendlyError` 缺 `idempotency_conflict`；`db.ts` 回填工作区用 UTC 时间；旧需求档案 `261109-8ms69z-cuko-api.md` 有 4 处与代码不一致。
 7. push 走 SSH：后台 push 要设 `GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=20`，避免卡在密码或指纹确认。
