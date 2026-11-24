@@ -11,6 +11,20 @@
 </head>
 <body>
   <div id="root"></div>
+  <!-- [261123-q4h7tn-cuko-openai] 通用确认弹窗（ckConfirm / ckDialog 依赖）。
+       Cuko 窗口复用了壳页面的设置页与共享模块，但之前没带这套 DOM，
+       导致 ckDialog 拿不到元素直接当成「确定」，保存时的协议确认框静默通过。
+       结构与壳页面 partials/modals.html 里的 #ck-dialog 保持一致。 -->
+  <div class="ck-modal-mask cuckoo-hidden" id="ck-dialog">
+    <div class="ck-modal ck-dialog">
+      <span class="ck-modal-title" id="ck-dialog-title">提示</span>
+      <div class="ck-dialog-msg" id="ck-dialog-msg"></div>
+      <div class="ck-modal-foot">
+        <button class="ck-btn ck-btn-secondary cuckoo-hidden" id="ck-dialog-cancel">取消</button>
+        <button class="ck-btn ck-btn-primary" id="ck-dialog-ok">确定</button>
+      </div>
+    </div>
+  </div>
   <script>
     // 首帧前先按当前系统 / 应用配色决定明暗，避免从深色闪到浅色。
     // 运行时的精确同步由 app.tsx 的 useCukoTheme（theme-get / theme-changed）负责。

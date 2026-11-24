@@ -31,7 +31,13 @@ export function ckDialog(opts: { title?: string; message?: string; confirm?: boo
     const msgEl = document.getElementById('ck-dialog-msg');
     const okBtn = document.getElementById('ck-dialog-ok') as any;
     const cancelBtn = document.getElementById('ck-dialog-cancel') as any;
-    if (!mask || !okBtn || !cancelBtn) { resolve(true); return; }
+    if (!mask || !okBtn || !cancelBtn) {
+      // 缺 DOM 时不能静默当「确定」：之前 Cuko 窗口没带这套 DOM，保存确认框直接通过了。
+      // 保留 resolve(true) 兜底（否则所有确认都会变成「取消」而卡住流程），但打一行日志便于排查。
+      console.warn('[ckDialog] 缺少 #ck-dialog 相关 DOM，已按「确定」处理：', { mask: !!mask, okBtn: !!okBtn, cancelBtn: !!cancelBtn });
+      resolve(true);
+      return;
+    }
     if (titleEl) titleEl.textContent = opts.title || '提示';
     if (msgEl) msgEl.textContent = opts.message || '';
     cancelBtn.classList.toggle('cuckoo-hidden', !opts.confirm);

@@ -26908,6 +26908,7 @@ body {
       const okBtn = document.getElementById("ck-dialog-ok");
       const cancelBtn = document.getElementById("ck-dialog-cancel");
       if (!mask || !okBtn || !cancelBtn) {
+        console.warn("[ckDialog] \u7F3A\u5C11 #ck-dialog \u76F8\u5173 DOM\uFF0C\u5DF2\u6309\u300C\u786E\u5B9A\u300D\u5904\u7406\uFF1A", { mask: !!mask, okBtn: !!okBtn, cancelBtn: !!cancelBtn });
         resolve(true);
         return;
       }
