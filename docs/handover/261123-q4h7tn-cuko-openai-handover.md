@@ -54,12 +54,17 @@
 11. 用户反馈「保存时确认框不弹」：根因是 **Cuko 窗口没有 `#ck-dialog` 的 DOM**——`src/ui/cuko/index.html` 只带了壳页面的 CSS，没带 `partials/modals.html` 的 DOM，而 `ckDialog` 找不到元素时直接 `resolve(true)`（当成点了「确定」）。已修（提交 `bdf85bd`）：补上 DOM，并在缺 DOM 时打 `console.warn`。教训：Cuko 窗口复用了壳页面的设置页与共享模块，但**DOM 骨架不会自动带过来**，以后在 Cuko 窗口里用新的壳页面组件要确认 DOM 齐全。`src/ui/cuko/built.html` 是 `.gitignore` 的构建产物，不进提交。
 12. 用户要求「明文放数据库太不好，要加密存储」：已实现，提交 `e38eca5`。用 Electron 内置 `safeStorage`（Windows DPAPI / macOS Keychain / Linux libsecret），密钥永不出主进程（`list-providers` 只给掩码）。**Linux 必须显式判断后端**：无密钥环时 Electron 回退 `basic_text`（假加密）而 `isEncryptionAvailable()` 仍返回 `true`，所以读 `getSelectedStorageBackend()`，`basic_text` / `unknown` 一律拒绝保存（用户选 A）。存储格式 `enc1$` + base64，旧明文启动时自动迁移（幂等）。细节见需求档案第 9 节。
 
+### 推送与合并状态（2026-11-24 14:30）
+
+- 已 push 到 origin 与 github，两端都是 `8eb48a1`（本次会话共 16 个提交）。
+- **用户决定：先不合并回 master**。分支保持在 `feat/261123-q4h7tn-cuko-openai`，版本号维持 0.9.2。
+- 待办清零：本次需求（胶囊面板、effort 档位、off 补齐、协议推断与提示、EPIPE 修复、确认弹窗 DOM、API 密钥加密）全部完成并验证通过。
+
 ### 剩余待办（2026-11-24 13:00）
 
-1. **等用户重启 Cuckoo 验证密钥加密**（`e38eca5`）：需验证 ① 已有 Provider 的明文密钥启动后自动变成 `enc1$` 开头 ② 编辑 Provider 时密钥框显示掩码、留空保存不影响原密钥 ③ 发消息 / 获取模型正常 ④ 设置页能看到当前加密后端。
-   - 已验证过的：EPIPE 弹窗（不再出现）、off 档位（符合预期）、API 参数值文案（符合预期）、协议提示与保存弹窗（符合预期）。
-2. 验证通过后 push 新提交到 origin 与 github（当前 ahead 15）。
-3. 问用户是否 / 何时合并回 master，版本号怎么定（当前 0.9.2）。
+1. ~~等用户重启 Cuckoo 验证密钥加密~~：**已全部验证通过**（旧明文自动迁移、密钥框不回显、留空保存不影响原密钥、发消息正常、加密后端提示正常）。
+2. ~~push 新提交到 origin 与 github~~：已完成，两端都是 `8eb48a1`。
+3. ~~问用户是否 / 何时合并回 master~~：用户决定**暂不合并**，版本号维持 0.9.2。
 
 ### 若重启后仍弹窗怎么办
 
