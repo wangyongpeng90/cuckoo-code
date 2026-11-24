@@ -49,11 +49,13 @@
 6. push / 合并 / 版本号：已 push 到 origin 与 github（`4bf3891`）；合并与版本号待定。
 7. 修掉一个打断使用的主进程弹窗（用户实测遇到）：`A JavaScript error occurred in the main process / Error: EPIPE: broken pipe, write`，堆栈偶然落在 `GrepTool` 的日志行上。提交 `d270edf`，详见第 9 节第 4 条。
 8. 用户反馈「刷新模型自动读取接口档位后没有 off 档位，关不掉思考」：已修，提交 `70cb496`。规则是接口没给 `off` 就自动补一个放最前面；连带把默认档位兜底与「档位未知」的请求参数兜底都改成跳过 `off`（否则补了 `off` 后会默认把思考关掉）。
+9. 用户反馈「设置页 API 参数值那列空着像没填」：已改，提交 `f34258b`。表头写「留空 = 用档位名」，占位符显示「留空则发 low」，表下补说明。留空时实际发出去的就是档位名本身。
+10. 用户问「能否根据接口自动判断是 OpenAI 还是 Cuko 协议」：已实现，提交 `c1589f1`。获取模型时用 `guessProtocolFromModelList` 推断，与所选协议不一致就在下拉下方提示（只提示不自动改，判断不保证 100% 准）；带「改为 xxx」和「忽略」按钮。实测差异见需求档案第 5 节。
 
 ### 剩余待办（2026-11-24 13:00）
 
 1. **等用户重启 Cuckoo 验证 EPIPE 修复**：改的是 `src/app/entry.ts`（主进程入口）与 `start.js`（启动器），必须关掉 Cuckoo、关掉 `cuckoo-restart` 黑窗口、重新 `npm start` 才生效。验证方法：先正常用几次工具 → 关掉跑 `npm start` 的黑窗口 → 再调一次工具，不应再弹 JavaScript error 窗。
-2. 验证通过后 push 新提交（`d270edf` 修 EPIPE、`70cb496` 补 off 档位、`f4de831` 与 `f00dc35` 交接文档）到 origin 与 github（当前 ahead 4，本次会话最后会再加文档提交）。
+2. 验证通过后 push 新提交到 origin 与 github（当前 ahead 7：`d270edf` 修 EPIPE、`70cb496` 补 off 档位、`f34258b` 参数值说明、`c1589f1` 协议推断，以及 `f4de831` / `f00dc35` / `a534286` 三条文档提交）。
 3. 问用户是否 / 何时合并回 master，版本号怎么定（当前 0.9.2）。
 
 ### 若重启后仍弹窗怎么办

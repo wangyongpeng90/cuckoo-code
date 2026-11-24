@@ -61,6 +61,11 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
   - 连带修正默认档位兜底：从「第一个档位」改为「第一个非 off 档位」。补了 `off` 后它排第一位，若接口没给有效默认档位，会话会默认把思考关掉。
   - 档位未知时的请求参数兜底同理（`reasoningRequestOf`）：不因为认不出档位就悄悄关闭思考；用户明确选 `off` 仍然照旧发关闭参数。
   - 界面侧 `effectiveEffort`（`src/ui/cuko/composer-stats.ts`）与上述规则一致，测试里交叉校验。
+- 2026-11-24 追加（已实现，提交 f34258b）：设置页「API 参数值」写清留空含义——表头改成「API 参数值（留空 = 用档位名）」，输入框占位符显示「留空则发 low」，表下补说明。留空时实际发出的就是档位名本身，只有接口要求别的值（如档位叫 high、要发 high-effort）才需要填。不再使用的 `tokenTotalsTip` / `totalTip` 已删除。
+- 2026-11-24 追加（已实现，提交 c1589f1）：**获取模型时推断 API 协议并在不一致时提示**。Cuko API 与 OpenAI 兼容接口的 `GET /v1/models` 路径相同但返回格式不同，用户选错协议要等到发消息才报错：
+  - 实测差异：OpenAI（DeepSeek）= `{ object: "list", data: [{ id, object: "model", owned_by, ... }] }`；Cuko API（本地 3000）= `{ data: [{ id, name }] }`。
+  - 判据（`guessProtocolFromModelList`）：顶层 `object=list` / 模型项 `object=model` / 有 `owned_by` 任一成立 → `openai`；所有模型项只有 `id` 和 `name` 且至少一项带 `name` → `cuko`；其它情况返回 `null`（判断不了就不打扰用户）。
+  - **只提示、不自动改**（判断不保证 100% 准，猜错不能改坏配置）：获取模型后若推断结果与所选协议不一致，在协议下拉下方显示提示，带「改为 xxx」和「忽略」两个按钮；手动改协议或获取失败时清掉旧提示。
 - 输入类型保存但本版不生效（界面标注「暂未生效」）。
 
 ## 6. 聊天窗口（2026-11-24 确认）
@@ -119,6 +124,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - [x] 步骤 3：设置页可选协议、刷新不丢用户修改
 - [x] 步骤 4：两级菜单选推理等级（Cuko 置灰）、会话累计用量 xxx tok（点击胶囊看明细）、缓存命中（会话累计，两位小数）、上下文用量与 60% 提醒
 - [x] 刷新模型自动读取接口推理档位（`effort` 扩展字段），用户修改优先；接口没给 `off` 时自动补一个，思考可关闭
+- [x] 获取模型时推断 API 协议（OpenAI / Cuko），与所选不一致时提示（只提示不自动改）
 - [x] Cuko 协议行为不变
 - [x] typecheck / test / lint / compile 全绿（2026-11-24：typecheck 0 错误；`vitest run cuko` 6 文件 120 用例全过；`eslint .` 0 错误 34 个旧警告；compile 成功）
 
@@ -136,6 +142,8 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 
 已提交：
 
+- c1589f1 feat(settings): 获取模型时推断 API 协议，不一致就提示
+- f34258b feat(settings): 推理档位的「API 参数值」写清留空含义
 - 70cb496 feat(cuko): 模型接口没给 off 档位时自动补一个，思考可以关掉
 - d270edf fix(app): 控制台管道断开（EPIPE）不再弹未捕获异常窗
 - 899bcbf feat(cuko): 输入框用量改胶囊 + 浮动面板，刷新模型自动读取接口推理档位
