@@ -48,11 +48,12 @@
 5. 交付报告：见本次会话的最终报告。
 6. push / 合并 / 版本号：已 push 到 origin 与 github（`4bf3891`）；合并与版本号待定。
 7. 修掉一个打断使用的主进程弹窗（用户实测遇到）：`A JavaScript error occurred in the main process / Error: EPIPE: broken pipe, write`，堆栈偶然落在 `GrepTool` 的日志行上。提交 `d270edf`，详见第 9 节第 4 条。
+8. 用户反馈「刷新模型自动读取接口档位后没有 off 档位，关不掉思考」：已修，提交 `70cb496`。规则是接口没给 `off` 就自动补一个放最前面；连带把默认档位兜底与「档位未知」的请求参数兜底都改成跳过 `off`（否则补了 `off` 后会默认把思考关掉）。
 
 ### 剩余待办（2026-11-24 13:00）
 
 1. **等用户重启 Cuckoo 验证 EPIPE 修复**：改的是 `src/app/entry.ts`（主进程入口）与 `start.js`（启动器），必须关掉 Cuckoo、关掉 `cuckoo-restart` 黑窗口、重新 `npm start` 才生效。验证方法：先正常用几次工具 → 关掉跑 `npm start` 的黑窗口 → 再调一次工具，不应再弹 JavaScript error 窗。
-2. 验证通过后 push 两个新提交（`d270edf` 修 EPIPE、`f4de831` 交接文档）到 origin 与 github（当前 ahead 2）。
+2. 验证通过后 push 新提交（`d270edf` 修 EPIPE、`70cb496` 补 off 档位、`f4de831` 与 `f00dc35` 交接文档）到 origin 与 github（当前 ahead 4，本次会话最后会再加文档提交）。
 3. 问用户是否 / 何时合并回 master，版本号怎么定（当前 0.9.2）。
 
 ### 若重启后仍弹窗怎么办
@@ -75,7 +76,7 @@
 | 排列 | 两个胶囊：① 数据库图标 + xxx tok · 缓存命中 xx.xx%（可点开面板）② 上下文 x.xK |
 | 明细 | 先做的是悬停提示（`title`），用户实测「排版不好看、点了没浮窗」，改为方案 A（第 5 节），已实现（`899bcbf`） |
 | 模型选择器 | 两级菜单：按钮显示「模型名 + 档位」（去掉 Default）；一级「模型 >」「推理等级 >」；运行中「模型」置灰、推理等级仍可改 |
-| 推理等级 | 按会话存 `cuko_sessions.reasoning_effort`；新会话用模型默认档位；切模型同名沿用否则默认；未建会话先记在界面，建会话后保存；改档位不更新 `updated_at`（避免会话列表跳动） |
+| 推理等级 | 按会话存 `cuko_sessions.reasoning_effort`；新会话用模型默认档位；切模型同名沿用否则默认；未建会话先记在界面，建会话后保存；改档位不更新 `updated_at`（避免会话列表跳动）。2026-11-24 追加：接口没给 `off` 时自动补一个（`70cb496`），默认档位兜底跳过 `off` |
 | 不支持时 | Cuko 协议或模型未开推理档位：「推理等级」行置灰、显示「不支持」，悬停提示原因 |
 | 附件 | 本次完全不做（包括按钮置灰 / 发送前拦截）；主进程已有拦截（`cuko-runner.ts` 搜「当前模型暂不支持附件」） |
 | 纯函数位置 | `src/ui/cuko/composer-stats.ts`（聊天界面不引用 `src/app`）；测试里与 `src/app/cuko-openai.ts` 交叉校验 60% 阈值与档位规则 |

@@ -56,6 +56,11 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - 2026-11-24 追加（已实现，提交 899bcbf）：`effort` 解析规则——`supported_levels` 只认非空字符串并去重；`default_level` 不在档位表里就忽略；解析结果写进 `api_meta` 并自动打开推理档位总开关；一个档位都没返回（或字段类型不对）就当作没返回，不凭空打开总开关；用户修改仍存 `user_meta` 且优先于接口值。
 - 实测记录（2026-11-24）：DeepSeek `GET /v1/models` 返回 200，字段 `id` / `object` / `owned_by` / `name` / `context_window`（1048576）/ `max_output_tokens`（393216）/ `input_modalities`（`["text","image"]`）/ `output_modalities` / `effort` / `api_capabilities`；原有三个字段的类型与解析规则一致，无需改动。
 - 推理档位：每档一个 API 参数值（为空时用档位名），总开关，可标默认档位；打开总开关时预填 off / low / high / max。
+- 2026-11-24 追加（已实现，提交 70cb496）：**接口没给 `off` 时自动补一个**。模型能思考就应当能关掉思考，DeepSeek 只返回 `["low","high","max"]` 会让界面没有 off 档位。规则：
+  - 接口档位里没有 `off` 就补一个、放最前面（与设置页预填顺序一致）；接口自己给了 `off` 就不重复、顺序也不动。
+  - 连带修正默认档位兜底：从「第一个档位」改为「第一个非 off 档位」。补了 `off` 后它排第一位，若接口没给有效默认档位，会话会默认把思考关掉。
+  - 档位未知时的请求参数兜底同理（`reasoningRequestOf`）：不因为认不出档位就悄悄关闭思考；用户明确选 `off` 仍然照旧发关闭参数。
+  - 界面侧 `effectiveEffort`（`src/ui/cuko/composer-stats.ts`）与上述规则一致，测试里交叉校验。
 - 输入类型保存但本版不生效（界面标注「暂未生效」）。
 
 ## 6. 聊天窗口（2026-11-24 确认）
@@ -113,7 +118,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - [x] 步骤 2：OpenAI 协议多轮对话 + 工具循环可用；DeepSeek 第二轮起缓存命中 > 0（实测第二轮 98%）
 - [x] 步骤 3：设置页可选协议、刷新不丢用户修改
 - [x] 步骤 4：两级菜单选推理等级（Cuko 置灰）、会话累计用量 xxx tok（点击胶囊看明细）、缓存命中（会话累计，两位小数）、上下文用量与 60% 提醒
-- [x] 刷新模型自动读取接口推理档位（`effort` 扩展字段），用户修改优先
+- [x] 刷新模型自动读取接口推理档位（`effort` 扩展字段），用户修改优先；接口没给 `off` 时自动补一个，思考可关闭
 - [x] Cuko 协议行为不变
 - [x] typecheck / test / lint / compile 全绿（2026-11-24：typecheck 0 错误；`vitest run cuko` 6 文件 120 用例全过；`eslint .` 0 错误 34 个旧警告；compile 成功）
 
@@ -131,6 +136,8 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 
 已提交：
 
+- 70cb496 feat(cuko): 模型接口没给 off 档位时自动补一个，思考可以关掉
+- d270edf fix(app): 控制台管道断开（EPIPE）不再弹未捕获异常窗
 - 899bcbf feat(cuko): 输入框用量改胶囊 + 浮动面板，刷新模型自动读取接口推理档位
 - 973ee8b test(cuko): 请求日志断言（协议 / 尝试次数 / 用量归一 / 原始报文 / 密钥打码 / 原文释放）
 - ab5c953 feat(cuko): 聊天窗口两级菜单选推理等级、会话用量 / 缓存命中 / 上下文显示（步骤 4）
@@ -149,7 +156,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - 0a96d37 fix(tools): grep/glob 改流式读取，修复主进程 RangeError: Invalid string length
 - 2294d82 docs(req): 新增 261123-q4h7tn Cuko 接入 OpenAI 兼容接口需求档案
 
-待确认 / 未完成（截至 2026-11-24 12:30）：已全部完成——胶囊 + 浮动面板（899bcbf）、DeepSeek `/models` 扩展字段实测（`effort` 已接入）、界面真机验证（用户确认功能正常）、验收打勾与 status=review。已完成：步骤 4（ab5c953）、请求日志测试（973ee8b）、DeepSeek 真实缓存命中（第二轮 98%）。
+待确认 / 未完成（截至 2026-11-24 13:10）：功能已全部完成——胶囊 + 浮动面板（899bcbf）、DeepSeek `/models` 扩展字段实测（`effort` 已接入）、接口没给 `off` 时自动补一个（70cb496）、EPIPE 弹窗修复（d270edf）、界面真机验证（用户确认功能正常）、验收打勾与 status=review。剩余：等用户重启验证 EPIPE 修复 → push → 决定是否合并回 master 与版本号。已完成：步骤 4（ab5c953）、请求日志测试（973ee8b）、DeepSeek 真实缓存命中（第二轮 98%）。
 
 交接文档：`docs/handover/261123-q4h7tn-cuko-openai-handover.md`
 
