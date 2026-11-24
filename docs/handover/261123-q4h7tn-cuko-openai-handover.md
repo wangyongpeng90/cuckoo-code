@@ -46,12 +46,20 @@
 3. DeepSeek `/models` 扩展字段：已实测。`context_window` / `max_output_tokens` / `input_modalities` 与 `parseModelList` 一致，无需改动；另发现 `effort`（`supported_levels` + `default_level`），用户选 A，已接入：解析后写进 `api_meta` 并自动打开推理档位总开关，用户修改仍存 `user_meta` 且优先（同样在 `899bcbf`，含 3 个新测试）。
 4. 需求档案：验收项已逐项打勾、`status` 改为 review、已跑 `npm run docs:index`。
 5. 交付报告：见本次会话的最终报告。
-6. push / 合并 / 版本号：等用户逐条决定（push 与合并前必须先问）。
+6. push / 合并 / 版本号：已 push 到 origin 与 github（`4bf3891`）；合并与版本号待定。
+7. 修掉一个打断使用的主进程弹窗（用户实测遇到）：`A JavaScript error occurred in the main process / Error: EPIPE: broken pipe, write`，堆栈偶然落在 `GrepTool` 的日志行上。提交 `d270edf`，详见第 9 节第 4 条。
 
-### 剩余待办
+### 剩余待办（2026-11-24 13:00）
 
-1. 问用户是否 push 到 origin（是否同步 github）。
-2. 问用户是否 / 何时合并回 master，版本号怎么定（当前 0.9.2）。
+1. **等用户重启 Cuckoo 验证 EPIPE 修复**：改的是 `src/app/entry.ts`（主进程入口）与 `start.js`（启动器），必须关掉 Cuckoo、关掉 `cuckoo-restart` 黑窗口、重新 `npm start` 才生效。验证方法：先正常用几次工具 → 关掉跑 `npm start` 的黑窗口 → 再调一次工具，不应再弹 JavaScript error 窗。
+2. 验证通过后 push 两个新提交（`d270edf` 修 EPIPE、`f4de831` 交接文档）到 origin 与 github（当前 ahead 2）。
+3. 问用户是否 / 何时合并回 master，版本号怎么定（当前 0.9.2）。
+
+### 若重启后仍弹窗怎么办
+
+1. 把新的完整堆栈发出来（看第一行 `at` 落在哪个文件哪一行）。
+2. 检查 `src/app/entry.ts` 第 24~53 行的兜底是否在 `out/src/app/entry.js` 里（`findstr /c:"EPIPE" out\src\app\entry.js`）；没有就是没重新编译，跑 `npm run compile` 再来。
+3. 若堆栈落在 `console.log` 之外（例如 `process.stdout.write` 直接调用），说明还有别的写控制台路径，需要同样包一层。
 
 ## 3. 关键决策
 
@@ -64,8 +72,8 @@
 | 60% 提醒 | 模型填了上下文窗口且用量 ≥ 60% 变橙色，显示「82.3K / 128K（64%）」，不拦发送 |
 | 缓存命中 | 整个会话累计：Σ`cache_read_tokens` ÷ Σ(`cache_read_tokens` + `cache_miss_tokens`)，固定两位小数；没全中最多 99.99%，全中 100.00%；从没返回命中字段的会话不显示 |
 | 会话用量 xxx tok | 当前会话每条落库回复的 `input_tokens` + `output_tokens` 求和（缺字段用 `total_tokens`），格式同上下文；与 harness 的差别：harness 还计入后来被重试的尝试，我们只算落库回复，实际几乎一样 |
-| 排列 | 数据库图标 + xxx tok · 缓存命中 xx.xx% · 上下文 x.xK |
-| 明细 | 先做的是悬停提示（`title`），用户实测「排版不好看、点了没浮窗」，改为方案 A（第 5 节），待实现 |
+| 排列 | 两个胶囊：① 数据库图标 + xxx tok · 缓存命中 xx.xx%（可点开面板）② 上下文 x.xK |
+| 明细 | 先做的是悬停提示（`title`），用户实测「排版不好看、点了没浮窗」，改为方案 A（第 5 节），已实现（`899bcbf`） |
 | 模型选择器 | 两级菜单：按钮显示「模型名 + 档位」（去掉 Default）；一级「模型 >」「推理等级 >」；运行中「模型」置灰、推理等级仍可改 |
 | 推理等级 | 按会话存 `cuko_sessions.reasoning_effort`；新会话用模型默认档位；切模型同名沿用否则默认；未建会话先记在界面，建会话后保存；改档位不更新 `updated_at`（避免会话列表跳动） |
 | 不支持时 | Cuko 协议或模型未开推理档位：「推理等级」行置灰、显示「不支持」，悬停提示原因 |
@@ -145,7 +153,7 @@
 - 组件必须定义在模块级，数据从 `ComposerSlotsContext` 读；不要在 `ChatApp` 的渲染函数里定义组件，否则流式输出时组件被重新挂载，面板会自己关掉。
 - 面板别被父元素裁剪：用 `createPortal` 挂到 `document.body`，或确认外层没有 `overflow: hidden`；注意 z-index。
 - 已改完（`899bcbf`）：typecheck 0 错误；`npx vitest run cuko` 6 文件 120 用例全过；`eslint .` 0 错误 34 个旧警告；compile 成功，`built.html` 里已确认含 `fixed z-50 w-56 -translate-x-1/2 -translate-y-full`（面板样式），旧的 `tokenTotalsTip` 已不在产物里。
-- 需求档案第 6 节已追加一条「已确认，待实现」，实现后改成正式描述（替换「悬停显示明细」那句）。
+- 需求档案第 6 节的胶囊方案已在 `899bcbf` 里改成正式描述（原来那句「悬停显示明细」已替换）。
 
 ## 6. 界面验证清单（用户手动重启 Cuckoo 后检查）
 
