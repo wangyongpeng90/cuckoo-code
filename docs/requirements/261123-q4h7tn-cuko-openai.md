@@ -73,6 +73,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
   - 上下文：最近一次请求的 `prompt_tokens`（接口准确值，即 harness 的 `pressureTokens`；不估算、不加 `~`，比实际慢一拍）；格式照 harness：小于 1000 原样，小于 100K 保留 1 位小数（`8.2K`），100K 及以上取整（`350K`），百万用 `M`。
   - 60% 提醒：模型填了上下文窗口且用量 ≥ 60% 时变提醒色，显示 `上下文 82.3K / 128K（64%）`，百分比取整；不拦发送。
   - 真正超出上下文时，沿用运行器现有提示（新开会话或换更长上下文的模型）。
+- 2026-11-24 追加（已确认，待实现）：输入框下方改成两个胶囊（照 harness）：① 可点击的「数据库图标 + xxx tok · 缓存命中 xx.xx%」，点击弹出浮动面板「Token 用量」（标题旁精确合计；行：缓存命中、未缓存输入、缓存读取、输出，精确数字千分位；再次点击 / 点外面 / Esc 关闭）；② 只显示的「上下文 x.xK」（≥ 60% 提醒色）。替代上面「悬停显示明细」的做法（用户实测悬停不明显、点击无反应、排版不整齐）。
 - 附件：本次不做（见第 10 节）。
 
 ## 7. 跨协议切换模型
@@ -126,6 +127,11 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 
 已提交：
 
+- 973ee8b test(cuko): 请求日志断言（协议 / 尝试次数 / 用量归一 / 原始报文 / 密钥打码 / 原文释放）
+- ab5c953 feat(cuko): 聊天窗口两级菜单选推理等级、会话用量 / 缓存命中 / 上下文显示（步骤 4）
+- 99f3f2d chore(lint): eslint 忽略 git 已忽略的本地目录（tmp / .cuckoo/plugins / resources/runtime）
+- 9fb8ad0 docs(cuko): 交接文档补充步骤 2-4、远程地址与 SSH 推送说明
+- 901000f feat(cuko): 请求日志显示原始报文、用量与缓存命中
 - 98dcb1d feat(cuko): 设置页支持 OpenAI 协议、请求参数、可编辑模型目录与推理档位（261123-q4h7tn 步骤 3-2）
 - 4c36f3d feat(cuko): Provider 协议与参数读写、模型目录合并写入、按表单获取模型（261123-q4h7tn 步骤 3-1）
 - 278375e test(cuko): 运行器 OpenAI 协议集成测试（假服务 + 内存库：前缀不变 / 工具循环 / 重试 / 401 / 停止）（261123-q4h7tn 步骤 2-5）
@@ -137,9 +143,8 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - a2ebf65 merge: 合入 grep/glob 流式读取修复（RangeError: Invalid string length）
 - 0a96d37 fix(tools): grep/glob 改流式读取，修复主进程 RangeError: Invalid string length
 - 2294d82 docs(req): 新增 261123-q4h7tn Cuko 接入 OpenAI 兼容接口需求档案
-- （本次）请求日志原始报文 / 用量 / 缓存命中；完善需求档案；新增交接文档
 
-待确认 / 未完成：步骤 4（需求已于 2026-11-24 确认，见第 6 节，开发中）、请求日志测试、DeepSeek 真实缓存命中验证、DeepSeek /models 扩展字段实测。
+待确认 / 未完成（截至 2026-11-24 12:10）：输入框用量改胶囊 + 浮动面板（已确认，待实现）、界面真机验证、DeepSeek /models 扩展字段实测、验收打勾与 status。已完成：步骤 4（ab5c953）、请求日志测试（973ee8b）、DeepSeek 真实缓存命中（第二轮 98%）。
 
 交接文档：`docs/handover/261123-q4h7tn-cuko-openai-handover.md`
 

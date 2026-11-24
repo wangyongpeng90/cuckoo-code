@@ -1,180 +1,201 @@
 # Cuko 接入 OpenAI 兼容接口：交接文档
 
-> 需求 ID：`261123-q4h7tn-cuko-openai`；分支：`feat/261123-q4h7tn-cuko-openai`；整理时间：2026-11-24（Asia/Shanghai）
+> 需求 ID：`261123-q4h7tn-cuko-openai`；分支：`feat/261123-q4h7tn-cuko-openai`；整理时间：2026-11-24 12:10（Asia/Shanghai）
 > 项目根目录：`C:\d\SourceCode\2026\cuckoo-code`
+> 接手方：在 Cuko 窗口里、用 OpenAI 协议模型工作的 AI
 
-## 1. 任务背景与最终目标
+## 0. 接手须知（先看这一节）
 
-### 1.1 用户的原始需求
-- 先读懂 Cuckoo Code 的 Cuko API 部分，再让 Cuko 支持标准 OpenAI 接口。用户原话：
-  > “我不想转换……如果用户选择了 OpenAI Chat Completions 的协议供应商，那么在 cuko api 对话框下方的模型选择，选择了设置了 OpenAI Chat Completions 的模型就用 OpenAI Chat Completions 协议，选择 cuko api 就用 cuko api”
-- 后加：请求日志要像 Chrome 开发者工具的网络面板，原始请求报文是什么样就显示什么样。
+- 你运行在 Cuko 窗口里，而 Cuko 就是本项目做出来的程序。你改的运行时代码（界面 / 主进程）要等用户手动重启 Cuckoo 才生效；你不能自己重启（会把自己关掉），也不要给用户写重启脚本，用文字告诉用户做什么、做完看什么即可。
+- 阅读顺序：本文件 → 需求档案 `docs/requirements/261123-q4h7tn-cuko-openai.md` → `git status -sb` 与 `git log master..HEAD --oneline` → `src/ui/cuko/composer-stats.ts` → `src/ui/cuko/app.tsx` 里的 `ComposerSlotsContext` / `CukoUsage` / `usageView`。
+- 从第 2 节「未完成」第 1 项开始做；每完成一项跑 typecheck / test / lint，全绿再继续。
+- 第 8 节是必须遵守的坑。
 
-### 1.2 约束条件
-> “我们不用 function calling，我们的 agent 的特点就是对话内联工具调用，包括系统提示词我们也不用系统提示词，我们都用用户提示词，原因是我们是一个开放的、能让用户看到 ai 到底在做什么的 agent，还有要兼容 deepseek 的思考内容响应，还要考虑 deepseek 的命中缓存，尽最大努力去命中缓存，也就是每次发送之前的对话不要变化”
+## 1. 任务背景与目标
 
-- 不用 `tools` / function calling，不用 `system` 角色；工具调用继续用 cuckoo 代码块；兼容 `reasoning_content`。
-- 每轮发出的历史只在末尾追加，前面一字不变（命中 DeepSeek 前缀缓存）。
-- 这一版不支持附件。
-
-### 1.3 验收标准（需求档案 `docs/requirements/261123-q4h7tn-cuko-openai.md`）
-- 纯函数单测通过；OpenAI 协议多轮对话 + 工具循环可用；DeepSeek 第二轮起缓存命中 > 0。
-- 设置页可选协议、刷新模型不丢用户修改；聊天窗口：思考强度选择、命中率、60% 提醒、附件拦截。
-- Cuko 协议行为不变；`typecheck` / `test` / `lint` / `compile` 全绿。
-- 请求日志能看请求头（密钥打码）/ 请求体原文 / 响应原文。
+- 让 Cuko 除 Cuko API 外，还支持标准 OpenAI Chat Completions 协议：Provider 选了 OpenAI 协议，聊天里选它的模型就走 OpenAI 协议，选 Cuko API 的模型就走 Cuko API，不加中间转换服务。
+- 约束（用户原话要点）：不用 function calling、不用 system 角色，工具调用仍是对话内联的 cuckoo 代码块，用户能看到 AI 在做什么；兼容 DeepSeek 的 `reasoning_content`；尽最大努力命中 DeepSeek 前缀缓存，即每次发送时前面的对话一字不变；这一版不支持附件。
+- 请求日志要像 Chrome 开发者工具的网络面板：请求头（密钥打码）/ 请求体原文 / 响应原文。
+- 验收标准见需求档案「验收标准」一节。
 
 ## 2. 当前进度
 
-### 已完成
-| 状态 | 内容 | 依据 |
-|---|---|---|
-| ✅ | 需求讨论 21 题 + 请求日志 2 题全部确认（见第 3 节） | 对话 |
-| ✅ | 步骤 1：`src/app/cuko-openai.ts`（纯函数）+ SSE 解码器 `flush()` + `test/cuko-openai.test.js` | 提交 `38db2bc`（需求档案 `2294d82`）；后台检查全绿 |
-| ✅ | 2-1 / 2-2：补列、flush、出错不执行工具、断开标记不完整 | 提交 `1cb6b18` |
-| ✅ | 2-3：运行器接入 OpenAI 协议（原文重放 / 停止出错 / 自动重试） | 提交 `3c0ac66` |
-| ✅ | 2-3b：切到 OpenAI 模型时直接改绑定并补齐旧原文 | 提交 `f5c1c40` |
-| ✅ | 2-4：用户消息改由主进程落库 / 改标题不阻塞发送 / 显示自动重试 | 提交 `1189cd6` |
-| ✅ | 2-5：`test/cuko-runner-openai.test.js`（5 个用例：前缀不变 / 工具循环 / 503 重试 / 401 / 停止） | 提交 `278375e` |
-| ✅ | 3-1：Provider 协议与参数读写、模型目录合并写入、按表单获取模型 | 提交 `4c36f3d` |
-| ✅ | 3-2：设置页支持 OpenAI 协议、请求参数、可编辑模型目录与推理档位 | 提交 `98dcb1d`；用户确认页面已有 |
-| ✅ | 请求日志：协议 / 第几次尝试 / 用量与缓存命中 / 本轮新增条数；点开看请求头（密钥打码）、请求体原文、响应原文；只保留最近 20 条原文 | 本次提交（后台批次 cuko4 检查、cuko6 提交） |
+分支状态：本地比 origin 多 4 个提交（都没 push）；工作区只剩未跟踪的 `deepseek-web-attachments/`（不要动、不要提交）。
 
-> 2-x / 3-x 的提交不是本对话写的代码，执行者待确认。完整提交列表：`git log master..HEAD`。
+### 已完成（提交按时间顺序）
 
-### 待确认 / 未开始
-- ✅ 步骤 2-4 已完成（提交 `1189cd6`，见上表）。
-- ❓ 步骤 4 聊天窗口：思考强度选择器、输入框下方「上下文 x.xx k · 缓存命中 xx%」、60% 提醒、OpenAI 会话附件拦截，是否已做待确认。
-- ⬜ 请求日志的测试断言。
-- ⬜ 用户重启（`npm start`）后验证请求日志面板。
-- ⬜ 真实 DeepSeek 验证第二轮起 `prompt_cache_hit_tokens > 0`。
-- ⬜ 实测 DeepSeek `/models` 返回的扩展字段。
-- ⬜ 需求档案验收项逐项打勾；是否合并回 `master`（待用户决定）。
+| 提交 | 内容 |
+|---|---|
+| 2294d82 | 需求档案 |
+| 38db2bc / 1cb6b18 | 纯函数 `src/app/cuko-openai.ts`、SSE 解码器 `flush()`、补列与运行器小修 |
+| 3c0ac66 / f5c1c40 / 1189cd6 / 278375e | 运行器接入 OpenAI（原文重放、停止 / 出错、自动重试、切模型补齐原文、用户消息由主进程落库）与集成测试 |
+| 4c36f3d / 98dcb1d | Provider 协议与参数、模型目录、设置页 |
+| 901000f / 9fb8ad0 | 请求日志原始报文 / 用量 / 缓存命中；交接文档 |
+| 99f3f2d | chore(lint)：`eslint.config.js` 全局 ignores 加 `tmp/**` `.cuckoo/plugins/**` `resources/runtime/**` |
+| ab5c953 | 步骤 4：模型选择器两级菜单（模型 / 推理等级）、推理等级按会话保存、输入框下方「xxx tok · 缓存命中 · 上下文」与 60% 提醒 |
+| 973ee8b | 请求日志测试断言（协议 / 尝试次数 / 用量归一 / 原文一致 / 密钥打码 / 列表不含原文 / 超过 20 条释放原文） |
+| 本文件所在提交 | 交接文档更新；需求档案记录胶囊方案与进度 |
 
-## 3. 关键决策与原因
+验证情况（2026-11-24 11:58）：`npm run typecheck` 0 错误；`npx vitest run cuko` 6 个文件 117 个用例全过；`npx eslint .` 0 错误（34 个警告是旧的）；`npm run compile` 成功。用户用真实 DeepSeek 实测：第二轮起缓存命中 98%；切换推理等级后的第一次请求命中 0% 属正常（缓存还没写好），下一次恢复。
 
-| # | 事项 | 结论 | 原因 / 放弃的方案 |
-|---|---|---|---|
-| 1 | 接口 | Chat Completions（`/v1/chat/completions`） | 兼容面最广；放弃 Responses API、放弃两种都做 |
-| 2 | 分流 | 按 Provider「API 协议」分流，不加转换服务 | 用户要求 |
-| 3 | 工具 | cuckoo 代码块，不用 function calling | 用户要求；所有模型可用 |
-| — | 角色 | 不用 system，只有 user / assistant | 开放透明 |
-| 4 | 系统提示词 | 与用户第一句话合成第 1 条 user，分隔 `\n\n---\n\n` | 角色交替、缓存友好 |
-| 5 | 历史来源 | `cuko_messages.sent_role / sent_text` 写入即固定，每轮原样重放 | 照 deepseek-harness「会变的东西写入时固定」；放弃按规则重拼、放弃只存内存 |
-| 6 | 思考内容 | 不发回，只存 `think` 并折叠显示 | DeepSeek 文档：请求不带 tools 时无需回传，回传也被忽略 |
-| 7-8 | 附件 | 本版不做；OpenAI 会话发送前拦下并提示 2 秒 | 用户决定；不悄悄丢 |
-| 9 | 跨协议切换 | 切到 OpenAI 直接改绑定，旧消息缺的原文切换时补齐后固定；切到 Cuko 照旧 compress | 不多发请求，历史完整 |
-| 10 | 停止 / 出错 | 用户停止：已输出正文进历史；出错 / 断开：整条不进历史；未执行脚本写「（运行被停止，脚本未执行）」 | 照 harness 的 assistant/attempt 与 assistant/message 区分 |
-| 11 | 重试 | 仅 OpenAI：网络 / 断开 / 429 / 5xx，最多 3 次，间隔 2s / 4s / 8s，原样重发；400 / 401 / 403 / 404 与用户停止不重试 | 前缀不变，缓存不受影响 |
-| 12 | 设置页 | 协议下拉可选；获取模型走主进程；`joinApiUrl` 不重复拼 `/v1` | 原下拉写死、渲染进程跨域 |
-| 13 | 缓存命中 | 归一 `cache_read_tokens` / `cache_miss_tokens`，存库并显示 | DeepSeek：`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`；OpenAI：`prompt_tokens_details.cached_tokens` |
-| 14 | 顺带修 bug | 只修 #1 出错仍执行工具、#4 末帧丢失、#5 断开显示完成、#9 用户消息由界面保存、#10 改标题失败卡住 | 新功能依赖，其余留到以后 |
-| 15 | 超长 | 不压缩；用量 ≥ 60% 提醒但允许继续发送；真超出时提示新开会话 | 用户要求 |
-| 16 | 额外参数 | Provider「额外请求参数（JSON）」原样合并，不能覆盖必需字段 | 各家特殊参数通用 |
-| 17 | 模型目录 | 每模型：名称 / 上下文窗口 / 最大输出 / 输入类型（本版不生效）/ 推理档位表；`api_meta` 与 `user_meta` 分存，刷新不覆盖用户修改；可手动添加；不内置模型表 | 用户要求必须有思考强度设置 |
-| 18 | 思考强度存哪 | 按会话（`cuko_sessions.reasoning_effort`）；新建用模型默认档位；切模型同名档位沿用 | 多会话并行互不干扰 |
-| 19 | 思考强度怎么发 | 字段名可改（默认 `reasoning_effort`）；off 不发该字段并合并「关闭思考参数（JSON）」；优先级 额外参数 < 最大输出 < 思考强度 < 必需字段 | DeepSeek 默认开思考（强度 high） |
-| 日志 1 | 请求日志补齐 | 协议、第几次尝试（2/4）、用量与命中率、本轮新增条数 | 验证缓存 / 参数的唯一途径 |
-| 日志 2 | 原始报文 | 请求头（密钥打码）/ 请求体原文 / 响应原文；保留最近 20 条；点开时经 IPC 读取 | 放弃只看请求体、放弃 100 条全存 |
+### 未完成（按顺序做）
 
-DeepSeek 推荐配置：字段名 `reasoning_effort`；关闭思考参数 `{"thinking":{"type":"disabled"}}`；档位 off / low / high / max（medium、xhigh 按 high，ultra 按 max）。
+1. 输入框下方改成「胶囊 + 点击浮动面板」（方案 A，用户已确认，还没写代码）。规格见第 5 节。
+2. 用户手动重启后做界面验证，清单见第 6 节。
+3. 实测 DeepSeek `/models` 返回的扩展字段，有出入就调整 `parseModelList`（`src/app/cuko-openai.ts`）。做法见第 7 节。
+4. 需求档案验收项逐项打勾（以验证结果为准），`status` 改为 review 或 done，运行 `npm run docs:index`。
+5. 按项目说明第九节写交付报告：做了什么 / 没做什么（及原因）/ 验证结果 / 后续建议（第 9 节列了要写进去的已知问题）。
+6. 问用户：是否 push 到 origin（还要不要推 github）、是否以及何时合并回 master、版本号怎么定。一次只问一题。
 
-## 4. 重要上下文与事实
+## 3. 关键决策
+
+### 3.1 2026-11-24 新确认（步骤 4）
+
+| 事项 | 结论 |
+|---|---|
+| 范围 | 只对 OpenAI 协议会话生效；Cuko 协议会话的显示和行为不变 |
+| 上下文 | 最近一次请求的 `prompt_tokens`（照 harness 的 `pressureTokens`）；不估算、不加 `~`，比实际慢一拍可以接受；格式照 harness：小于 1000 原样，小于 100K 保留 1 位小数（8.2K），其余取整（350K），百万用 M |
+| 60% 提醒 | 模型填了上下文窗口且用量 ≥ 60% 变橙色，显示「82.3K / 128K（64%）」，不拦发送 |
+| 缓存命中 | 整个会话累计：Σ`cache_read_tokens` ÷ Σ(`cache_read_tokens` + `cache_miss_tokens`)，固定两位小数；没全中最多 99.99%，全中 100.00%；从没返回命中字段的会话不显示 |
+| 会话用量 xxx tok | 当前会话每条落库回复的 `input_tokens` + `output_tokens` 求和（缺字段用 `total_tokens`），格式同上下文；与 harness 的差别：harness 还计入后来被重试的尝试，我们只算落库回复，实际几乎一样 |
+| 排列 | 数据库图标 + xxx tok · 缓存命中 xx.xx% · 上下文 x.xK |
+| 明细 | 先做的是悬停提示（`title`），用户实测「排版不好看、点了没浮窗」，改为方案 A（第 5 节），待实现 |
+| 模型选择器 | 两级菜单：按钮显示「模型名 + 档位」（去掉 Default）；一级「模型 >」「推理等级 >」；运行中「模型」置灰、推理等级仍可改 |
+| 推理等级 | 按会话存 `cuko_sessions.reasoning_effort`；新会话用模型默认档位；切模型同名沿用否则默认；未建会话先记在界面，建会话后保存；改档位不更新 `updated_at`（避免会话列表跳动） |
+| 不支持时 | Cuko 协议或模型未开推理档位：「推理等级」行置灰、显示「不支持」，悬停提示原因 |
+| 附件 | 本次完全不做（包括按钮置灰 / 发送前拦截）；主进程已有拦截（`cuko-runner.ts` 搜「当前模型暂不支持附件」） |
+| 纯函数位置 | `src/ui/cuko/composer-stats.ts`（聊天界面不引用 `src/app`）；测试里与 `src/app/cuko-openai.ts` 交叉校验 60% 阈值与档位规则 |
+| lint | 把 git 已忽略、且不含被跟踪文件的本地目录加进全局 ignores，单独 chore 提交 |
+
+### 3.2 之前的决策（详见需求档案第 1~9、12 节，仍然有效）
+
+- 接口用 Chat Completions；按 Provider「API 协议」分流；工具用 cuckoo 代码块；不用 system 角色，系统提示词与用户第一句合成第 1 条 user（分隔 `\n\n---\n\n`）。
+- 历史来自 `cuko_messages.sent_role / sent_text`，写入即固定，每轮原样重放；思考内容不发回，只存 `think`。
+- 停止 / 出错 / 断开：用户停止保留已输出正文；出错和断开整条不进历史。
+- 重试仅 OpenAI：网络 / 断开 / 429 / 5xx，最多 3 次，间隔 2s / 4s / 8s，原样重发；400 / 401 / 403 / 404 与用户停止不重试。
+- 跨协议切换：切到 OpenAI 直接改绑定并补齐旧原文；切到 Cuko 照旧 compress。
+- 请求参数优先级：额外参数 < 最大输出 < 思考强度 < 必需字段；off 不发强度字段并合并「关闭思考参数」。DeepSeek 推荐：字段 `reasoning_effort`，关闭参数 `{"thinking":{"type":"disabled"}}`。
+- 模型目录 `api_meta` / `user_meta` 分存，刷新不覆盖用户修改。
+- 请求日志：保留 100 条摘要、最近 20 条原文；原文点开时经 IPC `cuko:get-request-log-raw` 读取。
+
+## 4. 环境与约定
 
 ### 4.1 用户与沟通方式
-- 用户自称小白，只能通过一个老旧后台的 JS 窗口操作这台 Windows x64 机器。给用户的代码必须放在以 ```cuckoo` 开头的代码块里，工具函数都要 `await`，多行文本用反引号模板字符串。
-- 需求确认一次只问一题，给选项 + 推荐 + 理由；选项直接写成纯文本，不用选择卡，用户回复字母。时区 Asia/Shanghai。
 
-### 4.2 JS 窗口环境
-- 可用工具：`read` `readLines` `write` `edit` `glob` `grep` `bash`（cmd.exe）`pwsh` `deleteFile` `mysql` `webFetch` `runAgent` `mcpCall` 等。
-- 60 秒无输出就判超时；`bash` 默认超时 30 秒；长输出会被截断或变成附件。
-- 脚本一旦 `throw`，前面的 `log` 全部丢失。
-- `runAgent` 在这个窗口和 Cuko 窗口都会失败（「父窗口上下文不存在」，`src/app/entry.ts:941-943`）。
+- 用户自称小白，时区 Asia/Shanghai。
+- 给用户的代码放在以三个反引号加 cuckoo 开头的代码块里；只用 `//` 单行注释，不用可选链 `?.`，不用 `throw`（用 `log` + `if/else` 收尾），工具函数都要 `await`，多行文本用反引号模板字符串。
+- 需求确认一次只问一题：选项写成纯文本（A / B / C），给推荐和理由，用户回字母。
+- 需要用户手动操作的步骤（重启、在界面上点击检查等），只用文字说明做什么、做完看什么，不给脚本，也不帮用户重启。
+- 不要动 `deepseek-web-attachments/`；push / 合并前先问用户。
+- 长任务（测试 / 类型检查 / lint / compile / 提交）放后台，再用只读脚本查结果。
 
-### 4.3 项目
-- Electron 44 / TypeScript / 纯 ESM / Vitest；规则：`.cuckoo/rules/overlay.md`、`shell-ui.md`、`test.md`。
+### 4.2 运行环境
+
+- Windows x64；`bash` 是 cmd.exe，`pwsh` 是 Windows PowerShell 5.1。
+- 可用工具：`read` `readLines` `write` `edit` `glob` `grep` `bash` `pwsh` `deleteFile` `mysql` `webFetch` `mcpCall` 等；`runAgent` 在 Cuko 窗口必定失败（`src/app/entry.ts` 里「父窗口上下文不存在」）。
+- 一个脚本 60 秒没有输出就判超时；`bash` 默认超时 30 秒；长输出会被截断或变成附件。
+
+### 4.3 后台任务写法（已验证可用）
+
+- 在 JS 里拼好 `.cmd` 文本（只能是 ASCII，不能有中文），base64 后用 `pwsh` 的 `[IO.File]::WriteAllBytes` 写到 `%TEMP%\cukoN.cmd`，再 `Start-Process -FilePath ... -WindowStyle Hidden` 启动。
+- 每步输出写 `%TEMP%\cukoN-<步骤>.log`，末行 `EXIT=0` / `EXIT=1`；全部完成写 `%TEMP%\cukoN.done`。
+- 查结果：`pwsh` 里循环最多 50 次、每次 1 秒等 done 文件（`timeoutMs: 58000`），再 `Get-Content -Tail` 读日志。
+- 已用批次：`cuko` ~ `cuko17`（17 是本次文档提交）；下一个从 `cuko18` 开始。`%TEMP%\cuko-restart.cmd` 是之前的自动重启等待窗口，用户已要求不再使用。
+- 中文提交说明：在 JS 里自己做 UTF-8 编码再 base64，写成无 BOM 的文件，`git commit -F` 提交。pre-commit 钩子会生成并带上 `docs/requirements/INDEX.md`，属正常。
+- compile 完整约 1~2 分钟。
+
+### 4.4 项目常用命令与产物
+
+- `npm run typecheck`（三套 tsconfig：主应用 / hooks / cuko）、`npx vitest run cuko`、`npx eslint .`、`npm run compile`（含 `build-cuko`，生成 `src/ui/cuko/built.html`）。
+- `npm start` 只编译主进程，不重建界面：改了界面必须先 `npm run compile`。
+- `built.html` 里中文被转成 `\uXXXX`，检查构建产物时用 `findstr /m /c:"英文标识符"`。
 - 生成物禁止手改：`src/ui/shell.html`、`src/ui/cuko/built.html`、`*.generated.ts`、`src/tools/api.d.ts`。
-- 需求档案 `docs/requirements/`；`npm run docs:index` 生成 `INDEX.md`。
-- 常用命令：`npm run typecheck`、`npx vitest run cuko`、`npm run compile`、`node scripts/build-cuko.mjs`、`npm start`。
-- 远程：`origin` = `git@codeup.aliyun.com:69f689c1ed93e361ad3c51d6/cuckoo-ai-pro.git`（阿里云 Codeup，本分支 push 的目标）；`github` = `git@github.com:wangyongpeng90/cuckoo-code.git`（本分支没推，是否同步待用户决定）。两个都是 SSH 地址。未跟踪目录 `deepseek-web-attachments/`：不要动、不要提交。
-- 参考项目 `C:\d\SourceCode\2026\deepseek-harness2`：停在标签 `dsh-v0.2.2-rc.5`（`9c2670d3bc`，detached HEAD），远程 github.com/deepseek-ai/deepseek-harness。
-- 当前版本 `cuckoo-code@0.9.2`。
+- 远程：`origin` = 阿里云 Codeup（本分支推这里，SSH）；`github` 本分支没推，是否同步待用户决定。
+- 参考项目：`C:\d\SourceCode\2026\deepseek-harness2`（标签 `dsh-v0.2.2-rc.5`，只读参考）。
+- 版本 `cuckoo-code@0.9.2`。
 
-### 4.4 代码位置（行号会变，以 grep 为准）
+### 4.5 代码位置（行号会变，以 grep 为准）
+
 | 位置 | 内容 |
 |---|---|
-| `src/app/cuko-openai.ts` | 纯函数：`normalizeProtocol` `joinApiUrl` `composeFirstUserText` `buildToolSentText` `backfillSentRows` `buildChatMessages` `buildChatCompletionsBody` `normalizeUsage` `cacheHitRatio` `createChatStreamParser` `classifyFailure` `retryDelayMs` `MAX_RETRIES=3` `parseModelList` `effectiveModelMeta` `reasoningRequestOf` `contextUsageOf`（`CONTEXT_WARN_RATIO=0.6`） |
-| `src/app/cuko-run-protocol.ts` | `createSseDecoder`（含 `flush()`、CRLF 跨数据块）；`friendlyError` 缺 `idempotency_conflict` |
-| `src/app/cuko-runner.ts`（CRLF 换行） | `CukoRequestLogEntry`、`requestParamsOf`、`pushRequestLog`、`redactHeaders`、`tapRequestRaw`、`tapResponseRaw`、`releaseOldRaw`、`getCukoRequestLogRaw`；`openAiAttempt`、`streamOpenAiRound`、`switchToOpenAiModel` |
-| 常量 | `REQUEST_LOG_MAX=100` `REQUEST_LOG_PREVIEW=10` `REQUEST_LOG_RAW_KEEP=20` `RESPONSE_RAW_MAX=2000000` |
-| `src/app/ipc/cuko.ts` | `cuko:get-request-logs`、`cuko:get-request-log-raw` |
-| `src/app/cuko-preload.ts` | `getRequestLogRaw(id)` |
-| `src/ui/cuko/request-log-dialog.tsx` | 日志面板：每 1.5 秒刷新摘要，点开读原文，原文 / 格式化切换，复制按钮 |
-| `src/ui/shell/scripts/pages/settings-cuko.tsx` | Cuko 设置页（eslint 有一条「文件被忽略」警告，可忽略） |
-| `src/session/db.ts` | 建表 / 兜底 `ALTER TABLE`；`CURRENT_DB_VERSION=5` 未升 |
-| 测试 | `test/cuko-openai.test.js`、`test/cuko-run-protocol.test.js`、`test/cuko-runner-openai.test.js` 等，cuko 相关共 5 个文件 93 个用例 |
+| `src/ui/cuko/composer-stats.ts`（LF） | `CONTEXT_WARN_RATIO` `sessionCacheTotals` `formatHitPercent` `formatTokenCount` `lastPromptTokens` `contextDisplay` `reasoningLevelsOf` `effectiveEffort` `effortLabel` `reasoningUnsupportedReason` `sessionTokenTotals` `formatExactCount` `tokenTotalsTip` |
+| `test/cuko-composer-stats.test.js`（LF） | 上述纯函数的测试（21 个用例） |
+| `src/ui/cuko/app.tsx`（CRLF） | `ModelSelector`（两级菜单）；`ComposerSlotsContext` / `CukoComposerExtra` / `CukoUsage`（模块级稳定组件，数据从 context 读）；`ChatApp` 里的 `effort` 状态、`modelMetaOf`、`handleEffortChange`、return 前的 `usageView` / `composerExtra` |
+| `src/app/ipc/cuko.ts`（CRLF） | `cuko:update-session-effort`；`cuko:update-session-model` 按规则算档位并返回 `reasoningEffort` |
+| `src/app/cuko-preload.ts`（CRLF） | `updateSessionEffort`、`getRequestLogRaw` |
+| `src/app/cuko-runner.ts`（CRLF） | 请求日志（`pushRequestLog` `redactHeaders` `tapRequestRaw` `tapResponseRaw` `releaseOldRaw` `listCukoRequestLogs` `getCukoRequestLogRaw`）；`openAiAttempt` `streamOpenAiRound` `switchToOpenAiModel` |
+| `src/app/cuko-openai.ts` | OpenAI 协议纯函数（`normalizeUsage` `parseModelList` `resolveEffortAfterSwitch` 等） |
+| `src/components/assistant-ui/elements/thread.aui.tsx` | `ComposerFooter` 插槽在 Composer 下方渲染（外层 `-mt-3`）；`ComposerExtra` 在附件按钮旁 |
+| harness 参考 | `packages/client/ui-chat/src/client/chat/StatsPills.tsx` 296-348（`UsagePill` 与明细对话框）；`.../chat/token-format.ts`（`formatTokens` `formatExactTokens` `formatCacheHitPercent`）；`.../client/locale.ts`（中文文案）；`packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx`（弹出面板：`createPortal`、点外面关闭、Esc 关闭） |
 
-新增列的实际名称由 2-x / 3-x 实现，待确认：`grep "ADD COLUMN" src/session/db.ts`。
+## 5. 下一步：胶囊 + 浮动面板（方案 A，已确认）
 
-### 4.5 后台任务的写法（已验证可行）
-- 用 `pwsh` 把一个 `.cmd` 写到 `%TEMP%`，再用 `Start-Process -WindowStyle Hidden` 启动。
-- 每步输出写 `%TEMP%\cukoN-<步骤>.log`，末行 `EXIT=0` / `EXIT=1`；全部完成写 `%TEMP%\cukoN.done`（第一批叫 `cuko-check.done`）。
-- 已用批次：`cuko`、`cuko2`、`cuko3`、`cuko4`（请求日志改动的检查）、`cuko5`（上一次提交尝试，实际没有执行）、`cuko6`（请求日志提交 + push）、`cuko7`（交接文档补充提交 + push，push 带 SSH BatchMode）。
-- 中文提交说明要先用 PowerShell 按 UTF-8（无 BOM）写成文件再 `git commit -F`；`.cmd` 文件本身用 ASCII 编码，不能含中文。
+- 只对 OpenAI 协议会话；Cuko 会话保持原来的「上下文 x.xx k」。
+- 胶囊 1（可点击的 button）：数据库图标 + 「106K tok · 缓存命中 79.69%」。没有命中数据时只显示 tok；没有 tok 时这个胶囊不显示。
+- 胶囊 2（只显示）：「上下文 9.3K」；≥ 60% 时橙色并显示「82.3K / 128K（64%）」。
+- 样式：浅色底、圆角、细边框；图标和文字垂直居中（`inline-flex items-center`）；两个胶囊之间留间距，整体居中。用户反馈的问题是图标偏上、三项挤成一行、看不出哪项能点。
+- 浮动面板（照 harness 的 UsagePill 对话框）：点击胶囊 1 打开，再点一次 / 点外面 / 按 Esc 关闭，显示在胶囊上方；标题「Token 用量」，右侧是精确合计（千分位）；下面几行：缓存命中 xx.xx%（无数据省略）、未缓存输入、缓存读取、输出，都用精确数字千分位。我们没有缓存写入字段，不显示这一行。
+- 数据已备好：`sessionTokenTotals` 返回 `total / uncachedInput / cacheRead / output`，`formatExactCount` 做千分位，`sessionCacheTotals` + `formatHitPercent` 算命中率。不再使用的 `tokenTotalsTip` / `totalTip` 删掉，测试同步调整。
+- 组件必须定义在模块级，数据从 `ComposerSlotsContext` 读；不要在 `ChatApp` 的渲染函数里定义组件，否则流式输出时组件被重新挂载，面板会自己关掉。
+- 面板别被父元素裁剪：用 `createPortal` 挂到 `document.body`，或确认外层没有 `overflow: hidden`；注意 z-index。
+- 改完：后台跑 typecheck / `npx vitest run cuko` / `npx eslint .` / compile，用 `findstr` 检查 `built.html` 里有新的英文标识；再请用户手动重启，按第 6 节验证。
+- 需求档案第 6 节已追加一条「已确认，待实现」，实现后改成正式描述（替换「悬停显示明细」那句）。
 
-## 5. 产出物清单
-- `docs/requirements/261123-q4h7tn-cuko-openai.md`（含第 12 节与进度记录）、`docs/requirements/INDEX.md`
-- `docs/handover/261123-q4h7tn-cuko-openai-handover.md`（本文件）
-- `src/app/cuko-openai.ts`、`src/app/cuko-run-protocol.ts`、`src/app/cuko-runner.ts`、`src/app/ipc/cuko.ts`、`src/app/cuko-preload.ts`、`src/ui/cuko/request-log-dialog.tsx`、`src/ui/shell/scripts/pages/settings-cuko.tsx`
-- `test/cuko-openai.test.js`、`test/cuko-runner-openai.test.js`
-- 生成物 `src/ui/cuko/built.html`、`src/ui/shell.html`（是否被 git 跟踪待确认）
+## 6. 界面验证清单（用户手动重启 Cuckoo 后检查）
 
-## 6. 未解决问题与风险
-1. 步骤 4 状态待确认。
-2. 请求日志没有测试。
-3. 缓存命中没有用真实 DeepSeek 验证，只有单测和假服务测试证明前缀不变。
-4. DeepSeek `/models` 的扩展字段是从 harness 源码推出来的，未实测。
-5. 问题清单遗留（不在本次范围）：
-   - `runAgent` / `nameConversation` 在 Cuko 窗口必定失败（`entry.ts:941-943`、`:959-961`）；
-   - Cuko 协议切模型时 compress 没拿到 `providerSessionId` 会存 null；
-   - `switchModelWithHistory` 没有超时、不能取消；
-   - compress 历史时 `write` 的结果被替换（`compress-history.ts`）；
-   - `select-directory` 用 `showOpenDialogSync` 会卡主进程；
-   - 删 Provider 后绑定它的会话无人处理；
-   - 自定义回复语在主进程不生效（`setSharedSettingReader` 只在 `src/bridge/entry.ts:254` 注入）；
-   - `api_key` 明文保存且会返回给界面；
-   - `friendlyError` 缺 `idempotency_conflict`；
-   - `db.ts:217` 回填工作区用 UTC 时间；
-   - 旧需求档案 `261109-8ms69z-cuko-api.md` 有 4 处与代码不一致。
-6. push 走 SSH：`GIT_TERMINAL_PROMPT=0` 对 SSH 无效，SSH 密钥有密码或首次连接要确认主机指纹时，后台 push 会一直卡住。后台 push 要设 `GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=20`，让它直接报错而不是卡住。
-7. pre-commit 钩子耗时不确定，所以提交放在后台执行。
+OpenAI 协议会话（最好用 DeepSeek）：
 
-## 7. 下一步行动清单（按优先级）
-1. 查 `%TEMP%\cuko6-*.log`：commit / push 是否 `EXIT=0`，`git status -sb` 是否与 origin 同步。
-2. 请用户关掉 Cuckoo 后运行 `npm start`，用 OpenAI 模型发两轮，打开请求日志检查：「OpenAI」「命中 xx%」、点开有请求头 / 请求体 / 响应三块、密钥显示为 `Bearer ****` + 后 4 位。
-3. 核对步骤 4：`grep "reasoningEffort|reasoning_effort|cacheHitRatio|contextUsageOf" src/ui/cuko`；没做就按第 3 节第 15、18 题实现。
-4. 在 `test/cuko-runner-openai.test.js` 补断言：`usage.cache_read_tokens` 有值；503 重试后日志 `attempt` 依次 1、2，`maxAttempts` 为 4；`getCukoRequestLogRaw(id).requestBody` 等于假服务收到的请求体；Authorization 已打码；超过 20 条后旧记录 `rawReleased` 为 true；列表接口不含 `requestBody`。
-5. 用真实 DeepSeek 跑多轮 + 工具，确认第二轮起命中 > 0（密钥不要贴在聊天里）。
-6. 实测 DeepSeek `/models`，有出入就调整 `parseModelList`。
-7. 需求档案验收项打勾，`status` 改为 done 或 review，运行 `npm run docs:index`。
-8. 问用户是否合并回 `master`、版本号怎么定。
+1. 模型按钮显示「模型名 + 档位」，如 `DeepSeek-V4.1-Flash High`。
+2. 点开有「模型 >」「推理等级 >」两行，鼠标移上去右边弹出对应面板。
+3. 推理等级选 Max 后按钮变成 Max；切到别的会话再切回来仍是 Max。
+4. 输入框下方是两个胶囊：「数据库图标 xxx tok · 缓存命中 xx.xx%」和「上下文 x.xK」，排版整齐。
+5. 点击第一个胶囊弹出「Token 用量」面板，明细数字正确；点外面 / Esc 能关闭；流式输出时面板不会自己关掉。
+6. 请求日志：记录上有「OpenAI」「命中 xx%」；点开有请求头 / 请求体 / 响应三块；Authorization 显示 `Bearer ****` 加后 4 位；请求体里有 `"reasoning_effort":"max"`。
+
+Cuko API 会话：
+
+7. 「推理等级」行置灰、显示「不支持」，悬停有原因。
+8. 输入框下方仍是原来的「上下文 x.xx k」。
+
+重启前提醒用户：如果标题为 cuckoo-restart 的黑色窗口还开着，先关掉它（它会在 Cuckoo 退出后自动 `npm start`，造成多开）。
+
+## 7. DeepSeek /models 实测的做法
+
+- 地址和密钥在本机 Cuko 数据库的 `cuko_providers` 表（`base_url` / `api_key` / `protocol`）。数据库文件位置看 `src/session/db.ts`（搜 `DatabaseSync` / `getPath`），再到 `%APPDATA%` 下带 cuckoo 的目录或 `%USERPROFILE%\.cuckoo` 里找 `.db` / `.sqlite`。
+- 先确认本机 `node -e "require('node:sqlite')"` 可用，以只读方式打开数据库，取 `protocol = 'openai'` 且地址是 DeepSeek 的 Provider，在本机发 `GET {base_url}/v1/models`（地址末尾已有 `/v1` 不重复拼，规则同 `joinApiUrl`）。
+- 只打印字段名和前两个模型的结构；密钥只在本机请求里用，不打印、不写文件、不放进日志。
+- 现在 `parseModelList` 只读 `context_window` / `max_output_tokens` / `input_modalities`（从 harness 源码推出来的，未实测）；有出入就改并补测试。
 
 ## 8. 交接注意事项（别再踩的坑）
-1. 判断分支是否存在不要用 `git branch --list`：空输出会显示成 `(no output)`，被当成分支名。用 `git rev-parse --verify --quiet refs/heads/<分支>` 看退出码。
-2. 脚本里不要 `throw`，用 `log` + `if/else` 结束，否则前面的输出全丢。
-3. 长任务（测试 / 类型检查 / 编译 / 提交）放后台，再用只读脚本查结果。
-4. `built.html` 里的中文被 esbuild 转成 `\uXXXX`，检查构建产物要搜英文标识符（如 `getRequestLogRaw`）。
-5. 改界面后必须 `npm run compile` + `node scripts/build-cuko.mjs`，再用 `npm start` 启动；安装版看不到改动；不要在后台编译时 `npm start`。
-6. `cuko-runner.ts` 是 CRLF 换行，整文件重写时要保留。
-7. 改代码前先核对每处原文的出现次数，有一处对不上就全部不写。
-8. 聊天界面会把带 secret / password / token 字样的变量名打码成 `[REDACTED_...]`，代码里不要用这类名字。
-9. 给用户的脚本只用双斜杠单行注释：用「斜杠加两个星号」开头的块注释时，后台报过「Unary operator used immediately before exponentiation expression」；稳妥起见也不用可选链 `?.`。
-10. PowerShell 输出里 ✅ 会显示成 `?`；`npm warn Unknown env config "electron-mirror"` 可以忽略。
-11. 遵守项目说明与 `.cuckoo/rules/*.md`；生成物禁手改；每一步都跑 typecheck / test / lint。
 
-接手前先读：本文件 → 需求档案 → `git log master..HEAD --stat` → `src/app/cuko-openai.ts` → `src/app/cuko-runner.ts` 的 `streamOpenAiRound` 与请求日志部分。
+1. 判断分支是否存在不要用 `git branch --list`（空输出显示成 `(no output)`）；用 `git rev-parse --verify --quiet refs/heads/<分支>` 看退出码。
+2. 脚本里不要 `throw`，否则前面的 `log` 全部丢失。
+3. 长任务放后台，再用只读脚本查结果；后台编译时不要让用户 `npm start`。
+4. `built.html` 里中文是 `\uXXXX`，搜英文标识符。
+5. 改界面后必须 `npm run compile` 再让用户重启；安装版看不到改动。
+6. 保持每个文件原来的换行符：`app.tsx` / `ipc/cuko.ts` / `cuko-preload.ts` / `cuko-runner.ts` / 需求档案 / 本文件是 CRLF，`composer-stats.ts` 与两个 cuko 测试文件是 LF。
+7. 改文件前核对每个锚点只出现 1 次，并把读到的行用文件换行符拼回去，长度必须等于 `[IO.File]::ReadAllText` 的长度（或只差末尾一个换行）才写；多处改动按行号从后往前应用；有一处对不上就全部不写。
+8. 聊天界面会把 secret / password 字样的变量赋值打码成 `[REDACTED_...]`，这不是源文件内容；新代码里不要用这类变量名。
+9. 给用户的脚本只用 `//` 注释；块注释在后台报过「Unary operator used immediately before exponentiation expression」；不用 `?.`。
+10. PowerShell 输出里 ✅ 会显示成 `?`；`npm warn Unknown env config "electron-mirror"` 和 git 的「LF will be replaced by CRLF」警告都可以忽略。
+11. PowerShell 5.1 把数组通过管道交给 git 等外部命令时，每行末尾会多一个回车，`git check-ignore --stdin` 会一个都匹配不上；改成逐个调用。
+12. 用 `Get-CimInstance Win32_Process` 按命令行找进程时，筛选字符串也在自己的命令行里，会把检查命令自己算进去；要限定进程名并排除 `$PID`。
+13. `eslint .` 之前因 `tmp/` 等本地目录报 2553 个错误，已加 ignores；如果再出现大量错误，先按目录统计并确认是不是 git 已忽略的本地目录，别去修第三方文件。
+14. 写 Markdown 时反引号就写反引号，不要用其它符号占位（旧需求档案第 12 节出现过占位符没替换回来的问题，已修）。
+15. 遵守项目说明与 `.cuckoo/rules/*.md`；每一步都跑 typecheck / test / lint。
 
-## 9. 需要用户补充的信息
-1. 2-x / 3-x 是哪个 AI 或对话做的，有没有它的交接记录；步骤 4 是否已完成。
-2. 除了 `origin`（Codeup），是否还要推到 `github`；是否需要提合并请求。
-3. 是否、何时把 `feat/261123-q4h7tn-cuko-openai` 合并回 `master`，版本号怎么定。
-4. 重启后请求日志面板的验证结果（截图或文字）。
+## 9. 已知问题（写进交付报告）
+
+1. lint 覆盖缺口：`src/app/*.ts`、`src/ui/cuko/*.ts(x)` 等 ts 文件在 eslint 里提示「File ignored because no matching configuration was supplied」，实际没被 lint，只靠 typecheck 和测试；建议以后单独补 eslint 的 ts 配置。
+2. 会话用量 tok 与 harness 的统计口径差异（见 3.1）。
+3. 请求日志面板（`src/ui/cuko/request-log-dialog.tsx`）有自己的一份命中率算法（取整），和 `composer-stats.ts` 不共用。
+4. OpenAI 会话的附件：界面按钮没置灰，发送时由主进程拦下并提示「当前模型暂不支持附件」。
+5. DeepSeek `/models` 扩展字段未实测（第 7 节）。
+6. 旧问题清单（不在本次范围）：`runAgent` / `nameConversation` 在 Cuko 窗口必定失败；Cuko 协议切模型时 compress 没拿到 `providerSessionId` 会存 null；`switchModelWithHistory` 没有超时、不能取消；compress 历史时 `write` 的结果被替换；`select-directory` 用 `showOpenDialogSync` 会卡主进程；删 Provider 后绑定它的会话无人处理；自定义回复语在主进程不生效；`api_key` 明文保存且会返回给界面；`friendlyError` 缺 `idempotency_conflict`；`db.ts` 回填工作区用 UTC 时间；旧需求档案 `261109-8ms69z-cuko-api.md` 有 4 处与代码不一致。
+7. push 走 SSH：后台 push 要设 `GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=20`，避免卡在密码或指纹确认。
+
+## 10. 需要用户决定的事
+
+1. 是否 push 到 origin（Codeup）；是否同步到 github；是否需要合并请求。
+2. 是否、何时把 `feat/261123-q4h7tn-cuko-openai` 合并回 `master`，版本号怎么定（当前 0.9.2）。
+3. 界面验证结果（第 6 节）。
