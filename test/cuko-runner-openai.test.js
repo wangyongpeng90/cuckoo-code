@@ -224,3 +224,108 @@ describe('cuko-runner：OpenAI 协议', () => {
     expect(rowsOf(sid).at(-1)).toMatchObject({ role: 'assistant', sent_role: 'assistant', sent_text: 'partial' });
   }, 20000);
 });
+
+
+// [261123-q4h7tn-cuko-openai] 请求日志：协议 / 尝试次数 / 用量归一 / 原始报文（密钥打码）/ 列表只给摘要 / 超过 20 条释放原文
+let listCukoRequestLogs;
+let getCukoRequestLogRaw;
+let clearCukoRequestLogs;
+
+const LOG_USAGE = { prompt_tokens: 100, completion_tokens: 5, total_tokens: 105, prompt_tokens_details: { cached_tokens: 60 }, prompt_cache_hit_tokens: 60, prompt_cache_miss_tokens: 40 };
+
+function headerOf(headers, name) {
+  const key = Object.keys(headers || {}).find((k) => k.toLowerCase() === name);
+  return key === undefined ? undefined : headers[key];
+}
+
+describe('cuko-runner：请求日志', () => {
+  beforeAll(async () => {
+    ({ listCukoRequestLogs, getCukoRequestLogRaw, clearCukoRequestLogs } = await import('../src/app/cuko-runner.js'));
+  });
+
+  it('一次成功请求：协议 / 尝试次数 / 用量归一；原文与假服务收到的一致；密钥打码；列表不含原文', async () => {
+    const longAuth = 'k-test-abcdefgh1234';
+    db.prepare('UPDATE cuko_providers SET api_key = ? WHERE id = ?').run(longAuth, 'p1');
+    try {
+      clearCukoRequestLogs();
+      const sid = newSession();
+      handlers.push((res) => sendText(res, 'ok', LOG_USAGE));
+      await runTurn(sid, 'hello');
+      expect(requests).toHaveLength(1);
+      expect(requests[0].auth).toBe('Bearer ' + longAuth);
+
+      const logs = listCukoRequestLogs();
+      expect(logs).toHaveLength(1);
+      const entry = logs[0];
+      expect(entry.protocol).toBe('openai');
+      expect(entry.attempt).toBe(1);
+      expect(entry.maxAttempts).toBe(4);
+      expect(entry.status).toBe('ok');
+      expect(entry.httpStatus).toBe(200);
+      expect(entry.usage.input_tokens).toBe(100);
+      expect(entry.usage.cache_read_tokens).toBe(60);
+      expect(entry.usage.cache_miss_tokens).toBe(40);
+      expect(entry.hasRaw).toBe(true);
+      expect(entry.requestBody).toBeUndefined();
+      expect(entry.requestHeaders).toBeUndefined();
+      expect(entry.responseText).toBeUndefined();
+
+      const raw = getCukoRequestLogRaw(entry.id);
+      expect(raw.method).toBe('POST');
+      expect(raw.rawReleased).toBeFalsy();
+      expect(JSON.parse(raw.requestBody)).toEqual(requests[0].body);
+      expect(headerOf(raw.requestHeaders, 'authorization')).toBe('Bearer ****1234');
+      expect(JSON.stringify(raw)).not.toContain(longAuth);
+      expect(raw.responseText).toContain('[DONE]');
+    } finally {
+      db.prepare('UPDATE cuko_providers SET api_key = ? WHERE id = ?').run('k-test', 'p1');
+    }
+  });
+
+  it('503 自动重试：每次尝试各记一条，attempt 依次 1、2，maxAttempts 为 4，两次请求体原文相同', async () => {
+    clearCukoRequestLogs();
+    const sid = newSession();
+    handlers.push((res) => {
+      res.writeHead(503, { 'Content-Type': 'application/json' });
+      res.end('{"error":"busy"}');
+    });
+    handlers.push((res) => sendText(res, 'ok', LOG_USAGE));
+    await runTurn(sid, 'retry me');
+    expect(requests).toHaveLength(2);
+
+    const logs = listCukoRequestLogs().slice().reverse();
+    expect(logs.map((e) => e.attempt)).toEqual([1, 2]);
+    expect(logs.map((e) => e.maxAttempts)).toEqual([4, 4]);
+    expect(logs.map((e) => e.status)).toEqual(['error', 'ok']);
+    expect(logs.map((e) => e.httpStatus)).toEqual([503, 200]);
+    expect(logs[1].usage.cache_read_tokens).toBe(60);
+
+    const first = getCukoRequestLogRaw(logs[0].id);
+    const second = getCukoRequestLogRaw(logs[1].id);
+    expect(first.responseText).toContain('busy');
+    expect(second.requestBody).toBe(first.requestBody);
+    expect(JSON.parse(second.requestBody)).toEqual(requests[1].body);
+  }, 20000);
+
+  it('超过 20 条后，更早的记录释放原文（列表 hasRaw 为 false，原文接口标 rawReleased）', async () => {
+    clearCukoRequestLogs();
+    const sid = newSession();
+    for (let i = 0; i < 21; i++) {
+      handlers.push((res) => sendText(res, 'r' + i));
+      await runTurn(sid, 'n' + i);
+    }
+    const logs = listCukoRequestLogs();
+    expect(logs).toHaveLength(21);
+
+    const oldest = logs[20];
+    expect(oldest.hasRaw).toBe(false);
+    const oldRaw = getCukoRequestLogRaw(oldest.id);
+    expect(oldRaw.rawReleased).toBe(true);
+    expect(oldRaw.requestBody).toBeUndefined();
+    expect(oldRaw.responseText).toBeUndefined();
+
+    const kept = getCukoRequestLogRaw(logs[19].id);
+    expect(kept.rawReleased).toBeFalsy();
+    expect(typeof kept.requestBody).toBe('string');
+  }, 60000);
+});
