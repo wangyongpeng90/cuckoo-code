@@ -871,9 +871,13 @@ function ChatApp() {
       if (!res.success || !res.dir) return;
       const parts = String(res.dir).replace(/[\\/]+$/, '').split(/[\\/]/);
       const name = parts[parts.length - 1] || res.dir;
-      await (window.cukoAPI as any).addWorkspace(res.dir, name);
-      await (window.cukoAPI as any).setActiveWorkspace(res.dir);
-      await loadWorkspaces();
+      const added = await (window.cukoAPI as any).addWorkspace(res.dir, name);
+      if (added && added.success === false) throw new Error(added.error || '写入工作区失败');
+      // 与「选择已有工作区」走同一条路：设为当前 + 把当前会话迁到新工作区 + 刷新左侧
+      const list = await (window.cukoAPI as any).listWorkspaces();
+      setWorkspaces(list);
+      const ws = list.find((w: any) => w.path === res.dir) || { path: res.dir, name };
+      await handleSelectWorkspace(ws);
     } catch (e) { console.error('选择目录失败', e); }
   };
 
