@@ -33,7 +33,8 @@ const COMMON_GLOBALS = {
 
 export default [
   {
-    ignores: ['node_modules/**', 'dist/**', 'dist-verify/**', 'out/**', 'build/**', 'wyp/**', 'coverage/**', '**/*.d.ts', 'src/ui/vendor/**', 'custom-providers/**'],
+    // [chore] ignores 末尾几项是 git 已忽略的本地目录（临时文件、插件自带的压缩库等），不参与 lint
+    ignores: ['node_modules/**', 'dist/**', 'dist-verify/**', 'out/**', 'build/**', 'wyp/**', 'coverage/**', '**/*.d.ts', 'src/ui/vendor/**', 'custom-providers/**', '.cuckoo/plugins/**', 'resources/runtime/**', 'tmp/**'],
   },
   js.configs.recommended,
   {
