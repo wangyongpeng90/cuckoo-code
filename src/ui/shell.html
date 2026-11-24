@@ -30526,6 +30526,7 @@ body {
     { id: "high", value: "high" },
     { id: "max", value: "max" }
   ];
+  var protocolLabel = (p) => p === "openai" ? "OpenAI Chat Completions" : "Cuko API";
   var linkBtnStyle = { background: "none", border: "none", color: "var(--ck-text-2)", fontSize: "12px", cursor: "pointer", padding: 0 };
   var fullInput = { width: "100%", boxSizing: "border-box" };
   var fieldLabel = (text) => (0, import_react9.createElement)("div", { style: { fontSize: "13px", marginBottom: "8px", color: "var(--ck-text)" } }, text);
@@ -30700,6 +30701,7 @@ body {
     const [cukoLoading, setCukoLoading] = (0, import_react9.useState)(false);
     const [cukoErr, setCukoErr] = (0, import_react9.useState)("");
     const [protocolGuess, setProtocolGuess] = (0, import_react9.useState)(null);
+    const [protocolProbed, setProtocolProbed] = (0, import_react9.useState)(false);
     const [tip, setTip] = (0, import_react9.useState)("");
     const [showGuide, setShowGuide] = (0, import_react9.useState)(false);
     const [showMarket, setShowMarket] = (0, import_react9.useState)(false);
@@ -30752,6 +30754,7 @@ body {
         if (!res || !res.success) throw new Error(res && res.error || "\u83B7\u53D6\u5931\u8D25");
         setEditProvider((prev) => ({ ...prev, models: res.models || [] }));
         setProtocolGuess(res.protocolGuess === "openai" || res.protocolGuess === "cuko" ? res.protocolGuess : null);
+        setProtocolProbed(true);
         showTip("\u5DF2\u83B7\u53D6 " + res.count + " \u4E2A\u6A21\u578B");
       } catch (e2) {
         setCukoErr(e2.message || "\u83B7\u53D6\u5931\u8D25");
@@ -30767,12 +30770,23 @@ body {
         setCukoErr("\u8BF7\u586B\u5199\u5B8C\u6574\u7684 Provider ID\u3001\u540D\u79F0\u548C\u5730\u5740");
         return;
       }
-      if (protocolGuessMismatch) {
-        const guessLabel = protocolGuess === "openai" ? "OpenAI Chat Completions" : "Cuko API";
-        const curLabel = curProtocol === "openai" ? "OpenAI Chat Completions" : "Cuko API";
+      let guess = protocolGuess;
+      if (!protocolProbed) {
+        try {
+          const probe = await window.cukoAPI.fetchModels({ baseUrl: editProvider.baseUrl, apiKey: editProvider.apiKey || "", models: [] });
+          if (probe && probe.success) {
+            guess = probe.protocolGuess === "openai" || probe.protocolGuess === "cuko" ? probe.protocolGuess : null;
+          }
+        } catch {
+          guess = null;
+        }
+        setProtocolProbed(true);
+        setProtocolGuess(guess);
+      }
+      if (guess && guess !== curProtocol) {
         const ok = await ckConfirm(
           [
-            "\u83B7\u53D6\u6A21\u578B\u65F6\u53D1\u73B0\uFF1A\u63A5\u53E3\u8FD4\u56DE\u7684\u683C\u5F0F\u66F4\u50CF\u300C" + guessLabel + "\u300D\u534F\u8BAE\uFF0C\u5F53\u524D\u9009\u7684\u662F\u300C" + curLabel + "\u300D\u3002",
+            "\u63A5\u53E3\u8FD4\u56DE\u7684\u683C\u5F0F\u66F4\u50CF\u300C" + protocolLabel(guess) + "\u300D\u534F\u8BAE\uFF0C\u5F53\u524D\u9009\u7684\u662F\u300C" + protocolLabel(curProtocol) + "\u300D\u3002",
             "",
             "\u9009\u9519\u534F\u8BAE\u7684\u8BDD\uFF0C\u53D1\u6D88\u606F\u4F1A\u62A5\u9519\uFF0C\u4E14\u5F88\u96BE\u770B\u51FA\u539F\u56E0\u3002",
             "\xB7 \u70B9\u300C\u53D6\u6D88\u300D\u56DE\u53BB\u6539\u534F\u8BAE",
@@ -30788,6 +30802,7 @@ body {
         await loadProviders();
         setCukoEditing(false);
         setProtocolGuess(null);
+        setProtocolProbed(false);
         const ignored = Array.isArray(res.ignoredKeys) && res.ignoredKeys.length ? "\uFF08\u5DF2\u5FFD\u7565\u4E0D\u80FD\u8986\u76D6\u7684\u5B57\u6BB5\uFF1A" + res.ignoredKeys.join("\u3001") + "\uFF09" : "";
         showTip("\u914D\u7F6E\u5DF2\u4FDD\u5B58" + ignored);
       } catch (e2) {
@@ -30999,6 +31014,7 @@ body {
           (0, import_react9.createElement)("input", { className: "ck-set-input", style: { width: "100%", boxSizing: "border-box" }, placeholder: editProvider.protocol === "openai" ? "https://api.deepseek.com/v1" : "http://127.0.0.1:3000", value: editProvider.baseUrl, onChange: (e2) => {
             setEditProvider({ ...editProvider, baseUrl: e2.target.value });
             setProtocolGuess(null);
+            setProtocolProbed(false);
           } })
         ),
         (0, import_react9.createElement)(
@@ -31009,13 +31025,30 @@ body {
             value: editProvider.protocol === "openai" ? "openai" : "cuko",
             options: [{ value: "cuko", label: "Cuko API (SSE)" }, { value: "openai", label: "OpenAI Chat Completions" }],
             onChange: (v) => setEditProvider({ ...editProvider, protocol: v })
-          })
+          }),
+          // [261123-q4h7tn-cuko-openai] 接口返回与所选协议不一致时在下方提示（只提示，不自动改；判断不一定准）
+          protocolGuessMismatch ? (0, import_react9.createElement)(
+            "div",
+            { style: { marginTop: "8px", padding: "8px 10px", borderRadius: "6px", background: "rgba(255,193,7,.12)", border: "1px solid rgba(255,193,7,.4)", fontSize: "12px", lineHeight: 1.6, color: "var(--ck-text)" } },
+            (0, import_react9.createElement)("div", null, "\u63A5\u53E3\u8FD4\u56DE\u7684\u6A21\u578B\u5217\u8868\u66F4\u50CF\u300C" + protocolLabel(protocolGuess) + "\u300D\u534F\u8BAE\uFF0C\u5F53\u524D\u9009\u7684\u662F\u300C" + protocolLabel(curProtocol) + "\u300D\u3002"),
+            (0, import_react9.createElement)("div", { style: { color: "var(--ck-text-2)", marginTop: "4px" } }, "\u5982\u679C\u53D1\u6D88\u606F\u62A5\u9519\uFF0C\u591A\u534A\u662F\u8FD9\u91CC\u9009\u9519\u4E86\u3002"),
+            (0, import_react9.createElement)(
+              "div",
+              { style: { display: "flex", gap: "12px", marginTop: "6px" } },
+              (0, import_react9.createElement)("button", { style: linkBtnStyle, onClick: () => setEditProvider({ ...editProvider, protocol: protocolGuess }) }, "\u6539\u4E3A " + protocolLabel(protocolGuess)),
+              (0, import_react9.createElement)("button", { style: linkBtnStyle, onClick: () => setProtocolGuess(null) }, "\u5FFD\u7565")
+            )
+          ) : null
         ),
         (0, import_react9.createElement)(
           "div",
           { style: { marginBottom: "24px" } },
           (0, import_react9.createElement)("div", { style: { fontSize: "13px", marginBottom: "8px", color: "var(--ck-text)" } }, "API \u5BC6\u94A5"),
-          (0, import_react9.createElement)("input", { className: "ck-set-input", style: { width: "100%", boxSizing: "border-box" }, type: "password", placeholder: "\u8F93\u5165 API \u5BC6\u94A5", value: editProvider.apiKey || "", onChange: (e2) => setEditProvider({ ...editProvider, apiKey: e2.target.value }) })
+          (0, import_react9.createElement)("input", { className: "ck-set-input", style: { width: "100%", boxSizing: "border-box" }, type: "password", placeholder: "\u8F93\u5165 API \u5BC6\u94A5", value: editProvider.apiKey || "", onChange: (e2) => {
+            setEditProvider({ ...editProvider, apiKey: e2.target.value });
+            setProtocolGuess(null);
+            setProtocolProbed(false);
+          } })
         ),
         editProvider.protocol === "openai" ? (0, import_react9.createElement)(OpenAiParams, { provider: editProvider, onChange: setEditProvider }) : null,
         (0, import_react9.createElement)(
