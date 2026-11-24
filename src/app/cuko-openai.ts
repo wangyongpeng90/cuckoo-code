@@ -471,10 +471,28 @@ export interface ListedModel {
   contextWindow?: number;
   maxOutputTokens?: number;
   inputModalities?: InputModality[];
+  // [261123-q4h7tn-cuko-openai] 接口返回的推理档位（DeepSeek 的 effort 扩展字段），刷新时预填到 api_meta
+  reasoningLevels?: ReasoningLevel[];
+  defaultEffort?: string;
 }
 
 function positiveInt(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+}
+
+// [261123-q4h7tn-cuko-openai] 接口返回的档位列表 → 档位表：只认非空字符串，去重；一个都没有当作没返回
+function parseSupportedLevels(value: unknown): ReasoningLevel[] {
+  if (!Array.isArray(value)) return [];
+  const out: ReasoningLevel[] = [];
+  const seen = new Set<string>();
+  for (const raw of value) {
+    if (typeof raw !== 'string') continue;
+    const id = raw.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({ id });
+  }
+  return out;
 }
 
 /** 解析 GET /v1/models：标准字段 + 可选扩展字段（context_window / max_output_tokens / input_modalities） */
@@ -500,6 +518,17 @@ export function parseModelList(json: any): ListedModel[] {
         if ((m === 'text' || m === 'image') && !mods.includes(m)) mods.push(m);
       }
       if (mods.length) model.inputModalities = mods;
+    }
+    // DeepSeek 等：effort = { supported_levels: ["low","high","max"], default_level: "high" }；
+    // 字段缺失或类型不对就当作没返回，不影响其它字段
+    if (isPlainObject(entry.effort)) {
+      const levels = parseSupportedLevels(entry.effort.supported_levels);
+      if (levels.length) {
+        model.reasoningLevels = levels;
+        const def = entry.effort.default_level;
+        const defId = typeof def === 'string' ? def.trim() : '';
+        if (defId && levels.some((l) => l.id === defId)) model.defaultEffort = defId;
+      }
     }
     out.push(model);
   }
@@ -541,6 +570,12 @@ export function listedToApiMeta(model: ListedModel): ModelMeta {
   if (model.contextWindow) meta.contextWindow = model.contextWindow;
   if (model.maxOutputTokens) meta.maxTokens = model.maxOutputTokens;
   if (model.inputModalities && model.inputModalities.length) meta.inputModalities = [...model.inputModalities];
+  // 接口给了推理档位就打开总开关；用户改过的值存在 user_meta 里、优先于这里的接口值
+  if (model.reasoningLevels && model.reasoningLevels.length) {
+    meta.reasoningEnabled = true;
+    meta.reasoningLevels = model.reasoningLevels.map((l) => ({ ...l }));
+    if (model.defaultEffort) meta.defaultEffort = model.defaultEffort;
+  }
   return meta;
 }
 

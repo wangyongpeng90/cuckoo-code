@@ -6,6 +6,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import {
   AssistantRuntimeProvider,
   useExternalStoreRuntime,
@@ -34,7 +35,7 @@ import { ModelSwitchDialog } from '@/ui/cuko/model-switch-dialog';
 import { buildCompressHistory } from '@/ui/cuko/compress-history';
 import { RequestLogDialog } from '@/ui/cuko/request-log-dialog';
 import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
-import { sessionCacheTotals, formatHitPercent, lastPromptTokens, contextDisplay, reasoningLevelsOf, effectiveEffort, effortLabel, reasoningUnsupportedReason, sessionTokenTotals, formatTokenCount, tokenTotalsTip, type ContextDisplay } from '@/ui/cuko/composer-stats';
+import { sessionCacheTotals, formatHitPercent, lastPromptTokens, contextDisplay, reasoningLevelsOf, effectiveEffort, effortLabel, reasoningUnsupportedReason, sessionTokenTotals, formatTokenCount, formatExactCount, usageDetailRows, type ContextDisplay, type UsageDetailRow } from '@/ui/cuko/composer-stats';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
 import {
   ToolFallbackRoot,
@@ -502,7 +503,8 @@ const CukoReasoning: ReasoningMessagePartComponent = () => {
 interface ComposerUsageView {
   hitText: string | null;
   totalText: string | null;
-  totalTip: string;
+  exactTotal: string;
+  detailRows: UsageDetailRow[];
   context: ContextDisplay | null;
 }
 const ComposerSlotsContext = React.createContext<{ extra: React.ReactNode; usage: ComposerUsageView | null }>({ extra: null, usage: null });
@@ -512,8 +514,79 @@ const CukoComposerExtra: React.FC = () => {
   return <>{slots.extra}</>;
 };
 
+// [261123-q4h7tn-cuko-openai] 用量胶囊统一样式：浅色底、圆角、细边框，图标与文字垂直居中
+const usagePillClass = 'inline-flex items-center gap-1 rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-xs text-muted-foreground';
+
+// [261123-q4h7tn-cuko-openai] 点击用量胶囊弹出的浮动面板（照 harness UsagePill 对话框）：
+// createPortal 挂到 body，避免被输入框的 overflow 裁剪；点外面 / Esc / 再点胶囊关闭
+const CukoUsagePanel: React.FC<{
+  anchor: React.RefObject<HTMLButtonElement | null>;
+  view: ComposerUsageView;
+  onClose: () => void;
+}> = ({ anchor, view, onClose }) => {
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // 显示在胶囊正上方，水平居中对齐
+  React.useLayoutEffect(() => {
+    const el = anchor.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPos({ left: rect.left + rect.width / 2, top: rect.top });
+  }, [anchor]);
+
+  useEffect(() => {
+    function onPointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      const el = anchor.current;
+      const panelEl = panelRef.current;
+      // 点在胶囊上交给胶囊自己的 onClick 切换，否则刚开就关
+      if (el && el.contains(target)) return;
+      if (panelEl && panelEl.contains(target)) return;
+      onClose();
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onClose();
+    }
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [anchor, onClose]);
+
+  if (!pos) return null;
+  const node = (
+    <div
+      ref={panelRef}
+      role="dialog"
+      aria-label="Token 用量"
+      className="fixed z-50 w-56 -translate-x-1/2 -translate-y-full rounded-xl border bg-popover p-3 text-popover-foreground shadow-lg"
+      style={{ left: pos.left, top: pos.top - 6 }}
+    >
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <span className="text-xs font-medium text-foreground">Token 用量</span>
+        <span className="text-xs tabular-nums text-muted-foreground">{view.exactTotal}</span>
+      </div>
+      <div className="flex flex-col gap-1">
+        {view.detailRows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-3 text-xs">
+            <span className="text-muted-foreground">{row.label}</span>
+            <span className="tabular-nums text-foreground">{row.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  return createPortal(node, document.body);
+};
+
 const CukoUsage: React.FC = () => {
   const slots = React.useContext(ComposerSlotsContext);
+  const [open, setOpen] = useState(false);
+  const pillRef = useRef<HTMLButtonElement | null>(null);
+  const closePanel = useCallback(() => setOpen(false), []);
   // selector 只返回原始数字，避免每次生成新对象触发 getSnapshot 警告/无限重渲染
   const totalTokens = useAuiState((s) => {
     const msgs = s.thread.messages;
@@ -525,30 +598,41 @@ const CukoUsage: React.FC = () => {
     return 0;
   });
 
-  // [261123-q4h7tn-cuko-openai] OpenAI 协议：缓存命中（会话累计）· 上下文（最近一次请求的 prompt_tokens）；用量 >= 60% 变提醒色
+  // [261123-q4h7tn-cuko-openai] OpenAI 协议：两个胶囊（用量 + 缓存命中可点开面板 / 上下文）；用量 >= 60% 变提醒色
   const view = slots.usage;
+  // 切到 Cuko 协议或换成没有用量的会话时收起面板
+  useEffect(() => {
+    if (!view) setOpen(false);
+  }, [view]);
   if (view) {
-    // [261123-q4h7tn-cuko-openai] 依次：会话累计 tok（照 harness UsagePill，悬停看明细）· 缓存命中 · 上下文
-    const parts: React.ReactNode[] = [];
-    if (view.totalText) {
-      parts.push(
-        <span key="total" title={view.totalTip} className="inline-flex items-center gap-1 align-middle cursor-default">
-          <DatabaseIcon className="size-3" />
-          {view.totalText}
-        </span>,
-      );
-    }
-    if (view.hitText) parts.push(<span key="hit">{'缓存命中 ' + view.hitText + '%'}</span>);
-    if (view.context) parts.push(<span key="ctx" style={view.context.warn ? { color: '#d97706', fontWeight: 500 } : undefined}>{view.context.text}</span>);
-    if (parts.length === 0) return null;
+    const hasTotal = !!view.totalText;
+    if (!hasTotal && !view.context) return null;
     return (
-      <div className="text-center text-xs text-muted-foreground/70 select-none">
-        {parts.map((part, i) => (
-          <React.Fragment key={i}>
-            {i > 0 ? <span>{' · '}</span> : null}
-            {part}
-          </React.Fragment>
-        ))}
+      <div className="flex select-none items-center justify-center gap-2 text-xs text-muted-foreground/70">
+        {hasTotal && (
+          <button
+            type="button"
+            ref={pillRef}
+            title="查看 Token 用量"
+            onClick={() => setOpen((v) => !v)}
+            className={cn(usagePillClass, 'cursor-pointer hover:bg-muted/70 hover:text-foreground')}
+          >
+            <DatabaseIcon className="size-3 shrink-0" />
+            <span>
+              {view.totalText}
+              {view.hitText ? ' · 缓存命中 ' + view.hitText + '%' : ''}
+            </span>
+          </button>
+        )}
+        {view.context && (
+          <span
+            className={usagePillClass}
+            style={view.context.warn ? { color: '#d97706', borderColor: '#fcd34d', fontWeight: 500 } : undefined}
+          >
+            {view.context.text}
+          </span>
+        )}
+        {open && hasTotal && <CukoUsagePanel anchor={pillRef} view={view} onClose={closePanel} />}
       </div>
     );
   }
@@ -1386,10 +1470,12 @@ function ChatApp() {
     const totals = sessionCacheTotals(usages);
     const composerMeta = composerModel ? composerModel.meta : undefined;
     const tokenTotals = sessionTokenTotals(usages);
+    const hitText = totals ? formatHitPercent(totals.read, totals.prompt) : null;
     usageView = {
-      hitText: totals ? formatHitPercent(totals.read, totals.prompt) : null,
+      hitText,
       totalText: tokenTotals ? formatTokenCount(tokenTotals.total) + ' tok' : null,
-      totalTip: tokenTotals ? tokenTotalsTip(tokenTotals) : '',
+      exactTotal: tokenTotals ? formatExactCount(tokenTotals.total) : '',
+      detailRows: tokenTotals ? usageDetailRows(tokenTotals, hitText) : [],
       context: contextDisplay(lastPromptTokens(usages), composerMeta ? composerMeta.contextWindow : undefined),
     };
   }

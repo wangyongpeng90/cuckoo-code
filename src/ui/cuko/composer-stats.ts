@@ -175,8 +175,17 @@ export function formatExactCount(value: number): string {
   return groups.join(',');
 }
 
-// 悬停明细：合计 / 未缓存输入 / 缓存读取 / 输出
-export function tokenTotalsTip(t: SessionTokenTotals): string {
-  return '合计 ' + formatExactCount(t.total) + ' tok · 未缓存输入 ' + formatExactCount(t.uncachedInput) +
-    ' · 缓存读取 ' + formatExactCount(t.cacheRead) + ' · 输出 ' + formatExactCount(t.output);
+// 浮动面板明细（照 harness UsagePill 对话框）：缓存命中（没返回命中字段时省略）/ 未缓存输入 / 缓存读取 / 输出
+export interface UsageDetailRow {
+  label: string;
+  value: string;
+}
+
+export function usageDetailRows(t: SessionTokenTotals, hitText: string | null): UsageDetailRow[] {
+  const rows: UsageDetailRow[] = [];
+  if (hitText) rows.push({ label: '缓存命中', value: hitText + '%' });
+  rows.push({ label: '未缓存输入', value: formatExactCount(t.uncachedInput) });
+  rows.push({ label: '缓存读取', value: formatExactCount(t.cacheRead) });
+  rows.push({ label: '输出', value: formatExactCount(t.output) });
+  return rows;
 }

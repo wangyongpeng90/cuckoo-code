@@ -15,7 +15,7 @@ import {
   reasoningUnsupportedReason,
   sessionTokenTotals,
   formatExactCount,
-  tokenTotalsTip,
+  usageDetailRows,
 } from '../src/ui/cuko/composer-stats.js';
 import { CONTEXT_WARN_RATIO as APP_WARN_RATIO, resolveEffortAfterSwitch } from '../src/app/cuko-openai.js';
 
@@ -171,6 +171,14 @@ describe('sessionTokenTotals 会话累计用量（xxx tok）', () => {
     expect(formatExactCount(1000)).toBe('1,000');
     expect(formatExactCount(999)).toBe('999');
     expect(formatExactCount(0)).toBe('0');
-    expect(tokenTotalsTip({ total: 8168, uncachedInput: 3977, cacheRead: 3600, output: 591 })).toBe('合计 8,168 tok · 未缓存输入 3,977 · 缓存读取 3,600 · 输出 591');
+    const grand = { total: 8168, uncachedInput: 3977, cacheRead: 3600, output: 591 };
+    expect(usageDetailRows(grand, '97.35')).toEqual([
+      { label: '缓存命中', value: '97.35%' },
+      { label: '未缓存输入', value: '3,977' },
+      { label: '缓存读取', value: '3,600' },
+      { label: '输出', value: '591' },
+    ]);
+    // 从没返回命中字段的会话不显示缓存命中这一行
+    expect(usageDetailRows(grand, null).map((row) => row.label)).toEqual(['未缓存输入', '缓存读取', '输出']);
   });
 });

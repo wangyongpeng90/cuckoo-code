@@ -343,6 +343,46 @@ describe('parseModelList / 模型设置', () => {
     expect(() => parseModelList({})).toThrow('返回格式不正确');
     expect(() => parseModelList(null)).toThrow('返回格式不正确');
   });
+  // [261123-q4h7tn-cuko-openai] DeepSeek 实测：effort = { supported_levels: ["low","high","max"], default_level: "high" }
+  it('读取接口返回的推理档位（effort 扩展字段）', () => {
+    const list = parseModelList({ data: [
+      { id: 'deepseek-flash', effort: { supported_levels: ['low', 'high', 'max', 'high', '  ', 3, null], default_level: 'high' } },
+      { id: 'bad-default', effort: { supported_levels: ['low', 'max'], default_level: 'ultra' } },
+      { id: 'levels-not-array', effort: { supported_levels: 'low', default_level: 'high' } },
+      { id: 'effort-not-object', effort: ['low'] },
+      { id: 'empty-levels', effort: { supported_levels: [], default_level: 'high' } },
+      { id: 'no-effort' },
+    ] });
+    expect(list[0].reasoningLevels).toEqual([{ id: 'low' }, { id: 'high' }, { id: 'max' }]);
+    expect(list[0].defaultEffort).toBe('high');
+    // 默认档位不在档位表里就忽略，不写成不存在的档位
+    expect(list[1].reasoningLevels).toEqual([{ id: 'low' }, { id: 'max' }]);
+    expect(list[1].defaultEffort).toBeUndefined();
+    // 字段类型不对 / 空档位表：当作没返回，不影响其它字段
+    expect(list[2].reasoningLevels).toBeUndefined();
+    expect(list[3].reasoningLevels).toBeUndefined();
+    expect(list[4].reasoningLevels).toBeUndefined();
+    expect(list[5].reasoningLevels).toBeUndefined();
+  });
+  it('接口档位写进 api_meta 并自动打开总开关', () => {
+    const withEffort = parseModelList({ data: [{ id: 'deepseek-flash', effort: { supported_levels: ['low', 'high', 'max'], default_level: 'high' } }] });
+    expect(listedToApiMeta(withEffort[0])).toEqual({
+      reasoningEnabled: true,
+      reasoningLevels: [{ id: 'low' }, { id: 'high' }, { id: 'max' }],
+      defaultEffort: 'high',
+    });
+    // 没返回档位的模型不凭空加总开关，避免界面显示「支持」但实际没档位
+    expect(listedToApiMeta({ id: 'plain' })).toEqual({});
+  });
+  it('用户修改的档位优先于接口值', () => {
+    const apiMeta = listedToApiMeta({ id: 'm', reasoningLevels: [{ id: 'low' }, { id: 'high' }], defaultEffort: 'high' });
+    // 用户在设置页关掉总开关：保留关闭，不被刷新覆盖
+    expect(effectiveModelMeta(apiMeta, { reasoningEnabled: false }).reasoningEnabled).toBe(false);
+    // 用户自己填的档位表 / 默认档位：优先
+    const merged = effectiveModelMeta(apiMeta, { reasoningLevels: [{ id: 'off' }, { id: 'max' }], defaultEffort: 'max' });
+    expect(merged.reasoningLevels).toEqual([{ id: 'off' }, { id: 'max' }]);
+    expect(merged.defaultEffort).toBe('max');
+  });
   it('user_meta 覆盖 api_meta，未定义的字段沿用接口值', () => {
     expect(effectiveModelMeta({ name: 'A', contextWindow: 100, maxTokens: 10 }, { contextWindow: 50, maxTokens: undefined })).toEqual({ name: 'A', contextWindow: 50, maxTokens: 10 });
     expect(effectiveModelMeta(null, null)).toEqual({});
