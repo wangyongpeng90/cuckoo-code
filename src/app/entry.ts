@@ -21,6 +21,37 @@ import { resolveAsset, resolveSrc } from '../infra/paths.js';
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, session, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');
 
+// ========== 控制台管道兜底（EPIPE） ==========
+// 用 npm start 启动时，主进程 stdout/stderr 是 start.js 接的管道。启动器窗口被关掉后管道读端消失，
+// 之后写控制台就会 EPIPE: broken pipe，被 Electron 当成未捕获异常弹窗打断使用。
+// 两种失败形态都要兜：异步写失败是 emit 'error'，而 Windows 上 stdout 指向管道时是同步写、
+// 写失败会**同步抛错**（堆栈落在 console.log 上），所以还要把 console 方法包一层。
+for (const stream of [process.stdout, process.stderr]) {
+  if (stream) stream.on('error', () => { /* 异步写失败：吞掉，日志不是关键路径 */ });
+}
+{
+  const isBrokenPipe = (err: any): boolean => {
+    const code = err && err.code;
+    return code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED';
+  };
+  const methods = ['log', 'info', 'warn', 'error', 'debug', 'trace'];
+  const target: any = console;
+  for (const method of methods) {
+    const original = target[method];
+    if (typeof original !== 'function') continue;
+    target[method] = function (...args: any[]) {
+      try {
+        original.apply(console, args);
+      } catch (err: any) {
+        // 管道已断：日志写不出去只能放弃，绝不能让整个应用崩掉
+        if (isBrokenPipe(err)) return;
+        // 其它错误也不该打断业务；尽量留一条可诊断信息（写不出去就算了）
+        try { process.stderr.write('[console] 输出失败: ' + String((err && err.message) || err) + String.fromCharCode(10)); } catch (_) { /* ignore */ }
+      }
+    };
+  }
+}
+
 // ========== 持久化会话配置 ==========
 const SESSION_DIR = process.env.CUCKOO_SESSION_DIR || 'cuckoo-ai-pro-session';
 const USER_DATA_DIR = path.join(app.getPath('appData'), SESSION_DIR);

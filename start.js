@@ -10,6 +10,26 @@ import path from 'node:path';
 
 const isWin = process.platform === 'win32';
 
+// 控制台管道可能先断（比如窗口被关掉、重定向被回收），此时写控制台就会 EPIPE 让启动器崩掉。
+// 异步写失败是 emit 'error'；Windows 上 stdout 指向管道时是同步写，写失败会同步抛错，所以 console 也要包一层。
+for (const stream of [process.stdout, process.stderr]) {
+  if (stream) stream.on('error', () => { /* 日志写不出去就算了 */ });
+}
+{
+  const methods = ['log', 'info', 'warn', 'error', 'debug', 'trace'];
+  for (const method of methods) {
+    const original = console[method];
+    if (typeof original !== 'function') continue;
+    console[method] = function (...args) {
+      try {
+        original.apply(console, args);
+      } catch {
+        // 管道已断，放弃这条日志
+      }
+    };
+  }
+}
+
 // ========== 1. 编译 ==========
 console.log('[start.js] 编译中（tsc -p tsconfig.build.json）...');
 const build = spawnSync('npx', ['tsc', '-p', 'tsconfig.build.json'], {
@@ -177,6 +197,11 @@ const cmd = isWin
   : ('electron' + debugArg + ' "' + appDir + '"');
 
 const child = spawn(cmd, { shell: true, stdio: ['inherit', 'pipe', 'pipe'], env: childEnv });
+
+// 子进程管道与日志流也会 EPIPE（启动器窗口关闭、日志文件被占用等），挂空兜底避免启动器崩
+for (const s of [child.stdout, child.stderr, logStream]) {
+  if (s && typeof s.on === 'function') s.on('error', () => {});
+}
 
 child.stdout.pipe(logStream);
 child.stderr.pipe(logStream);
