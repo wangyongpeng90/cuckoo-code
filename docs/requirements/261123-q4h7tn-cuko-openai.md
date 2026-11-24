@@ -2,7 +2,7 @@
 id: 261123-q4h7tn-cuko-openai
 type: feature
 title: Cuko 接入 OpenAI 兼容接口（Chat Completions）
-status: doing
+status: review
 branch: feat/261123-q4h7tn-cuko-openai
 created: 2026-11-23
 updated: 2026-11-24
@@ -52,7 +52,9 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 
 - `cuko_models` 新增：`api_meta`（接口返回：上下文窗口 / 最大输出 / 输入类型）、`user_meta`（用户修改：名称 / 上下文窗口 / 最大输出 / 输入类型 / 推理档位表 / 默认档位）、`source`（接口 / 手动）、`listed`（最近一次刷新接口是否返回）。
 - 刷新只更新 `api_meta`，不删模型、不覆盖用户修改；接口不再返回的标「接口未返回」；「恢复默认」= 清空 `user_meta`；可手动添加模型。
-- 获取模型改走主进程（新增按表单地址 / 密钥获取的 IPC）；扩展字段只读 `context_window` / `max_output_tokens` / `input_modalities`。
+- 获取模型改走主进程（新增按表单地址 / 密钥获取的 IPC）；扩展字段读 `context_window` / `max_output_tokens` / `input_modalities`，以及 DeepSeek 实测到的 `effort`（`supported_levels` + `default_level`）。
+- 2026-11-24 追加（已实现，提交 899bcbf）：`effort` 解析规则——`supported_levels` 只认非空字符串并去重；`default_level` 不在档位表里就忽略；解析结果写进 `api_meta` 并自动打开推理档位总开关；一个档位都没返回（或字段类型不对）就当作没返回，不凭空打开总开关；用户修改仍存 `user_meta` 且优先于接口值。
+- 实测记录（2026-11-24）：DeepSeek `GET /v1/models` 返回 200，字段 `id` / `object` / `owned_by` / `name` / `context_window`（1048576）/ `max_output_tokens`（393216）/ `input_modalities`（`["text","image"]`）/ `output_modalities` / `effort` / `api_capabilities`；原有三个字段的类型与解析规则一致，无需改动。
 - 推理档位：每档一个 API 参数值（为空时用档位名），总开关，可标默认档位；打开总开关时预填 off / low / high / max。
 - 输入类型保存但本版不生效（界面标注「暂未生效」）。
 
@@ -73,7 +75,8 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
   - 上下文：最近一次请求的 `prompt_tokens`（接口准确值，即 harness 的 `pressureTokens`；不估算、不加 `~`，比实际慢一拍）；格式照 harness：小于 1000 原样，小于 100K 保留 1 位小数（`8.2K`），100K 及以上取整（`350K`），百万用 `M`。
   - 60% 提醒：模型填了上下文窗口且用量 ≥ 60% 时变提醒色，显示 `上下文 82.3K / 128K（64%）`，百分比取整；不拦发送。
   - 真正超出上下文时，沿用运行器现有提示（新开会话或换更长上下文的模型）。
-- 2026-11-24 追加（已确认，待实现）：输入框下方改成两个胶囊（照 harness）：① 可点击的「数据库图标 + xxx tok · 缓存命中 xx.xx%」，点击弹出浮动面板「Token 用量」（标题旁精确合计；行：缓存命中、未缓存输入、缓存读取、输出，精确数字千分位；再次点击 / 点外面 / Esc 关闭）；② 只显示的「上下文 x.xK」（≥ 60% 提醒色）。替代上面「悬停显示明细」的做法（用户实测悬停不明显、点击无反应、排版不整齐）。
+- 2026-11-24 追加（已实现，提交 899bcbf）：输入框下方改成两个胶囊（照 harness）：① 可点击的「数据库图标 + xxx tok · 缓存命中 xx.xx%」，点击弹出浮动面板「Token 用量」（标题旁精确合计；行：缓存命中、未缓存输入、缓存读取、输出，精确数字千分位；再次点击 / 点外面 / Esc 关闭；面板用 `createPortal` 挂到 `document.body`，避开输入框的 `overflow` 裁剪）；② 只显示的「上下文 x.xK」（≥ 60% 提醒色）。替代上面「悬停显示明细」的做法（用户实测悬停不明显、点击无反应、排版不整齐）。
+- 实现细节：胶囊与面板组件都定义在模块级、数据从 `ComposerSlotsContext` 读，流式输出时不会被重新挂载，面板不会自己关掉；会话用量明细由 `usageDetailRows`（`src/ui/cuko/composer-stats.ts`）返回，原来的 `tokenTotalsTip` 删除。
 - 附件：本次不做（见第 10 节）。
 
 ## 7. 跨协议切换模型
@@ -107,11 +110,12 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 ## 验收标准
 
 - [x] 步骤 1：纯函数单测通过（原文重放前缀不变、流解析、usage、请求体优先级、重试判定、模型列表、档位）
-- [ ] 步骤 2：OpenAI 协议多轮对话 + 工具循环可用；DeepSeek 第二轮起缓存命中 > 0
-- [ ] 步骤 3：设置页可选协议、刷新不丢用户修改
-- [ ] 步骤 4：两级菜单选推理等级（Cuko 置灰）、会话累计用量 xxx tok（悬停明细）、缓存命中（会话累计，两位小数）、上下文用量与 60% 提醒
-- [ ] Cuko 协议行为不变
-- [ ] typecheck / test / lint / compile 全绿
+- [x] 步骤 2：OpenAI 协议多轮对话 + 工具循环可用；DeepSeek 第二轮起缓存命中 > 0（实测第二轮 98%）
+- [x] 步骤 3：设置页可选协议、刷新不丢用户修改
+- [x] 步骤 4：两级菜单选推理等级（Cuko 置灰）、会话累计用量 xxx tok（点击胶囊看明细）、缓存命中（会话累计，两位小数）、上下文用量与 60% 提醒
+- [x] 刷新模型自动读取接口推理档位（`effort` 扩展字段），用户修改优先
+- [x] Cuko 协议行为不变
+- [x] typecheck / test / lint / compile 全绿（2026-11-24：typecheck 0 错误；`vitest run cuko` 6 文件 120 用例全过；`eslint .` 0 错误 34 个旧警告；compile 成功）
 
 ## 12. 请求日志（2026-11-23 追加）
 
@@ -127,6 +131,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 
 已提交：
 
+- 899bcbf feat(cuko): 输入框用量改胶囊 + 浮动面板，刷新模型自动读取接口推理档位
 - 973ee8b test(cuko): 请求日志断言（协议 / 尝试次数 / 用量归一 / 原始报文 / 密钥打码 / 原文释放）
 - ab5c953 feat(cuko): 聊天窗口两级菜单选推理等级、会话用量 / 缓存命中 / 上下文显示（步骤 4）
 - 99f3f2d chore(lint): eslint 忽略 git 已忽略的本地目录（tmp / .cuckoo/plugins / resources/runtime）
@@ -144,7 +149,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - 0a96d37 fix(tools): grep/glob 改流式读取，修复主进程 RangeError: Invalid string length
 - 2294d82 docs(req): 新增 261123-q4h7tn Cuko 接入 OpenAI 兼容接口需求档案
 
-待确认 / 未完成（截至 2026-11-24 12:10）：输入框用量改胶囊 + 浮动面板（已确认，待实现）、界面真机验证、DeepSeek /models 扩展字段实测、验收打勾与 status。已完成：步骤 4（ab5c953）、请求日志测试（973ee8b）、DeepSeek 真实缓存命中（第二轮 98%）。
+待确认 / 未完成（截至 2026-11-24 12:30）：已全部完成——胶囊 + 浮动面板（899bcbf）、DeepSeek `/models` 扩展字段实测（`effort` 已接入）、界面真机验证（用户确认功能正常）、验收打勾与 status=review。已完成：步骤 4（ab5c953）、请求日志测试（973ee8b）、DeepSeek 真实缓存命中（第二轮 98%）。
 
 交接文档：`docs/handover/261123-q4h7tn-cuko-openai-handover.md`
 

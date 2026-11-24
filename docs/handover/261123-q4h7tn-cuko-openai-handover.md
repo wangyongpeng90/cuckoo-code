@@ -1,6 +1,7 @@
 # Cuko 接入 OpenAI 兼容接口：交接文档
 
 > 需求 ID：`261123-q4h7tn-cuko-openai`；分支：`feat/261123-q4h7tn-cuko-openai`；整理时间：2026-11-24 12:10（Asia/Shanghai）
+> 接手进度：2026-11-24 12:30 第 2 节第 1~3 项已完成，第 4~6 项（文档收尾、push / 合并决定）进行中
 > 项目根目录：`C:\d\SourceCode\2026\cuckoo-code`
 > 接手方：在 Cuko 窗口里、用 OpenAI 协议模型工作的 AI
 
@@ -38,14 +39,19 @@
 
 验证情况（2026-11-24 11:58）：`npm run typecheck` 0 错误；`npx vitest run cuko` 6 个文件 117 个用例全过；`npx eslint .` 0 错误（34 个警告是旧的）；`npm run compile` 成功。用户用真实 DeepSeek 实测：第二轮起缓存命中 98%；切换推理等级后的第一次请求命中 0% 属正常（缓存还没写好），下一次恢复。
 
-### 未完成（按顺序做）
+### 接手进度（2026-11-24 12:30）
 
-1. 输入框下方改成「胶囊 + 点击浮动面板」（方案 A，用户已确认，还没写代码）。规格见第 5 节。
-2. 用户手动重启后做界面验证，清单见第 6 节。
-3. 实测 DeepSeek `/models` 返回的扩展字段，有出入就调整 `parseModelList`（`src/app/cuko-openai.ts`）。做法见第 7 节。
-4. 需求档案验收项逐项打勾（以验证结果为准），`status` 改为 review 或 done，运行 `npm run docs:index`。
-5. 按项目说明第九节写交付报告：做了什么 / 没做什么（及原因）/ 验证结果 / 后续建议（第 9 节列了要写进去的已知问题）。
-6. 问用户：是否 push 到 origin（还要不要推 github）、是否以及何时合并回 master、版本号怎么定。一次只问一题。
+1. 输入框下方「胶囊 + 点击浮动面板」（方案 A）：已完成，提交 `899bcbf`。两个胶囊 + `createPortal` 浮动面板；模块级组件 + `ComposerSlotsContext` 读数据，流式输出时面板不会自己关掉；`tokenTotalsTip` 换成 `usageDetailRows`。
+2. 界面验证（第 6 节清单）：用户确认功能正常。
+3. DeepSeek `/models` 扩展字段：已实测。`context_window` / `max_output_tokens` / `input_modalities` 与 `parseModelList` 一致，无需改动；另发现 `effort`（`supported_levels` + `default_level`），用户选 A，已接入：解析后写进 `api_meta` 并自动打开推理档位总开关，用户修改仍存 `user_meta` 且优先（同样在 `899bcbf`，含 3 个新测试）。
+4. 需求档案：验收项已逐项打勾、`status` 改为 review、已跑 `npm run docs:index`。
+5. 交付报告：见本次会话的最终报告。
+6. push / 合并 / 版本号：等用户逐条决定（push 与合并前必须先问）。
+
+### 剩余待办
+
+1. 问用户是否 push 到 origin（是否同步 github）。
+2. 问用户是否 / 何时合并回 master，版本号怎么定（当前 0.9.2）。
 
 ## 3. 关键决策
 
@@ -128,7 +134,7 @@
 | `src/components/assistant-ui/elements/thread.aui.tsx` | `ComposerFooter` 插槽在 Composer 下方渲染（外层 `-mt-3`）；`ComposerExtra` 在附件按钮旁 |
 | harness 参考 | `packages/client/ui-chat/src/client/chat/StatsPills.tsx` 296-348（`UsagePill` 与明细对话框）；`.../chat/token-format.ts`（`formatTokens` `formatExactTokens` `formatCacheHitPercent`）；`.../client/locale.ts`（中文文案）；`packages/client/ui-conversation/src/client/skeleton/ContextMeter.tsx`（弹出面板：`createPortal`、点外面关闭、Esc 关闭） |
 
-## 5. 下一步：胶囊 + 浮动面板（方案 A，已确认）
+## 5. 胶囊 + 浮动面板（方案 A，已完成）
 
 - 只对 OpenAI 协议会话；Cuko 会话保持原来的「上下文 x.xx k」。
 - 胶囊 1（可点击的 button）：数据库图标 + 「106K tok · 缓存命中 79.69%」。没有命中数据时只显示 tok；没有 tok 时这个胶囊不显示。
@@ -138,7 +144,7 @@
 - 数据已备好：`sessionTokenTotals` 返回 `total / uncachedInput / cacheRead / output`，`formatExactCount` 做千分位，`sessionCacheTotals` + `formatHitPercent` 算命中率。不再使用的 `tokenTotalsTip` / `totalTip` 删掉，测试同步调整。
 - 组件必须定义在模块级，数据从 `ComposerSlotsContext` 读；不要在 `ChatApp` 的渲染函数里定义组件，否则流式输出时组件被重新挂载，面板会自己关掉。
 - 面板别被父元素裁剪：用 `createPortal` 挂到 `document.body`，或确认外层没有 `overflow: hidden`；注意 z-index。
-- 改完：后台跑 typecheck / `npx vitest run cuko` / `npx eslint .` / compile，用 `findstr` 检查 `built.html` 里有新的英文标识；再请用户手动重启，按第 6 节验证。
+- 已改完（`899bcbf`）：typecheck 0 错误；`npx vitest run cuko` 6 文件 120 用例全过；`eslint .` 0 错误 34 个旧警告；compile 成功，`built.html` 里已确认含 `fixed z-50 w-56 -translate-x-1/2 -translate-y-full`（面板样式），旧的 `tokenTotalsTip` 已不在产物里。
 - 需求档案第 6 节已追加一条「已确认，待实现」，实现后改成正式描述（替换「悬停显示明细」那句）。
 
 ## 6. 界面验证清单（用户手动重启 Cuckoo 后检查）
@@ -173,7 +179,7 @@ Cuko API 会话：
 3. 长任务放后台，再用只读脚本查结果；后台编译时不要让用户 `npm start`。
 4. `built.html` 里中文是 `\uXXXX`，搜英文标识符。
 5. 改界面后必须 `npm run compile` 再让用户重启；安装版看不到改动。
-6. 保持每个文件原来的换行符：`app.tsx` / `ipc/cuko.ts` / `cuko-preload.ts` / `cuko-runner.ts` / 需求档案 / 本文件是 CRLF，`composer-stats.ts` 与两个 cuko 测试文件是 LF。
+6. 保持每个文件原来的换行符：`app.tsx` / `ipc/cuko.ts` / `cuko-preload.ts` / `cuko-runner.ts` / 需求档案 是 CRLF；`composer-stats.ts` / `cuko-openai.ts` 与 cuko 测试文件、**本文件** 是 LF（本文件此前写成了 CRLF，已更正；改它时保持 LF）。
 7. 改文件前核对每个锚点只出现 1 次，并把读到的行用文件换行符拼回去，长度必须等于 `[IO.File]::ReadAllText` 的长度（或只差末尾一个换行）才写；多处改动按行号从后往前应用；有一处对不上就全部不写。
 8. 聊天界面会把 secret / password 字样的变量赋值打码成 `[REDACTED_...]`，这不是源文件内容；新代码里不要用这类变量名。
 9. 给用户的脚本只用 `//` 注释；块注释在后台报过「Unary operator used immediately before exponentiation expression」；不用 `?.`。
@@ -190,7 +196,7 @@ Cuko API 会话：
 2. 会话用量 tok 与 harness 的统计口径差异（见 3.1）。
 3. 请求日志面板（`src/ui/cuko/request-log-dialog.tsx`）有自己的一份命中率算法（取整），和 `composer-stats.ts` 不共用。
 4. OpenAI 会话的附件：界面按钮没置灰，发送时由主进程拦下并提示「当前模型暂不支持附件」。
-5. DeepSeek `/models` 扩展字段未实测（第 7 节）。
+5. DeepSeek `/models` 扩展字段已实测（2026-11-24）：`context_window` / `max_output_tokens` / `input_modalities` 与解析一致；`effort`（`supported_levels` / `default_level`）已接入，自动预填推理档位。仍有未读字段 `output_modalities` / `api_capabilities`，本版不需要。
 6. 旧问题清单（不在本次范围）：`runAgent` / `nameConversation` 在 Cuko 窗口必定失败；Cuko 协议切模型时 compress 没拿到 `providerSessionId` 会存 null；`switchModelWithHistory` 没有超时、不能取消；compress 历史时 `write` 的结果被替换；`select-directory` 用 `showOpenDialogSync` 会卡主进程；删 Provider 后绑定它的会话无人处理；自定义回复语在主进程不生效；`api_key` 明文保存且会返回给界面；`friendlyError` 缺 `idempotency_conflict`；`db.ts` 回填工作区用 UTC 时间；旧需求档案 `261109-8ms69z-cuko-api.md` 有 4 处与代码不一致。
 7. push 走 SSH：后台 push 要设 `GIT_SSH_COMMAND=ssh -o BatchMode=yes -o ConnectTimeout=20`，避免卡在密码或指纹确认。
 
@@ -198,4 +204,4 @@ Cuko API 会话：
 
 1. 是否 push 到 origin（Codeup）；是否同步到 github；是否需要合并请求。
 2. 是否、何时把 `feat/261123-q4h7tn-cuko-openai` 合并回 `master`，版本号怎么定（当前 0.9.2）。
-3. 界面验证结果（第 6 节）。
+3. 界面验证结果（第 6 节）：用户已确认功能正常。
