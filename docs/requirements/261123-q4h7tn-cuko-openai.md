@@ -110,6 +110,13 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 ## 9. 数据库
 
 - 沿用启动兜底的幂等 `ALTER TABLE` 加列，不升 `CURRENT_DB_VERSION`。
+- **API 密钥加密存储（2026-11-24 追加，提交 e38eca5）**：原先 `cuko_providers.api_key` 是明文，且 `list-providers` 会把明文回传给渲染进程。改用 Electron 内置 `safeStorage`（系统级加密，密钥由操作系统托管）：
+  - Windows：DPAPI；macOS：Keychain；Linux：libsecret（GNOME Keyring / KWallet）。
+  - **Linux 的坑**：无可用密钥环时 Electron 静默回退 `basic_text`（硬编码密钥＝假加密），而 `isEncryptionAvailable()` 仍返回 `true`。所以用 `getSelectedStorageBackend()` 显式判断，`basic_text` / `unknown` 一律判为不可用，**拒绝保存密钥**并提示用户装密钥环，绝不静默存明文（用户确认选 A）。
+  - 用 Electron 45 的异步 API（`encryptStringAsync` / `decryptStringAsync`），同步版已废弃。
+  - **存储格式**：`enc1$` + base64 密文。不带前缀的旧数据按明文处理，启动时统一迁移（幂等）。不新增列。
+  - **密钥不出主进程**：`list-providers` 只返回 `apiKeySet` / `apiKeyMask`（后 4 位）/ `apiKeyReadable`，不再有明文；`save-provider` 里 `apiKey` 缺省 = 不修改、空串 = 清除、有值 = 加密入库；`fetch-models` 未填密钥时用库里已存的（传 `providerId`）；runner 三处读 `api_key` 的地方改为解密后再发请求。
+  - 被连带的 `startCukoRun` / `continueAfterSwitch` 因需要 `await` 解密，改成 async（调用方与测试同步调整）。
 
 ## 10. 不在本次范围
 
@@ -130,6 +137,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - [x] 步骤 4：两级菜单选推理等级（Cuko 置灰）、会话累计用量 xxx tok（点击胶囊看明细）、缓存命中（会话累计，两位小数）、上下文用量与 60% 提醒
 - [x] 刷新模型自动读取接口推理档位（`effort` 扩展字段），用户修改优先；接口没给 `off` 时自动补一个，思考可关闭
 - [x] 获取模型时推断 API 协议（OpenAI / Cuko），与所选不一致时在保存时弹窗确认（只提示不自动改）
+- [x] API 密钥用系统加密存储（Windows DPAPI / macOS Keychain / Linux libsecret），不再回主进程之外；Linux 无密钥环时拒绝保存
 - [x] Cuko 协议行为不变
 - [x] typecheck / test / lint / compile 全绿（2026-11-24：typecheck 0 错误；`vitest run cuko` 6 文件 120 用例全过；`eslint .` 0 错误 34 个旧警告；compile 成功）
 
@@ -147,6 +155,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 
 已提交：
 
+- e38eca5 feat(cuko): API 密钥加密存储且不再回主进程之外
 - bdf85bd fix(cuko): 补上通用确认弹窗 DOM，修复 Cuko 窗口里确认框不弹
 - d9ada1c fix(settings): 恢复协议不一致的黄色提示，保存时没探过就主动探一次
 - d7a3654 feat(settings): 协议不一致改成保存时弹窗确认
