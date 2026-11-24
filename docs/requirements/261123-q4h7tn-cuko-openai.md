@@ -70,6 +70,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
   - 没点过「获取可用模型」直接点保存时：主动调一次 `fetchModels` 只为判断协议（不改模型列表、不弹「已获取 n 个模型」、失败不拦保存），再按推断结果决定要不要弹窗。
   - 推断结果只在本次编辑期间保留：换 API 地址、保存成功后清掉；手动改协议不清（推断针对的是接口返回，与用户最终选哪个无关）。没点过「获取可用模型」就没有推断结果，不弹窗打扰。
   - 连带修复：`ck-dialog-msg` 加 `white-space: pre-line`、弹窗宽度 280px → 340px，让多行说明能正常换行（插件启用 / 卸载等已有的多行确认框一并受益）。
+  - **Cuko 窗口没有通用确认弹窗 DOM（提交 bdf85bd）**：`src/ui/cuko/index.html` 只带了壳页面的 CSS，没带 `partials/modals.html` 里的 `#ck-dialog`，`ckDialog` 找不到元素时直接 `resolve(true)`（当成点了「确定」），导致协议确认框静默通过。补上 DOM，并在缺 DOM 时打 `console.warn` 便于排查。`built.html` 是 `.gitignore` 的构建产物，不进提交。
 - 输入类型保存但本版不生效（界面标注「暂未生效」）。
 
 ## 6. 聊天窗口（2026-11-24 确认）
@@ -146,6 +147,8 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 
 已提交：
 
+- bdf85bd fix(cuko): 补上通用确认弹窗 DOM，修复 Cuko 窗口里确认框不弹
+- d9ada1c fix(settings): 恢复协议不一致的黄色提示，保存时没探过就主动探一次
 - d7a3654 feat(settings): 协议不一致改成保存时弹窗确认
 - c1589f1 feat(settings): 获取模型时推断 API 协议，不一致就提示
 - f34258b feat(settings): 推理档位的「API 参数值」写清留空含义
