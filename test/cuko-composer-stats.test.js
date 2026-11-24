@@ -114,7 +114,8 @@ describe('推理等级', () => {
     expect(effectiveEffort(META, 'max')).toBe('max');
     expect(effectiveEffort(META, 'ultra')).toBe('high');
     expect(effectiveEffort(META, null)).toBe('high');
-    expect(effectiveEffort({ ...META, defaultEffort: 'nope' }, null)).toBe('off');
+    // 默认档位无效时跳过 off（与 src/app 的 defaultEffortOf 一致）
+    expect(effectiveEffort({ ...META, defaultEffort: 'nope' }, null)).toBe('low');
     expect(effectiveEffort({ reasoningEnabled: false }, 'max')).toBeUndefined();
   });
   it('显示名首字母大写', () => {

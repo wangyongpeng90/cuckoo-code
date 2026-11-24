@@ -495,6 +495,15 @@ function parseSupportedLevels(value: unknown): ReasoningLevel[] {
   return out;
 }
 
+// [261123-q4h7tn-cuko-openai] 模型能思考就一定能关：接口档位里没有 off 时补一个（放最前面，与设置页预填顺序一致）。
+// 接口自己给了 off 就不动，避免出现两个 off。
+function withOffLevel(levels: ReasoningLevel[]): ReasoningLevel[] {
+  if (levels.length === 0) return levels;
+  if (levels.some((l) => l.id === OFF_EFFORT)) return levels;
+  const off: ReasoningLevel = { id: OFF_EFFORT, value: '' };
+  return [off, ...levels];
+}
+
 /** 解析 GET /v1/models：标准字段 + 可选扩展字段（context_window / max_output_tokens / input_modalities） */
 export function parseModelList(json: any): ListedModel[] {
   const data = isPlainObject(json) ? json.data : undefined;
@@ -522,7 +531,7 @@ export function parseModelList(json: any): ListedModel[] {
     // DeepSeek 等：effort = { supported_levels: ["low","high","max"], default_level: "high" }；
     // 字段缺失或类型不对就当作没返回，不影响其它字段
     if (isPlainObject(entry.effort)) {
-      const levels = parseSupportedLevels(entry.effort.supported_levels);
+      const levels = withOffLevel(parseSupportedLevels(entry.effort.supported_levels));
       if (levels.length) {
         model.reasoningLevels = levels;
         const def = entry.effort.default_level;
@@ -594,13 +603,16 @@ function levelsOf(meta: ModelMeta | null | undefined): ReasoningLevel[] {
   return meta.reasoningLevels.filter((l) => l && typeof l.id === 'string' && l.id.trim() !== '');
 }
 
-/** 模型的默认档位：标了且存在就用它，否则第一个；没开推理档位返回 undefined */
+/** 模型的默认档位：标了且存在就用它，否则第一个「非 off」档位；没开推理档位返回 undefined */
 export function defaultEffortOf(meta: ModelMeta | null | undefined): string | undefined {
   const levels = levelsOf(meta);
   if (levels.length === 0) return undefined;
   const preferred = meta && meta.defaultEffort;
   if (preferred && levels.some((l) => l.id === preferred)) return preferred;
-  return levels[0].id;
+  // 档位表里 off 排在第一个（与设置页预填一致），兜底时要跳过它：
+  // 否则接口没给有效默认档位时，会话默认就把思考关掉了
+  const firstOn = levels.find((l) => l.id !== OFF_EFFORT);
+  return firstOn ? firstOn.id : levels[0].id;
 }
 
 /** 切换模型后的档位：新模型有同名档位就沿用，否则用新模型的默认档位 */

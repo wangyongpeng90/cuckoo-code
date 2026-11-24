@@ -353,10 +353,11 @@ describe('parseModelList / 模型设置', () => {
       { id: 'empty-levels', effort: { supported_levels: [], default_level: 'high' } },
       { id: 'no-effort' },
     ] });
-    expect(list[0].reasoningLevels).toEqual([{ id: 'low' }, { id: 'high' }, { id: 'max' }]);
+    // 接口没给 off 也补一个，放最前面（模型能思考就要能关）
+    expect(list[0].reasoningLevels).toEqual([{ id: 'off', value: '' }, { id: 'low' }, { id: 'high' }, { id: 'max' }]);
     expect(list[0].defaultEffort).toBe('high');
     // 默认档位不在档位表里就忽略，不写成不存在的档位
-    expect(list[1].reasoningLevels).toEqual([{ id: 'low' }, { id: 'max' }]);
+    expect(list[1].reasoningLevels).toEqual([{ id: 'off', value: '' }, { id: 'low' }, { id: 'max' }]);
     expect(list[1].defaultEffort).toBeUndefined();
     // 字段类型不对 / 空档位表：当作没返回，不影响其它字段
     expect(list[2].reasoningLevels).toBeUndefined();
@@ -364,11 +365,25 @@ describe('parseModelList / 模型设置', () => {
     expect(list[4].reasoningLevels).toBeUndefined();
     expect(list[5].reasoningLevels).toBeUndefined();
   });
+  it('接口没给 off 也补一个；给了就不重复', () => {
+    const list = parseModelList({ data: [
+      { id: 'no-off', effort: { supported_levels: ['low', 'high'], default_level: 'low' } },
+      { id: 'has-off', effort: { supported_levels: ['off', 'high'], default_level: 'off' } },
+      { id: 'off-not-first', effort: { supported_levels: ['high', 'off'], default_level: 'high' } },
+    ] });
+    expect(list[0].reasoningLevels).toEqual([{ id: 'off', value: '' }, { id: 'low' }, { id: 'high' }]);
+    expect(list[0].defaultEffort).toBe('low');
+    // 接口自己给了 off：不重复，顺序也不动
+    expect(list[1].reasoningLevels).toEqual([{ id: 'off' }, { id: 'high' }]);
+    expect(list[1].defaultEffort).toBe('off');
+    expect(list[2].reasoningLevels).toEqual([{ id: 'high' }, { id: 'off' }]);
+    expect(list[2].defaultEffort).toBe('high');
+  });
   it('接口档位写进 api_meta 并自动打开总开关', () => {
     const withEffort = parseModelList({ data: [{ id: 'deepseek-flash', effort: { supported_levels: ['low', 'high', 'max'], default_level: 'high' } }] });
     expect(listedToApiMeta(withEffort[0])).toEqual({
       reasoningEnabled: true,
-      reasoningLevels: [{ id: 'low' }, { id: 'high' }, { id: 'max' }],
+      reasoningLevels: [{ id: 'off', value: '' }, { id: 'low' }, { id: 'high' }, { id: 'max' }],
       defaultEffort: 'high',
     });
     // 没返回档位的模型不凭空加总开关，避免界面显示「支持」但实际没档位
@@ -390,7 +405,9 @@ describe('parseModelList / 模型设置', () => {
   const meta = { reasoningEnabled: true, reasoningLevels: DEFAULT_REASONING_LEVELS, defaultEffort: 'high' };
   it('默认档位 / 切模型时的档位', () => {
     expect(defaultEffortOf(meta)).toBe('high');
-    expect(defaultEffortOf({ ...meta, defaultEffort: 'nope' })).toBe('off');
+    // 默认档位无效时跳过 off，用第一个能思考的档位（避免默认把思考关掉）
+    expect(defaultEffortOf({ ...meta, defaultEffort: 'nope' })).toBe('low');
+    expect(defaultEffortOf({ reasoningEnabled: true, reasoningLevels: [{ id: 'off' }] })).toBe('off');
     expect(defaultEffortOf({ ...meta, reasoningEnabled: false })).toBeUndefined();
     expect(resolveEffortAfterSwitch('low', meta)).toBe('low');
     expect(resolveEffortAfterSwitch('medium', meta)).toBe('high');
@@ -402,7 +419,10 @@ describe('parseModelList / 模型设置', () => {
     expect(reasoningRequestOf(levels, 'medium', provider)).toEqual({ field: 'reasoning_effort', value: 'high' });
     expect(reasoningRequestOf(levels, 'max', provider)).toEqual({ field: 'reasoning_effort', value: 'max' });
     expect(reasoningRequestOf(levels, 'off', provider)).toEqual({ field: 'reasoning_effort', off: true, disableParams: { thinking: { type: 'disabled' } } });
-    expect(reasoningRequestOf(levels, 'unknown', { field: 'effort' })).toEqual({ field: 'effort', off: true, disableParams: null });
+    // 档位未知时兜到第一个「非 off」档位：不能因为认不出档位就悄悄把思考关掉
+    expect(reasoningRequestOf(levels, 'unknown', { field: 'effort' })).toEqual({ field: 'effort', value: 'high' });
+    // 但用户明确选了 off 仍然照旧关门
+    expect(reasoningRequestOf(levels, 'off', { field: 'effort' })).toEqual({ field: 'effort', off: true, disableParams: null });
     expect(reasoningRequestOf({}, 'high', provider)).toBeNull();
   });
 });

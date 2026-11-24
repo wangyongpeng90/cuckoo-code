@@ -106,14 +106,17 @@ export function reasoningLevelsOf(meta: ReasoningMetaLike | null | undefined): R
   return meta.reasoningLevels.filter((l) => !!l && typeof l.id === 'string' && l.id.trim() !== '');
 }
 
-// 当前生效的档位：会话里存的在档位表里就用它，否则用默认档位（标了且存在），再否则第一个；没开推理档位返回 undefined
+// 当前生效的档位：会话里存的在档位表里就用它，否则用默认档位（标了且存在），再否则第一个「非 off」档位；没开推理档位返回 undefined
+// 与 src/app/cuko-openai.ts 的 defaultEffortOf 保持一致（测试里交叉校验）：off 排在档位表第一位，
+// 兜底必须跳过它，否则接口没给有效默认档位时会话默认把思考关掉
 export function effectiveEffort(meta: ReasoningMetaLike | null | undefined, stored: string | null | undefined): string | undefined {
   const levels = reasoningLevelsOf(meta);
   if (levels.length === 0) return undefined;
   if (stored && levels.some((l) => l.id === stored)) return stored;
   const preferred = meta ? meta.defaultEffort : undefined;
   if (preferred && levels.some((l) => l.id === preferred)) return preferred;
-  return levels[0].id;
+  const firstOn = levels.find((l) => l.id !== 'off');
+  return firstOn ? firstOn.id : levels[0].id;
 }
 
 // 档位显示名：首字母大写（max → Max）
