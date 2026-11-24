@@ -277,8 +277,9 @@
   .ck-modal-foot .ck-btn { white-space: nowrap; }
   #agent-modal .ck-modal { max-width: 360px; }
   /* 通用弹框 */
-  .ck-dialog { max-width: 280px; }
-  .ck-dialog-msg { font-size: 12.5px; color: var(--ck-text-2); line-height: 1.6; word-break: break-word; }
+  .ck-dialog { max-width: 340px; }
+  /* pre-line：保留换行、折叠多余空格（确认弹窗里有多行说明时才看得出层次） */
+  .ck-dialog-msg { font-size: 12.5px; color: var(--ck-text-2); line-height: 1.6; word-break: break-word; white-space: pre-line; }
   /* 侧边栏相对定位（弹层锚点�?*/
   .ck-panel { position: relative; }
   /* 「文件」页内：左树 + 右预览 分栏 */
