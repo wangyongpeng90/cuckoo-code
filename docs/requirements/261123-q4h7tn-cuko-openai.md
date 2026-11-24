@@ -5,7 +5,7 @@ title: Cuko 接入 OpenAI 兼容接口（Chat Completions）
 status: doing
 branch: feat/261123-q4h7tn-cuko-openai
 created: 2026-11-23
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 # Cuko 接入 OpenAI 兼容接口（Chat Completions）
@@ -56,12 +56,24 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - 推理档位：每档一个 API 参数值（为空时用档位名），总开关，可标默认档位；打开总开关时预填 off / low / high / max。
 - 输入类型保存但本版不生效（界面标注「暂未生效」）。
 
-## 6. 聊天窗口
+## 6. 聊天窗口（2026-11-24 确认）
 
-- 思考强度选择器（模型选择器旁），按会话保存（`cuko_sessions.reasoning_effort`）。新建会话用模型默认档位；切模型时同名档位沿用，否则用新模型默认档位；下一次请求生效；Cuko 协议或未开推理档位的模型不显示。
-- 缓存命中：usage 归一出 `cache_read_tokens` / `cache_miss_tokens`（DeepSeek：`prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`；OpenAI：`prompt_tokens_details.cached_tokens`），原字段保留；输入框下方显示「上下文 x.xx k · 缓存命中 xx%」（没有数据不显示）；请求日志也显示。
-- 上下文提醒：模型填了上下文窗口时，用量 ≥ 60% 变提醒色并显示「82.3k / 128k（64%）」，不拦发送；真正超出报错时提示新开会话或换更长上下文的模型。
-- 附件：OpenAI 协议会话的附件按钮置灰，硬加附件时发送前拦下并 2 秒提示。
+只对 OpenAI 协议会话生效；Cuko 协议会话的显示与行为不变。
+
+- 模型选择器改成两级菜单（参考 deepseek-harness）：
+  - 按钮显示「模型名 + 推理等级」，如 `DeepSeek-V4.1-Flash Max`；Cuko 协议或未开推理档位的模型只显示模型名；去掉固定的「Default」字样。
+  - 一级菜单两行：「模型 >」「推理等级 >」，悬停或点击展开二级面板。
+  - 模型面板：保留搜索、「重新获取」、按 Provider 分组、选中打勾；切模型流程不变（有历史先确认）；运行中「模型」行置灰。
+  - 推理等级面板：列出模型在设置页配置的档位（显示时首字母大写，如 max → Max），选中打勾；点击即按会话保存（`cuko_sessions.reasoning_effort`），下一次请求生效；运行中也可以改（只改请求参数，不改历史，不影响缓存）。
+  - Cuko 协议会话、或未开推理档位的模型：「推理等级」行置灰、不能展开，右侧显示「不支持」，悬停提示原因（「Cuko API 协议不支持选择推理等级」/「该模型未设置推理档位，可在设置页开启」）。
+  - 档位规则：新会话用模型默认档位；还没建会话时先记在界面，建会话后保存；切模型时同名档位沿用，否则用新模型默认档位；会话里存的档位不在模型档位表里时，按默认档位显示和发送。
+- 输入框下方显示 `12.3M tok · 缓存命中 97.35% · 上下文 3.7K`（tok 前有数据库图标）：
+  - 会话累计用量（照 harness UsagePill）：当前会话每条已保存回复的 `input_tokens` + `output_tokens` 求和（缺字段时用 `total_tokens`），格式同「上下文」，后缀 ` tok`，前面数据库图标；累计为 0 不显示；悬停显示明细「合计 / 未缓存输入 / 缓存读取 / 输出」（精确数字，千分位）。与 harness 的差别：harness 计入每次尝试上报的用量（含之后被重试的尝试），本项目只统计落库的回复；会触发重试的失败通常还没收到用量，实际几乎一致。
+  - 缓存命中：整个会话累计（照 harness），只统计带命中字段的请求，Σ`cache_read_tokens` ÷ Σ(`cache_read_tokens` + `cache_miss_tokens`)（DeepSeek 即 Σ命中 ÷ Σ`prompt_tokens`）；固定两位小数；没全部命中时最多显示 `99.99%`，全部命中显示 `100.00%`；从没返回过命中字段的会话不显示。
+  - 上下文：最近一次请求的 `prompt_tokens`（接口准确值，即 harness 的 `pressureTokens`；不估算、不加 `~`，比实际慢一拍）；格式照 harness：小于 1000 原样，小于 100K 保留 1 位小数（`8.2K`），100K 及以上取整（`350K`），百万用 `M`。
+  - 60% 提醒：模型填了上下文窗口且用量 ≥ 60% 时变提醒色，显示 `上下文 82.3K / 128K（64%）`，百分比取整；不拦发送。
+  - 真正超出上下文时，沿用运行器现有提示（新开会话或换更长上下文的模型）。
+- 附件：本次不做（见第 10 节）。
 
 ## 7. 跨协议切换模型
 
@@ -82,32 +94,32 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 
 ## 10. 不在本次范围
 
-附件发送、历史压缩、Cuko 协议重试、问题清单中其余 P1 / P2。
+附件相关（发送附件、OpenAI 会话附件按钮置灰 / 发送前拦截）、历史压缩、Cuko 协议重试、问题清单中其余 P1 / P2。
 
 ## 11. 实施步骤
 
 1. 纯函数 `src/app/cuko-openai.ts` + 解码器 `flush` + 测试 `test/cuko-openai.test.js`。
 2. 运行器：协议分流、原文重放、停止 / 出错、重试、主进程保存用户消息、修复 1～5。
 3. 数据库加列、IPC、设置页（协议下拉、三项 Provider 参数、模型卡片、档位表、主进程获取模型）。
-4. 聊天窗口：思考强度选择器、缓存命中率、60% 提醒、附件拦截。
+4. 聊天窗口：模型选择器两级菜单（模型 / 推理等级）、会话累计用量（xxx tok）、缓存命中率（会话累计）、上下文用量与 60% 提醒。
 
 ## 验收标准
 
 - [x] 步骤 1：纯函数单测通过（原文重放前缀不变、流解析、usage、请求体优先级、重试判定、模型列表、档位）
 - [ ] 步骤 2：OpenAI 协议多轮对话 + 工具循环可用；DeepSeek 第二轮起缓存命中 > 0
 - [ ] 步骤 3：设置页可选协议、刷新不丢用户修改
-- [ ] 步骤 4：思考强度选择、命中率、60% 提醒、附件拦截
+- [ ] 步骤 4：两级菜单选推理等级（Cuko 置灰）、会话累计用量 xxx tok（悬停明细）、缓存命中（会话累计，两位小数）、上下文用量与 60% 提醒
 - [ ] Cuko 协议行为不变
 - [ ] typecheck / test / lint / compile 全绿
 
 ## 12. 请求日志（2026-11-23 追加）
 
-- 列表摘要：协议、第几次尝试（§attempt§ / §maxAttempts§，显示「第 2/4 次」）、用量（归一后含 §cache_read_tokens§ / §cache_miss_tokens§）与命中率、总条数 / 字数、OpenAI 协议本轮新增条数 / 字数、HTTP 状态、耗时。
+- 列表摘要：协议、第几次尝试（`attempt` / `maxAttempts`，显示「第 2/4 次」）、用量（归一后含 `cache_read_tokens` / `cache_miss_tokens`）与命中率、总条数 / 字数、OpenAI 协议本轮新增条数 / 字数、HTTP 状态、耗时。
 - 点开看原始报文（像开发者工具的网络面板）：
-  - 请求头：方法 + URL + 全部请求头，§Authorization§ 打码为 §Bearer ****§ + 后 4 位；
+  - 请求头：方法 + URL + 全部请求头，`Authorization` 打码为 `Bearer ****` + 后 4 位；
   - 请求体：实际发出的 JSON 原文，可切「原文 / 格式化」，可复制；
   - 响应：服务端返回的原始文本（SSE 原样），可复制，单条最多保留 200 万字符。
-- 主进程只保留最近 20 条请求的原文（§REQUEST_LOG_RAW_KEEP§），更早的显示「原文已释放」；列表接口只返回摘要，点开时经 IPC §cuko:get-request-log-raw§（preload §getRequestLogRaw§）读取。
+- 主进程只保留最近 20 条请求的原文（`REQUEST_LOG_RAW_KEEP`），更早的显示「原文已释放」；列表接口只返回摘要，点开时经 IPC `cuko:get-request-log-raw`（preload `getRequestLogRaw`）读取。
 - 日志不再保存完整的 input / messages 数组。
 
 ## 进度记录（截至 2026-11-24）
@@ -127,7 +139,7 @@ Cuko 目前只支持 Cuko API（Stateful Provider 保存上下文，客户端只
 - 2294d82 docs(req): 新增 261123-q4h7tn Cuko 接入 OpenAI 兼容接口需求档案
 - （本次）请求日志原始报文 / 用量 / 缓存命中；完善需求档案；新增交接文档
 
-待确认 / 未完成：步骤 4（聊天窗口思考强度选择器、命中率、60% 提醒、附件拦截）、请求日志测试、DeepSeek 真实缓存命中验证、DeepSeek /models 扩展字段实测。
+待确认 / 未完成：步骤 4（需求已于 2026-11-24 确认，见第 6 节，开发中）、请求日志测试、DeepSeek 真实缓存命中验证、DeepSeek /models 扩展字段实测。
 
 交接文档：`docs/handover/261123-q4h7tn-cuko-openai-handover.md`
 

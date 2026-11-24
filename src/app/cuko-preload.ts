@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   pickResultPhrase: (n: number) => ipcRenderer.invoke('cuko:pick-result-phrase', n),
   updateProviderId: (sessionId: string, providerId: string) => ipcRenderer.invoke('cuko:update-provider-id', sessionId, providerId),
   updateSessionModel: (sessionId: string, providerId: string, modelId: string) => ipcRenderer.invoke('cuko:update-session-model', sessionId, providerId, modelId),
+  // [261123-q4h7tn-cuko-openai] 保存会话的推理等级
+  updateSessionEffort: (sessionId: string, effort: string | null) => ipcRenderer.invoke('cuko:update-session-effort', sessionId, effort),
   updateSessionProject: (sessionId: string, projectDir: string) => ipcRenderer.invoke('cuko:update-session-project', sessionId, projectDir),
   archiveSession: (sessionId: string) => ipcRenderer.invoke('cuko:archive-session', sessionId),
   unarchiveSession: (sessionId: string) => ipcRenderer.invoke('cuko:unarchive-session', sessionId),

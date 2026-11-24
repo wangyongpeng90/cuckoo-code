@@ -15,7 +15,7 @@ import { jsRunner } from '../../tools/index.js';
 import { pickJsResultPhrase } from '../../overlay/js-result-phrases.js';
 import { nowLocalIso } from '../../infra/time.js';
 import { splitPromptByH1 } from '../cuko-run-protocol.js';
-import { normalizeProtocol, joinApiUrl, parseJsonObjectParam, parseModelList, listedToApiMeta, effectiveModelMeta } from '../cuko-openai.js';
+import { normalizeProtocol, joinApiUrl, parseJsonObjectParam, parseModelList, listedToApiMeta, effectiveModelMeta, resolveEffortAfterSwitch } from '../cuko-openai.js';
 import type { ListedModel } from '../cuko-openai.js';
 import {
   startCukoRun,
@@ -472,8 +472,31 @@ export function registerCukoIpc(): void {
     const db = getDb();
     if (!db) return { success: false };
     const now = nowLocalIso();
-    db.prepare('UPDATE cuko_sessions SET provider_id = ?, model_id = ?, updated_at = ? WHERE id = ?').run(providerId, modelId, now, sessionId);
-    return { success: true };
+    // [261123-q4h7tn-cuko-openai] 思考强度：新模型有同名档位就沿用，否则用新模型的默认档位（与 switchModelWithHistory 一致）
+    let effort: string | null = null;
+    try {
+      const session = db.prepare('SELECT reasoning_effort FROM cuko_sessions WHERE id = ?').get(sessionId) as any;
+      const model = db.prepare('SELECT api_meta, user_meta FROM cuko_models WHERE provider_id = ? AND model_id = ?').get(providerId, modelId) as any;
+      const meta = effectiveModelMeta(parseMetaText(model && model.api_meta), parseMetaText(model && model.user_meta));
+      effort = resolveEffortAfterSwitch((session && session.reasoning_effort) || null, meta) ?? null;
+    } catch (err: any) {
+      console.error('[Cuko] 读取模型档位失败:', (err && err.message) || err);
+    }
+    db.prepare('UPDATE cuko_sessions SET provider_id = ?, model_id = ?, reasoning_effort = ?, updated_at = ? WHERE id = ?').run(providerId, modelId, effort, now, sessionId);
+    return { success: true, reasoningEffort: effort };
+  });
+
+  // [261123-q4h7tn-cuko-openai] 保存会话的推理等级（下一次请求生效；不改 updated_at，避免会话列表重新排序）
+  ipcMain.handle('cuko:update-session-effort', (_event: any, sessionId: string, effort: string | null) => {
+    const db = getDb();
+    if (!db) return { success: false, error: '数据库未就绪' };
+    try {
+      const value = typeof effort === 'string' && effort.trim() ? effort.trim() : null;
+      db.prepare('UPDATE cuko_sessions SET reasoning_effort = ? WHERE id = ?').run(value, sessionId);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: (err && err.message) || '保存失败' };
+    }
   });
 
   ipcMain.handle('cuko:archive-session', (_event: any, sessionId: string) => {

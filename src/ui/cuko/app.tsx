@@ -34,6 +34,7 @@ import { ModelSwitchDialog } from '@/ui/cuko/model-switch-dialog';
 import { buildCompressHistory } from '@/ui/cuko/compress-history';
 import { RequestLogDialog } from '@/ui/cuko/request-log-dialog';
 import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
+import { sessionCacheTotals, formatHitPercent, lastPromptTokens, contextDisplay, reasoningLevelsOf, effectiveEffort, effortLabel, reasoningUnsupportedReason, sessionTokenTotals, formatTokenCount, tokenTotalsTip, type ContextDisplay } from '@/ui/cuko/composer-stats';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
 import {
   ToolFallbackRoot,
@@ -44,7 +45,7 @@ import {
   ToolFallback,
 } from '@/components/assistant-ui/elements/tool-fallback.aui';
 import { CollapsibleTrigger } from '@/components/assistant-ui/elements/collapsible-root';
-import { ChevronDownIcon, CheckIcon, XCircleIcon, LoaderIcon, FileText, SettingsIcon } from 'lucide-react';
+import { ChevronDownIcon, CheckIcon, XCircleIcon, LoaderIcon, FileText, SettingsIcon, DatabaseIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 // ============ 类型定义 ============
@@ -56,6 +57,8 @@ interface Config {
 interface CukoModel {
   id: string;
   name: string;
+  // [261123-q4h7tn-cuko-openai] 生效的模型设置（含上下文窗口、推理档位），由 listProviders 返回
+  meta?: any;
 }
 
 interface CukoProvider {
@@ -64,6 +67,8 @@ interface CukoProvider {
   baseUrl: string;
   apiKey?: string;
   models: CukoModel[];
+  // [261123-q4h7tn-cuko-openai] 协议：openai 走 Chat Completions，其余按 Cuko
+  protocol?: string;
 }
 
 interface Usage { input_tokens: number; output_tokens: number; total_tokens: number; }
@@ -81,6 +86,7 @@ declare global {
       deleteSession: (sessionId: string) => Promise<{ success: boolean }>;
       updateProviderId: (sessionId: string, providerId: string) => Promise<{ success: boolean }>;
       updateSessionModel: (sessionId: string, providerId: string, modelId: string) => Promise<{ success: boolean }>;
+      updateSessionEffort: (sessionId: string, effort: string | null) => Promise<{ success: boolean; error?: string }>;
       updateSessionProject: (sessionId: string, projectDir: string) => Promise<{ success: boolean; error?: string }>;
       archiveSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
       unarchiveSession: (sessionId: string) => Promise<{ success: boolean; error?: string }>;
@@ -203,8 +209,11 @@ function extractText(content: AppendMessage['content']): string {
 }
 
 // ============ 模型选择器组件 ============
-function ModelSelector({ providers, config, setConfig, disabled, onRefresh }: { providers: CukoProvider[]; config: Config; setConfig: (c: Config) => void; disabled?: boolean; onRefresh?: () => Promise<void> }) {
+// [261123-q4h7tn-cuko-openai] 模型选择器：两级菜单（模型 / 推理等级），参考 deepseek-harness
+// disabled 只禁止切模型（运行中）；推理等级运行中也能改，下一次请求生效
+function ModelSelector({ providers, config, setConfig, disabled, onRefresh, effort, onEffortChange }: { providers: CukoProvider[]; config: Config; setConfig: (c: Config) => void; disabled?: boolean; onRefresh?: () => Promise<void>; effort?: string | null; onEffortChange?: (id: string) => void }) {
   const [open, setOpen] = useState(false);
+  const [sub, setSub] = useState<'model' | 'effort' | null>(null);
   const [search, setSearch] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -214,107 +223,185 @@ function ModelSelector({ providers, config, setConfig, disabled, onRefresh }: { 
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setOpen(false);
+        setSub(null);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const currentProvider = providers.find(p => p.id === config.providerId);
-  const currentModel = currentProvider?.models.find(m => m.id === config.modelId);
+  // 开始运行后收起模型面板（推理等级面板保留）
+  useEffect(() => {
+    if (disabled && sub === 'model') setSub(null);
+  }, [disabled, sub]);
+
+  const close = () => {
+    setOpen(false);
+    setSub(null);
+  };
+
+  const currentProvider = providers.find((p) => p.id === config.providerId);
+  const currentModel = currentProvider ? currentProvider.models.find((m) => m.id === config.modelId) : undefined;
+  const modelLabel = currentModel ? (currentModel.name || currentModel.id) : '';
+  const meta = currentModel ? currentModel.meta : undefined;
+  const unsupported = currentModel ? reasoningUnsupportedReason(currentProvider ? currentProvider.protocol : undefined, meta) : 'model';
+  const levels = reasoningLevelsOf(unsupported ? null : meta);
+  const activeEffort = unsupported ? undefined : effectiveEffort(meta, effort);
+  const effortText = activeEffort ? effortLabel(activeEffort) : '';
+  let unsupportedTip = '';
+  if (!currentModel) unsupportedTip = '请先选择模型';
+  else if (unsupported === 'protocol') unsupportedTip = 'Cuko API 协议不支持选择推理等级';
+  else if (unsupported === 'model') unsupportedTip = '该模型未设置推理档位，可在设置页开启';
+  const rowClass = (active: boolean, off: boolean) => cn(
+    'flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-2 text-xs text-left transition-colors',
+    off ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent',
+    active && !off ? 'bg-accent' : '',
+  );
+  const chevronRight = (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0"><path d="m9 18 6-6-6-6"/></svg>
+  );
+  const checkIcon = (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary flex-shrink-0"><path d="M20 6 9 17l-5-5"/></svg>
+  );
+  // 二级面板贴在一级菜单右侧，底边对齐
+  const subPanelStyle = (width: number): React.CSSProperties => ({ left: '100%', bottom: 0, marginLeft: 8, width });
 
   return (
     <div className="relative" ref={dropdownRef}>
       <button
         type="button"
-        disabled={disabled}
-        onClick={() => setOpen(!open)}
-        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-colors ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent hover:text-foreground'}`}
+        onClick={() => { if (open) close(); else setOpen(true); }}
+        className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
-        <span>{currentModel ? (currentModel.name || currentModel.id) : '选择模型'}</span>
-        <span className="text-[10px] opacity-70">Default</span>
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${open ? 'rotate-180' : ''}`}><path d="m18 15-6-6-6 6"/></svg>
+        <span className="truncate" style={{ maxWidth: 200 }}>{modelLabel || '选择模型'}</span>
+        {effortText ? <span className="text-[10px] opacity-70">{effortText}</span> : null}
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={cn('transition-transform', open ? 'rotate-180' : '')}><path d="m18 15-6-6-6 6"/></svg>
       </button>
 
-      {open && !disabled && (
-        <div className="absolute bottom-full left-0 mb-2 w-72 rounded-xl border bg-popover text-popover-foreground shadow-lg outline-none z-50 flex flex-col overflow-hidden">
-          <div className="border-b px-3 py-2.5 text-xs flex flex-col gap-2 bg-muted/30">
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-foreground">模型</span>
-              <span className="text-muted-foreground">{currentModel?.name || currentModel?.id || '未选择'}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-foreground">Provider</span>
-              <span className="text-muted-foreground">{currentProvider?.name || '未选择'}</span>
-            </div>
+      {open && (
+        <div className="absolute bottom-full left-0 mb-2 z-50 flex flex-col gap-0.5 rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg" style={{ width: 240 }}>
+          <div title={disabled ? '运行中不能切换模型' : undefined}>
+            <button
+              type="button"
+              aria-disabled={disabled ? true : undefined}
+              onMouseEnter={() => { if (!disabled) setSub('model'); }}
+              onClick={() => { if (!disabled) setSub(sub === 'model' ? null : 'model'); }}
+              className={rowClass(sub === 'model', !!disabled)}
+            >
+              <span className="text-foreground">模型</span>
+              <span className="flex min-w-0 items-center gap-1 text-muted-foreground">
+                <span className="truncate">{modelLabel || '未选择'}</span>
+                {chevronRight}
+              </span>
+            </button>
           </div>
-          
-          <div className="p-2 border-b flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="搜索模型..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="flex-1 min-w-0 rounded-md bg-accent/50 px-2.5 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:bg-accent transition-colors"
-            />
-            {onRefresh && (
-              <button
-                type="button"
-                disabled={refreshing}
-                onClick={async () => {
-                  setRefreshing(true);
-                  try {
-                    await onRefresh();
-                  } finally {
-                    setRefreshing(false);
-                  }
-                }}
-                title="重新获取所有模型"
-                className="flex-shrink-0 flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
-              >
-                {refreshing ? (
-                  <span className="animate-spin size-3 border-2 border-current border-t-transparent rounded-full" />
-                ) : (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
-                )}
-                重新获取
-              </button>
-            )}
+          <div title={unsupportedTip || undefined}>
+            <button
+              type="button"
+              aria-disabled={unsupported ? true : undefined}
+              onMouseEnter={() => { if (!unsupported) setSub('effort'); }}
+              onClick={() => { if (!unsupported) setSub(sub === 'effort' ? null : 'effort'); }}
+              className={rowClass(sub === 'effort', !!unsupported)}
+            >
+              <span className="text-foreground">推理等级</span>
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <span>{unsupported ? '不支持' : effortText}</span>
+                {unsupported ? null : chevronRight}
+              </span>
+            </button>
           </div>
 
-          <div className="max-h-60 overflow-y-auto p-2">
-            {providers.map(provider => {
-              const filtered = provider.models.filter(m => (m.name || m.id).toLowerCase().includes(search.toLowerCase()));
-              if (filtered.length === 0) return null;
-              
-              return (
-                <div key={provider.id} className="mb-2 last:mb-0">
-                  <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                    {provider.name}
-                  </div>
-                  <div className="flex flex-col gap-0.5">
-                    {filtered.map(m => {
-                      const isSelected = config.providerId === provider.id && config.modelId === m.id;
-                      return (
-                        <button
-                          key={m.id}
-                          type="button"
-                          onClick={() => {
-                            setConfig({ providerId: provider.id, modelId: m.id });
-                            setOpen(false);
-                          }}
-                          className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground transition-colors group"
-                        >
-                          <span className="truncate">{m.name || m.id}</span>
-                          {isSelected && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary"><path d="M20 6 9 17l-5-5"/></svg>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+          {sub === 'model' && !disabled && (
+            <div className="absolute flex flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-lg" style={subPanelStyle(288)}>
+              <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2 text-xs">
+                <span className="font-medium text-foreground">Provider</span>
+                <span className="text-muted-foreground">{currentProvider ? currentProvider.name : '未选择'}</span>
+              </div>
+              <div className="p-2 border-b flex items-center gap-2">
+                <input
+                  type="text"
+                  placeholder="搜索模型..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="flex-1 min-w-0 rounded-md bg-accent/50 px-2.5 py-1.5 text-xs outline-none placeholder:text-muted-foreground/50 focus:bg-accent transition-colors"
+                />
+                {onRefresh && (
+                  <button
+                    type="button"
+                    disabled={refreshing}
+                    onClick={async () => {
+                      setRefreshing(true);
+                      try {
+                        await onRefresh();
+                      } finally {
+                        setRefreshing(false);
+                      }
+                    }}
+                    title="重新获取所有模型"
+                    className="flex-shrink-0 flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground transition-colors disabled:opacity-50"
+                  >
+                    {refreshing ? (
+                      <span className="animate-spin size-3 border-2 border-current border-t-transparent rounded-full" />
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+                    )}
+                    重新获取
+                  </button>
+                )}
+              </div>
+              <div className="max-h-60 overflow-y-auto p-2">
+                {providers.map(provider => {
+                  const filtered = provider.models.filter(m => (m.name || m.id).toLowerCase().includes(search.toLowerCase()));
+                  if (filtered.length === 0) return null;
+                  return (
+                    <div key={provider.id} className="mb-2 last:mb-0">
+                      <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                        {provider.name}
+                      </div>
+                      <div className="flex flex-col gap-0.5">
+                        {filtered.map(m => {
+                          const isSelected = config.providerId === provider.id && config.modelId === m.id;
+                          return (
+                            <button
+                              key={m.id}
+                              type="button"
+                              onClick={() => {
+                                setConfig({ providerId: provider.id, modelId: m.id });
+                                close();
+                              }}
+                              className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground transition-colors group"
+                            >
+                              <span className="truncate">{m.name || m.id}</span>
+                              {isSelected ? checkIcon : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {sub === 'effort' && !unsupported && (
+            <div className="absolute flex flex-col gap-0.5 rounded-xl border bg-popover p-1 text-popover-foreground shadow-lg" style={subPanelStyle(176)}>
+              {levels.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => {
+                    if (onEffortChange) onEffortChange(l.id);
+                    close();
+                  }}
+                  className="flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-xs text-left hover:bg-accent hover:text-accent-foreground transition-colors"
+                >
+                  <span>{effortLabel(l.id)}</span>
+                  {l.id === activeEffort ? checkIcon : null}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -410,17 +497,63 @@ const CukoReasoning: ReasoningMessagePartComponent = () => {
   );
 };
 
+// [261123-q4h7tn-cuko-openai] 输入框插槽的数据：组件本身定义在模块级保持稳定，数据从这里读；
+// 这样流式输出时 ChatApp 重渲染，模型选择器也不会被重新挂载（下拉菜单不会被关掉）
+interface ComposerUsageView {
+  hitText: string | null;
+  totalText: string | null;
+  totalTip: string;
+  context: ContextDisplay | null;
+}
+const ComposerSlotsContext = React.createContext<{ extra: React.ReactNode; usage: ComposerUsageView | null }>({ extra: null, usage: null });
+
+const CukoComposerExtra: React.FC = () => {
+  const slots = React.useContext(ComposerSlotsContext);
+  return <>{slots.extra}</>;
+};
+
 const CukoUsage: React.FC = () => {
+  const slots = React.useContext(ComposerSlotsContext);
   // selector 只返回原始数字，避免每次生成新对象触发 getSnapshot 警告/无限重渲染
   const totalTokens = useAuiState((s) => {
     const msgs = s.thread.messages;
     for (let i = msgs.length - 1; i >= 0; i--) {
-      const u = (msgs[i] as any)?.metadata?.custom?.usage as Usage | undefined;
+      const msg = msgs[i] as any;
+      const u = msg && msg.metadata && msg.metadata.custom ? (msg.metadata.custom.usage as Usage | undefined) : undefined;
       if (u && typeof u.total_tokens === 'number') return u.total_tokens;
     }
     return 0;
   });
 
+  // [261123-q4h7tn-cuko-openai] OpenAI 协议：缓存命中（会话累计）· 上下文（最近一次请求的 prompt_tokens）；用量 >= 60% 变提醒色
+  const view = slots.usage;
+  if (view) {
+    // [261123-q4h7tn-cuko-openai] 依次：会话累计 tok（照 harness UsagePill，悬停看明细）· 缓存命中 · 上下文
+    const parts: React.ReactNode[] = [];
+    if (view.totalText) {
+      parts.push(
+        <span key="total" title={view.totalTip} className="inline-flex items-center gap-1 align-middle cursor-default">
+          <DatabaseIcon className="size-3" />
+          {view.totalText}
+        </span>,
+      );
+    }
+    if (view.hitText) parts.push(<span key="hit">{'缓存命中 ' + view.hitText + '%'}</span>);
+    if (view.context) parts.push(<span key="ctx" style={view.context.warn ? { color: '#d97706', fontWeight: 500 } : undefined}>{view.context.text}</span>);
+    if (parts.length === 0) return null;
+    return (
+      <div className="text-center text-xs text-muted-foreground/70 select-none">
+        {parts.map((part, i) => (
+          <React.Fragment key={i}>
+            {i > 0 ? <span>{' · '}</span> : null}
+            {part}
+          </React.Fragment>
+        ))}
+      </div>
+    );
+  }
+
+  // Cuko 协议：保持原样
   if (!totalTokens) return null;
   const k = (totalTokens / 1000).toFixed(2);
   return (
@@ -554,6 +687,8 @@ function ChatApp() {
   useCukoTheme();
   const [providers, setProviders] = useState<CukoProvider[]>([]);
   const [config, setConfig] = useState<Config>({ providerId: '', modelId: '' });
+  // [261123-q4h7tn-cuko-openai] 当前会话库里存的推理等级（null = 用模型默认档位）；还没建会话时先记在这里
+  const [effort, setEffort] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   
   // 会话状态
@@ -681,6 +816,27 @@ function ChatApp() {
     }
   };
 
+  // [261123-q4h7tn-cuko-openai] 某个模型的生效设置（含推理档位 / 上下文窗口）
+  const modelMetaOf = (c: Config): any => {
+    const p = providers.find((x) => x.id === c.providerId);
+    const m = p ? p.models.find((x) => x.id === c.modelId) : undefined;
+    return m ? m.meta : undefined;
+  };
+
+  // [261123-q4h7tn-cuko-openai] 改推理等级：按会话保存，下一次请求生效（运行中也可以改）
+  const handleEffortChange = async (id: string) => {
+    setEffort(id);
+    const tid = currentThreadIdRef.current;
+    if (!tid || !window.cukoAPI) return;
+    setThreads((prev) => prev.map((t) => (t.id === tid ? ({ ...t, reasoning_effort: id } as typeof t) : t)));
+    try {
+      const res = await window.cukoAPI.updateSessionEffort(tid, id);
+      if (!res || !res.success) console.error('保存推理等级失败', res ? res.error : '');
+    } catch (e) {
+      console.error('保存推理等级失败', e);
+    }
+  };
+
   // 更新模型选择：空会话直接切；有历史消息先弹窗确认
   const handleConfigUpdate = async (newConfig: Config) => {
     if (!newConfig || !newConfig.providerId || !newConfig.modelId) return;
@@ -691,8 +847,11 @@ function ChatApp() {
       return;
     }
     await applyModelConfig(newConfig);
+    // [261123-q4h7tn-cuko-openai] 推理等级：新模型有同名档位就沿用，否则用新模型默认档位（主进程同样处理）
+    setEffort(effectiveEffort(modelMetaOf(newConfig), effort) || null);
     if (window.cukoAPI && currentThreadId) {
-      await (window.cukoAPI as any).updateSessionModel(currentThreadId, newConfig.providerId, newConfig.modelId);
+      const res = await (window.cukoAPI as any).updateSessionModel(currentThreadId, newConfig.providerId, newConfig.modelId);
+      if (res && res.reasoningEffort !== undefined) setEffort(res.reasoningEffort || null);
       refreshThreads();
     }
   };
@@ -729,6 +888,8 @@ function ChatApp() {
           } as Msg]));
     }
     await applyModelConfig(next);
+    // [261123-q4h7tn-cuko-openai] 切模型后的推理等级（同名沿用，否则默认）
+    setEffort(effectiveEffort(modelMetaOf(next), effort) || null);
     setPendingModelSwitch(null);
     refreshThreads();
     // 压缩回复里可能带 cuckoo 工具块：继续执行工具，并把结果发给新模型
@@ -873,6 +1034,8 @@ function ChatApp() {
     // 读取该会话绑定的模型与所属工作区
     const session = threads.find(t => t.id === id) || (await window.cukoAPI.listSessions()).find(x => x.id === id);
     if (session) {
+      // [261123-q4h7tn-cuko-openai] 该会话存的推理等级
+      setEffort((session as any).reasoning_effort || null);
       if (session.provider_id && session.model_id) {
         setConfig({ providerId: session.provider_id, modelId: session.model_id });
       }
@@ -902,6 +1065,8 @@ function ChatApp() {
     }
     setThreadId(newId);
     setMessages([]);
+    // [261123-q4h7tn-cuko-openai] 新会话用模型默认档位
+    setEffort(null);
     restoreDraft(newId);
     await refreshThreads();
   };
@@ -960,6 +1125,8 @@ function ChatApp() {
       try {
         await (window.cukoAPI as any).createSession(activeThreadId, config.providerId, config.modelId, activeWorkspace?.path || undefined);
         setThreadId(activeThreadId);
+        // [261123-q4h7tn-cuko-openai] 建会话前选过的推理等级，建好后保存
+        if (effort) await window.cukoAPI.updateSessionEffort(activeThreadId, effort);
         refreshThreads();
       } catch (e: any) {
         setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ 创建会话失败: ' + e.message, id: crypto.randomUUID() }]);
@@ -1046,7 +1213,7 @@ function ChatApp() {
       setRunningSessions((prev) => prev.filter((id) => id !== activeThreadId));
       setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ ' + (e?.message || '启动失败'), id: crypto.randomUUID() }]);
     }
-  }, [config, currentThreadId, threads, activeWorkspace]);
+  }, [config, currentThreadId, threads, activeWorkspace, effort]);
 
   // 订阅主进程的运行事件：窗口重开 / 切回会话时继续追增量
   useEffect(() => {
@@ -1210,6 +1377,46 @@ function ChatApp() {
       })()
     : '';
 
+  // [261123-q4h7tn-cuko-openai] 输入框插槽：模型选择器（两级菜单）与用量显示的数据
+  const composerProvider = providers.find((p) => p.id === config.providerId);
+  const composerModel = composerProvider ? composerProvider.models.find((m) => m.id === config.modelId) : undefined;
+  let usageView: ComposerUsageView | null = null;
+  if (composerProvider && composerProvider.protocol === 'openai') {
+    const usages = messages.map((m) => m.usage as unknown);
+    const totals = sessionCacheTotals(usages);
+    const composerMeta = composerModel ? composerModel.meta : undefined;
+    const tokenTotals = sessionTokenTotals(usages);
+    usageView = {
+      hitText: totals ? formatHitPercent(totals.read, totals.prompt) : null,
+      totalText: tokenTotals ? formatTokenCount(tokenTotals.total) + ' tok' : null,
+      totalTip: tokenTotals ? tokenTotalsTip(tokenTotals) : '',
+      context: contextDisplay(lastPromptTokens(usages), composerMeta ? composerMeta.contextWindow : undefined),
+    };
+  }
+  const composerExtra = (
+    <div className="flex items-center gap-1">
+      <WorkspaceSelector
+        workspaces={workspaces}
+        activeWorkspace={activeWorkspace}
+        onSelect={handleSelectWorkspace}
+        onAdd={handleAddWorkspace}
+      />
+      {hasAnyModel ? (
+        <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={modelSwitchLocked} onRefresh={handleRefreshModels} effort={effort} onEffortChange={handleEffortChange} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+          title="先去设置里添加模型提供商"
+          className="text-muted-foreground hover:bg-accent hover:text-foreground flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors"
+        >
+          <SettingsIcon className="size-3.5" />
+          设置模型
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <div className="grid h-dvh max-h-dvh grid-cols-[260px_1fr] bg-background text-foreground overflow-hidden">
@@ -1249,36 +1456,16 @@ function ChatApp() {
           </div>
         </div>
         <div className="relative min-h-0 min-w-0 overflow-hidden">
-          <Thread components={{
-            Reasoning: CukoReasoning,
-            ComposerFooter: CukoUsage,
-            UserAttachment: CukoUserAttachment,
-            virtualize: true,
-            ToolFallback: CukoToolFallback,
-            ComposerExtra: () => (
-              <div className="flex items-center gap-1">
-                <WorkspaceSelector
-                  workspaces={workspaces}
-                  activeWorkspace={activeWorkspace}
-                  onSelect={handleSelectWorkspace}
-                  onAdd={handleAddWorkspace}
-                />
-                {hasAnyModel ? (
-                  <ModelSelector providers={providers} config={config} setConfig={handleConfigUpdate} disabled={modelSwitchLocked} onRefresh={handleRefreshModels} />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setSettingsOpen(true)}
-                    title="先去设置里添加模型提供商"
-                    className="text-muted-foreground hover:bg-accent hover:text-foreground flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs transition-colors"
-                  >
-                    <SettingsIcon className="size-3.5" />
-                    设置模型
-                  </button>
-                )}
-              </div>
-            )
-          }} />
+          <ComposerSlotsContext.Provider value={{ extra: composerExtra, usage: usageView }}>
+            <Thread components={{
+              Reasoning: CukoReasoning,
+              ComposerFooter: CukoUsage,
+              UserAttachment: CukoUserAttachment,
+              virtualize: true,
+              ToolFallback: CukoToolFallback,
+              ComposerExtra: CukoComposerExtra,
+            }} />
+          </ComposerSlotsContext.Provider>
         </div>
       </div>
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
