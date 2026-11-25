@@ -84,7 +84,7 @@ assistant-ui（已装 @assistant-ui/react 0.15.34）自带队列能力，本需�
   - `finishRun`：complete 且未暂停且有普通排队 → 自动启动下一次运行；cancelled / error → 暂停。
   - `cancelCukoRun`：暂停队列。
   - 删除会话时清理该会话的队列。
-- IPC（`src/app/ipc/cuko.ts`）：`cuko:queue-get` / `cuko:queue-enqueue` / `cuko:queue-steer` / `cuko:queue-move` / `cuko:queue-edit` / `cuko:queue-remove`；preload 暴露对应方法。
+- IPC（`src/app/ipc/cuko.ts`）：`cuko:queue-get` / `cuko:queue-enqueue` / `cuko:queue-steer` / `cuko:queue-move` / `cuko:queue-edit` / `cuko:queue-remove` / `cuko:queue-run-now`（立即发送：移到插话最前，空闲时恢复队列并马上发）；preload 暴露对应方法。入队后若当前没有运行就立即续发（防止「判断在运行」与「运行刚结束」之间的空档把消息卡住）；续发加防重入，`startCukoRun` 解密后再查一次运行。删除会话时清空队列。
 - 运行事件新增 `queue-update`（会话 id + 两条通道快照）；插话消息落库后推送给页面显示（新事件或复用现有事件，写代码时定）。
 
 ### 3.2 页面（`src/ui/cuko/app.tsx`）
@@ -118,7 +118,7 @@ assistant-ui（已装 @assistant-ui/react 0.15.34）自带队列能力，本需�
 - [x] 需求档案 + 分支
 - [x] 主进程队列模块 + 测试
 - [x] runner 接入插话与自动续发
-- [ ] IPC + preload
+- [x] IPC + preload
 - [ ] 页面队列接口
 - [ ] 排队区界面 + 输入框
 - [ ] 真机验证

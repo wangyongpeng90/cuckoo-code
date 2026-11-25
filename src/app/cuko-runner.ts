@@ -784,9 +784,21 @@ function takeSteerInput(run: CukoRun): CukoRunInputPart[] {
   return parts;
 }
 
-/** 运行正常结束后：先发残留的插话，再发普通排队第一条；启动失败就放回队首并暂停 */
+/** 正在续发的会话：防止「运行刚结束」和「界面入队」同时触发续发，开出两个运行 */
+const drainingQueues = new Set<string>();
+
 async function drainCukoQueue(sessionId: string): Promise<void> {
-  if (runs.has(sessionId) || cukoQueue.isPaused(sessionId)) return;
+  if (runs.has(sessionId) || drainingQueues.has(sessionId) || cukoQueue.isPaused(sessionId)) return;
+  drainingQueues.add(sessionId);
+  try {
+    await drainQueueOnce(sessionId);
+  } finally {
+    drainingQueues.delete(sessionId);
+  }
+}
+
+/** 续发一次：先发残留的插话，再发普通排队第一条；启动失败就放回队首并暂停 */
+async function drainQueueOnce(sessionId: string): Promise<void> {
   let items = cukoQueue.takeSteer(sessionId);
   if (items.length === 0) {
     const next = cukoQueue.takeNext(sessionId);
@@ -816,6 +828,23 @@ async function drainCukoQueue(sessionId: string): Promise<void> {
     cukoQueue.pause(sessionId);
     emit({ type: 'queue-error', sessionId, error: result.error || '排队消息发送失败' });
   }
+}
+
+/** [261126-q7mxk2-cuko-message-queue] 界面改了队列：当前没有运行就接着发（resume=true 时先恢复暂停的队列） */
+export function kickCukoQueue(sessionId: string, options?: { resume?: boolean }): void {
+  const sid = String(sessionId || '');
+  if (!sid || runs.has(sid)) return;
+  if (options && options.resume) cukoQueue.resume(sid);
+  void drainCukoQueue(sid);
+}
+
+/** [261126-q7mxk2-cuko-message-queue] 立即发送某条：移到插话通道最前；空闲时恢复队列并马上发 */
+export function runQueueItemNow(sessionId: string, itemId: string): { success: boolean; error?: string } {
+  const sid = String(sessionId || '');
+  const r = cukoQueue.move(sid, itemId, { lane: 'steer', insertAfter: null });
+  if (!r.success) return { success: false, error: r.error };
+  kickCukoQueue(sid, { resume: true });
+  return { success: true };
 }
 
 function finishRun(run: CukoRun, status: CukoRunStatus, error?: string): void {
@@ -862,6 +891,8 @@ export async function startCukoRun(params: StartRunParams): Promise<{ success: b
       return { success: false, error: '无法解密 API 密钥：' + String((err && err.message) || err) + '（可能在设置页重新填写）' };
     }
   }
+  // [261126-q7mxk2-cuko-message-queue] 解密期间可能已有别的运行开始（队列续发 / 重复发送），再查一次
+  if (runs.has(sessionId)) return { success: false, error: '该会话正在运行，请先停止' };
 
   const input = Array.isArray(params.input) ? params.input.filter((p) => p && typeof p.type === 'string') : [];
   if (input.length === 0) return { success: false, error: '消息内容为空' };

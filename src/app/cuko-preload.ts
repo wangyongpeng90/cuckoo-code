@@ -68,6 +68,15 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   onRunEvent: (cb: (event: any) => void) => {
     ipcRenderer.on('cuko:run-event', (_e: any, ev: any) => cb(ev));
   },
+
+  // ====== [261126-q7mxk2-cuko-message-queue] 消息队列（变化走 onRunEvent 的 queue-update） ======
+  queueGet: (sessionId: string) => ipcRenderer.invoke('cuko:queue-get', sessionId),
+  queueEnqueue: (sessionId: string, text: string, lane?: string) => ipcRenderer.invoke('cuko:queue-enqueue', sessionId, text, lane),
+  queueSteer: (sessionId: string, text: string) => ipcRenderer.invoke('cuko:queue-steer', sessionId, text),
+  queueMove: (sessionId: string, itemId: string, placement: any) => ipcRenderer.invoke('cuko:queue-move', sessionId, itemId, placement),
+  queueEdit: (sessionId: string, itemId: string, text: string) => ipcRenderer.invoke('cuko:queue-edit', sessionId, itemId, text),
+  queueRemove: (sessionId: string, itemId: string) => ipcRenderer.invoke('cuko:queue-remove', sessionId, itemId),
+  queueRunNow: (sessionId: string, itemId: string) => ipcRenderer.invoke('cuko:queue-run-now', sessionId, itemId),
 });
 
 const shellAPI = {

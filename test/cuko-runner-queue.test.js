@@ -39,6 +39,8 @@ let startCukoRun;
 let cancelCukoRun;
 let subscribeCukoRuns;
 let cukoQueue;
+let kickCukoQueue;
+let runQueueItemNow;
 
 const FENCE = String.fromCharCode(96).repeat(3);
 const TOOL_REPLY = FENCE + 'cuckoo\nlog("tool-ok")\n' + FENCE;
@@ -100,7 +102,7 @@ async function start(sid, text) {
 }
 
 beforeAll(async () => {
-  ({ startCukoRun, cancelCukoRun, subscribeCukoRuns } = await import('../src/app/cuko-runner.js'));
+  ({ startCukoRun, cancelCukoRun, subscribeCukoRuns, kickCukoQueue, runQueueItemNow } = await import('../src/app/cuko-runner.js'));
   ({ cukoQueue } = await import('../src/app/cuko-queue.js'));
   server = http.createServer((req, res) => {
     let raw = '';
@@ -276,5 +278,51 @@ describe('cuko-runner + 队列：排队与暂停', () => {
     expect(requests).toHaveLength(1);
     expect(queueTexts(sid)).toEqual(['排队1', '排队2']);
     expect(cukoQueue.isPaused(sid)).toBe(true);
+  });
+});
+
+describe('cuko-runner + 队列：界面触发的续发', () => {
+  it('空闲时入队再触发：直接发出，界面收到这条用户消息', async () => {
+    const sid = newSession('p-openai');
+    handlers.push((_b, res) => sendText(res, 'r1'));
+    cukoQueue.enqueue(sid, '空闲入队');
+    kickCukoQueue(sid);
+    await waitFor(() => of(sid, 'run-complete').length === 1);
+    expect(requests).toHaveLength(1);
+    expect(lastMsg(requests[0])).toEqual({ role: 'user', content: '空闲入队' });
+    expect(of(sid, 'user-message').some((e) => e.content === '空闲入队' && e.source === 'queue')).toBe(true);
+    expect(queueTexts(sid)).toEqual([]);
+  });
+
+  it('连续触发两次只开一个运行，两条按顺序先后发出', async () => {
+    const sid = newSession('p-openai');
+    handlers.push((_b, res) => sendText(res, 'r1'));
+    handlers.push((_b, res) => sendText(res, 'r2'));
+    cukoQueue.enqueue(sid, 'a');
+    cukoQueue.enqueue(sid, 'b');
+    kickCukoQueue(sid);
+    kickCukoQueue(sid);
+    await waitFor(() => of(sid, 'run-complete').length === 2);
+    await sleep(100);
+    expect(of(sid, 'run-complete')).toHaveLength(2);
+    expect(requests).toHaveLength(2);
+    expect(lastMsg(requests[0])).toEqual({ role: 'user', content: 'a' });
+    expect(lastMsg(requests[1])).toEqual({ role: 'user', content: 'b' });
+  });
+
+  it('暂停后「立即发送」：这条先发、队列恢复、剩下的接着发；条目不存在返回失败', async () => {
+    const sid = newSession('p-openai');
+    cukoQueue.enqueue(sid, '排队1');
+    const b = cukoQueue.enqueue(sid, '排队2').item;
+    cukoQueue.pause(sid);
+    expect(runQueueItemNow(sid, 'no-such-id')).toMatchObject({ success: false });
+    handlers.push((_b, res) => sendText(res, 'r2'));
+    handlers.push((_b, res) => sendText(res, 'r1'));
+    expect(runQueueItemNow(sid, b.id)).toMatchObject({ success: true });
+    await waitFor(() => of(sid, 'run-complete').length === 2);
+    expect(lastMsg(requests[0])).toEqual({ role: 'user', content: '排队2' });
+    expect(lastMsg(requests[1])).toEqual({ role: 'user', content: '排队1' });
+    expect(queueTexts(sid)).toEqual([]);
+    expect(cukoQueue.isPaused(sid)).toBe(false);
   });
 });
