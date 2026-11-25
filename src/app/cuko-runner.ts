@@ -46,6 +46,8 @@ import {
 import type { CukoProtocol, ToolRunItem, ModelMeta, ReasoningRequest } from './cuko-openai.js';
 // [261123-q4h7tn-cuko-openai] 密钥在库里是密文，发请求前先解密；永不出主进程
 import { decryptSecret } from './secrets.js';
+// [261126-q7mxk2-cuko-message-queue] 主进程消息队列（插话 / 排队）
+import { cukoQueue } from './cuko-queue.js';
 
 export type CukoRunStatus = 'complete' | 'cancelled' | 'error';
 
@@ -61,6 +63,8 @@ export interface StartRunParams {
   windowId?: number | null;
   /** [261123-q4h7tn-cuko-openai] 用户消息（由主进程落库；OpenAI 协议必需，Cuko 协议可选） */
   userMessage?: { id: string; content: string };
+  /** [261126-q7mxk2-cuko-message-queue] 由队列自动发起：不恢复暂停的队列，并把这条用户消息推给界面 */
+  fromQueue?: boolean;
 }
 
 export interface CukoRunSnapshot {
@@ -314,6 +318,11 @@ const subscribers = new Set<any>();
 function getDb(): any {
   return (global as any).__globalDb;
 }
+
+// [261126-q7mxk2-cuko-message-queue] 队列有变化就推给界面
+cukoQueue.subscribe((snapshot) => {
+  emit({ type: 'queue-update', ...snapshot });
+});
 
 /** 广播事件给所有 Cuko 窗口；窗口关了也不影响，事件直接丢弃 */
 function emit(event: Record<string, any>): void {
@@ -727,13 +736,22 @@ async function runLoop(run: CukoRun, initialContent?: string): Promise<void> {
       }
 
       const blocks = extractCuckooBlocks(round.content);
-      if (blocks.length === 0) break;
+      if (blocks.length === 0) {
+        // [261126-q7mxk2-cuko-message-queue] 本轮没调工具：有插话就作为新的用户消息继续，运行不结束
+        const steer = takeSteerInput(run);
+        if (steer.length === 0) break;
+        requestType = 'user';
+        currentInput = steer;
+        continue;
+      }
 
       const results = await executeToolBlocks(run, blocks);
       if (run.aborted) break;
       // 工具循环回传：input 元素仍是 text，靠外层 type: "tool" 区分
       requestType = 'tool';
       currentInput = buildToolInput(results);
+      // [261126-q7mxk2-cuko-message-queue] 插话：跟这一轮的工具结果一起发（OpenAI 协议已落库，按相邻同角色合并）
+      currentInput = [...currentInput, ...takeSteerInput(run)];
     }
   } catch (err: any) {
     finishRun(run, run.aborted ? 'cancelled' : 'error', err?.message || String(err));
@@ -742,11 +760,72 @@ async function runLoop(run: CukoRun, initialContent?: string): Promise<void> {
   finishRun(run, run.aborted ? 'cancelled' : 'complete');
 }
 
+// ================= [261126-q7mxk2-cuko-message-queue] 消息队列 =================
+
+/** 用户消息落库格式：普通文本原样存；像 JSON 的文本包一层，避免读出来被当成别的格式 */
+function storedUserText(text: string): string {
+  const t = text.trim();
+  return t.startsWith('{') || t.startsWith('[') ? JSON.stringify({ v: 1, text, attachments: [] }) : text;
+}
+
+/** 取出插话通道全部消息：每条落库成用户消息并推给界面，返回要拼进下一轮的 input */
+function takeSteerInput(run: CukoRun): CukoRunInputPart[] {
+  const parts: CukoRunInputPart[] = [];
+  for (const item of cukoQueue.takeSteer(run.sessionId)) {
+    const text = String(item.text || '');
+    if (!text.trim()) continue;
+    const id = randomUUID();
+    const content = storedUserText(text);
+    const openai = run.protocol === 'openai';
+    insertMessage({ id, sessionId: run.sessionId, role: 'user', content, sentRole: openai ? 'user' : null, sentText: openai ? text : null });
+    emit({ type: 'user-message', sessionId: run.sessionId, messageId: id, content, source: 'steer' });
+    parts.push({ type: 'text', text });
+  }
+  return parts;
+}
+
+/** 运行正常结束后：先发残留的插话，再发普通排队第一条；启动失败就放回队首并暂停 */
+async function drainCukoQueue(sessionId: string): Promise<void> {
+  if (runs.has(sessionId) || cukoQueue.isPaused(sessionId)) return;
+  let items = cukoQueue.takeSteer(sessionId);
+  if (items.length === 0) {
+    const next = cukoQueue.takeNext(sessionId);
+    if (!next) return;
+    items = [next];
+  }
+  const text = items.map((x) => x.text).join('\n\n');
+  const last = items[items.length - 1];
+  const windowId = last ? last.windowId : null;
+  let result: { success: boolean; error?: string };
+  try {
+    result = await startCukoRun({
+      sessionId,
+      input: [{ type: 'text', text }],
+      userMessage: { id: randomUUID(), content: storedUserText(text) },
+      windowId,
+      fromQueue: true,
+    });
+  } catch (err: any) {
+    result = { success: false, error: err?.message || String(err) };
+  }
+  if (result.success) return;
+  // 启动失败：消息放回队首（不丢）；不是因为别的运行抢先开始，才暂停并提示界面
+  const back = cukoQueue.enqueue(sessionId, text, { windowId });
+  if (back.item) cukoQueue.move(sessionId, back.item.id, { lane: 'queue', insertAfter: null });
+  if (!runs.has(sessionId)) {
+    cukoQueue.pause(sessionId);
+    emit({ type: 'queue-error', sessionId, error: result.error || '排队消息发送失败' });
+  }
+}
+
 function finishRun(run: CukoRun, status: CukoRunStatus, error?: string): void {
   if (run.finished) return;
   run.finished = true;
   runs.delete(run.sessionId);
   emit({ type: 'run-complete', sessionId: run.sessionId, runId: run.runId, status, error });
+  // [261126-q7mxk2-cuko-message-queue] 正常结束：接着发队列里的下一条；停止 / 出错：队列暂停（消息保留）
+  if (status === 'complete') void drainCukoQueue(run.sessionId);
+  else cukoQueue.pause(run.sessionId);
 }
 
 /** 启动一个会话的后台运行；同一会话同时只允许一个 */
@@ -829,6 +908,14 @@ export async function startCukoRun(params: StartRunParams): Promise<{ success: b
     windowId: typeof params.windowId === 'number' ? params.windowId : null,
   };
 
+  // [261126-q7mxk2-cuko-message-queue] 用户手动发送 → 恢复暂停的队列；队列发起 → 把这条用户消息推给界面
+  if (params.fromQueue) {
+    if (params.userMessage && params.userMessage.id) {
+      emit({ type: 'user-message', sessionId, messageId: params.userMessage.id, content: String(params.userMessage.content ?? ''), source: 'queue' });
+    }
+  } else {
+    cukoQueue.resume(sessionId);
+  }
   runs.set(sessionId, run);
   // 不 await：IPC 立即返回，循环在后台继续跑（窗口关了也跑）
   void runLoop(run);
@@ -930,6 +1017,8 @@ export async function continueAfterSwitch(params: ContinueAfterSwitchParams): Pr
 export function cancelCukoRun(sessionId: string): { success: boolean; error?: string } {
   const run = runs.get(String(sessionId || ''));
   if (!run) return { success: false, error: '没有正在运行的任务' };
+  // [261126-q7mxk2-cuko-message-queue] 先暂停队列：这次停止后不自动发下一条，消息保留
+  cukoQueue.pause(run.sessionId);
   run.aborted = true;
   try { run.abort.abort(); } catch { /* ignore */ }
   return { success: true };

@@ -117,7 +117,7 @@ assistant-ui（已装 @assistant-ui/react 0.15.34）自带队列能力，本需�
 
 - [x] 需求档案 + 分支
 - [x] 主进程队列模块 + 测试
-- [ ] runner 接入插话与自动续发
+- [x] runner 接入插话与自动续发
 - [ ] IPC + preload
 - [ ] 页面队列接口
 - [ ] 排队区界面 + 输入框
