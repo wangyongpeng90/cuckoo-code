@@ -141,6 +141,8 @@ export type ThreadComponents = {
   ComposerExtra?: ComponentType | undefined;
   /** 渲染在输入框下方（如用量统计），与 ComposerExtra 不同，它位于 Composer 之后。 */
   ComposerFooter?: ComponentType | undefined;
+  /** [261126-q7mxk2-cuko-message-queue] 渲染在输入框上方（如排队区）；返回 null 时不占位置。 */
+  ComposerTop?: ComponentType | undefined;
   /** 用户消息里单个附件的渲染组件。默认走 AttachmentUI；Cuko 换成文件名卡片。 */
   UserAttachment?: ComponentType | undefined;
   /** 是否用虚拟列表渲染消息（长会话用；Cuko 开启，主界面保持原样）。 */
@@ -238,7 +240,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
   isEmpty,
   autoFocus,
 }) => {
-  const { Welcome = ThreadWelcome, ComposerFooter, virtualize } = useContext(ThreadComponentsContext);
+  const { Welcome = ThreadWelcome, ComposerFooter, ComposerTop, virtualize } = useContext(ThreadComponentsContext);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   return (
@@ -299,6 +301,7 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean }> = ({
           >
             <ThreadScrollToBottom />
             <ThreadFollowupSuggestions />
+            {ComposerTop && <ComposerTop />}
             <Composer autoFocus={autoFocus} />
             {ComposerFooter && (
               <div className="-mt-3">
@@ -598,6 +601,8 @@ const ComposerAction: FC = () => {
         <AuiIf
           condition={(s) =>
             (!s.composer.canCancel ||
+              // [261126-q7mxk2-cuko-message-queue] 有队列能力时回复中也显示发送（消息进队列），停止按钮照常显示
+              s.thread.capabilities.queue ||
               (s.thread.voice !== undefined &&
                 s.composer.submission === undefined)) &&
             !shouldShowComposerResume(s)

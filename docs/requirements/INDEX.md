@@ -42,6 +42,6 @@
 | 261108-sse2 | fix | [适配 DeepSeek 新版 SSE 流（命名事件 + 正文提取为 0）](./261108-sse2-deepseek-sse-v2.md) | doing | fix/261108-sse-stream-v2 | 2026-11-08 |
 | 261109-8ms69z-cuko-api | feature | [Cuko API 客户端与独立工作窗口](./261109-8ms69z-cuko-api.md) | done | feat/261109-8ms69z-cuko-api | 2026-11-17 |
 | 261123-q4h7tn-cuko-openai | feature | [Cuko 接入 OpenAI 兼容接口（Chat Completions）](./261123-q4h7tn-cuko-openai.md) | review | feat/261123-q4h7tn-cuko-openai | 2026-11-24 |
-| 261126-q7mxk2-cuko-message-queue | feature | [Cuko 消息发送队列与插话](./261126-q7mxk2-cuko-message-queue.md) | in_progress | feat/261126-q7mxk2-cuko-message-queue | 2026-11-26 |
+| 261126-q7mxk2-cuko-message-queue | feature | [Cuko 消息发送队列与插话](./261126-q7mxk2-cuko-message-queue.md) | done | feat/261126-q7mxk2-cuko-message-queue | 2026-11-26 |
 
 共 38 个需求。

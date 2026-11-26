@@ -762,10 +762,9 @@ async function runLoop(run: CukoRun, initialContent?: string): Promise<void> {
 
 // ================= [261126-q7mxk2-cuko-message-queue] 消息队列 =================
 
-/** 用户消息落库格式：普通文本原样存；像 JSON 的文本包一层，避免读出来被当成别的格式 */
+/** 用户消息落库格式：与界面 serializeUserMessage 一致，没有附件就存纯文本（界面才能正常显示） */
 function storedUserText(text: string): string {
-  const t = text.trim();
-  return t.startsWith('{') || t.startsWith('[') ? JSON.stringify({ v: 1, text, attachments: [] }) : text;
+  return text;
 }
 
 /** 取出插话通道全部消息：每条落库成用户消息并推给界面，返回要拼进下一轮的 input */
