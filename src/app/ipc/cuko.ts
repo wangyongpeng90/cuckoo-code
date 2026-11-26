@@ -31,6 +31,9 @@ import {
   getCukoRequestLogRaw,
   clearCukoRequestLogs,
 } from '../cuko-runner.js';
+// [261126-q7mxk2-cuko-message-queue] 消息队列
+import { cukoQueue } from '../cuko-queue.js';
+import { kickCukoQueue, runQueueItemNow } from '../cuko-runner.js';
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
 
@@ -555,6 +558,8 @@ export function registerCukoIpc(): void {
     if (!db) return { success: false };
     // 正在后台跑的会话先停掉，避免删完还在往库里写
     cancelCukoRun(sessionId);
+    // [261126-q7mxk2-cuko-message-queue] 会话删了，它的排队消息也清掉
+    cukoQueue.clear(sessionId);
     db.prepare('DELETE FROM cuko_sessions WHERE id = ?').run(sessionId);
     return { success: true };
   });
@@ -746,6 +751,30 @@ export function registerCukoIpc(): void {
     } catch { /* ignore */ }
     return startCukoRun({ ...(params || {}), windowId });
   });
+
+  // [261126-q7mxk2-cuko-message-queue] 消息队列（主进程内存；变化经 cuko:run-event 的 queue-update 推给界面）
+  const queueWindowId = (event: any): number | null => {
+    try {
+      const win = require('electron').BrowserWindow.fromWebContents(event.sender);
+      return win && !win.isDestroyed() ? win.id : null;
+    } catch {
+      return null;
+    }
+  };
+  const queueAdd = (event: any, sessionId: string, text: string, lane: 'queue' | 'steer') => {
+    const r = cukoQueue.enqueue(sessionId, text, { lane, windowId: queueWindowId(event) });
+    // 界面判断「在运行」到这里之间运行可能刚好结束：没有运行就接着发，免得消息卡在队列里
+    if (r.success) kickCukoQueue(sessionId);
+    return r;
+  };
+  ipcMain.handle('cuko:queue-get', (_event: any, sessionId: string) => cukoQueue.get(sessionId));
+  ipcMain.handle('cuko:queue-enqueue', (event: any, sessionId: string, text: string, lane?: string) =>
+    queueAdd(event, sessionId, text, lane === 'steer' ? 'steer' : 'queue'));
+  ipcMain.handle('cuko:queue-steer', (event: any, sessionId: string, text: string) => queueAdd(event, sessionId, text, 'steer'));
+  ipcMain.handle('cuko:queue-move', (_event: any, sessionId: string, itemId: string, placement: any) => cukoQueue.move(sessionId, itemId, placement));
+  ipcMain.handle('cuko:queue-edit', (_event: any, sessionId: string, itemId: string, text: string) => cukoQueue.edit(sessionId, itemId, text));
+  ipcMain.handle('cuko:queue-remove', (_event: any, sessionId: string, itemId: string) => cukoQueue.remove(sessionId, itemId));
+  ipcMain.handle('cuko:queue-run-now', (_event: any, sessionId: string, itemId: string) => runQueueItemNow(sessionId, itemId));
   ipcMain.handle('cuko:cancel-run', (_event: any, sessionId: string) => cancelCukoRun(sessionId));
   ipcMain.handle('cuko:get-runs', () => listCukoRuns());
   ipcMain.handle('cuko:subscribe-runs', (event: any) => {

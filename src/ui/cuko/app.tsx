@@ -4,7 +4,7 @@
  * docs/requirements/261109-8ms69z-cuko-api.md
  */
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import {
@@ -17,6 +17,7 @@ import {
   type ReasoningMessagePartComponent,
   type ToolCallMessagePartComponent,
   type AttachmentAdapter,
+  type ExternalThreadQueueAdapter,
 } from '@assistant-ui/react';
 import {
   ReasoningRoot,
@@ -34,6 +35,8 @@ import { SystemPromptDialog } from '@/ui/cuko/system-prompt-dialog';
 import { ModelSwitchDialog } from '@/ui/cuko/model-switch-dialog';
 import { buildCompressHistory } from '@/ui/cuko/compress-history';
 import { RequestLogDialog } from '@/ui/cuko/request-log-dialog';
+// [261126-q7mxk2-cuko-message-queue] 输入框上方的排队区
+import { CukoQueueDock, CukoQueueDockContext, type CukoQueueDockValue } from '@/ui/cuko/queue-dock';
 import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
 import { sessionCacheTotals, formatHitPercent, lastPromptTokens, contextDisplay, reasoningLevelsOf, effectiveEffort, effortLabel, reasoningUnsupportedReason, sessionTokenTotals, formatTokenCount, formatExactCount, usageDetailRows, type ContextDisplay, type UsageDetailRow } from '@/ui/cuko/composer-stats';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
@@ -77,6 +80,17 @@ interface CukoProvider {
 
 interface Usage { input_tokens: number; output_tokens: number; total_tokens: number; }
 type Msg = ThreadMessageLike & { think?: string; usage?: Usage; };
+
+// [261126-q7mxk2-cuko-message-queue] 主进程推来的队列快照（只保留界面要用的字段）
+interface CukoQueueItemView { id: string; text: string; }
+interface CukoQueueView { items: CukoQueueItemView[]; steerItems: CukoQueueItemView[]; paused: boolean; }
+const EMPTY_QUEUE: CukoQueueView = { items: [], steerItems: [], paused: false };
+function toQueueView(q: any): CukoQueueView {
+  const list = (v: any): CukoQueueItemView[] => (Array.isArray(v) ? v : [])
+    .filter((x: any) => x && typeof x.id === 'string' && typeof x.text === 'string')
+    .map((x: any) => ({ id: x.id, text: x.text }));
+  return { items: list(q && q.items), steerItems: list(q && q.steerItems), paused: !!(q && q.paused) };
+}
 
 declare global {
   interface Window {
@@ -135,6 +149,14 @@ declare global {
       clearRequestLogs: () => Promise<{ success: boolean }>;
       subscribeRuns: () => Promise<{ success: boolean; runs?: any[] }>;
       onRunEvent: (cb: (event: any) => void) => void;
+      // [261126-q7mxk2-cuko-message-queue] 消息队列（变化经 onRunEvent 的 queue-update 推送）
+      queueGet: (sessionId: string) => Promise<any>;
+      queueEnqueue: (sessionId: string, text: string, lane?: string) => Promise<{ success: boolean; error?: string }>;
+      queueSteer: (sessionId: string, text: string) => Promise<{ success: boolean; error?: string }>;
+      queueMove: (sessionId: string, itemId: string, placement: any) => Promise<{ success: boolean; error?: string }>;
+      queueEdit: (sessionId: string, itemId: string, text: string) => Promise<{ success: boolean; error?: string }>;
+      queueRemove: (sessionId: string, itemId: string) => Promise<{ success: boolean; error?: string }>;
+      queueRunNow: (sessionId: string, itemId: string) => Promise<{ success: boolean; error?: string }>;
     };
   }
 }
@@ -833,6 +855,14 @@ function ChatApp() {
   // 正在后台运行的会话（可能同时多个）；当前会话是否在跑由它派生
   const [runningSessions, setRunningSessions] = useState<string[]>([]);
   const isRunning = runningSessions.includes(currentThreadId);
+  // [261126-q7mxk2-cuko-message-queue] 当前会话的排队消息（主进程推送）；提示 5 秒后自动消失
+  const [queueSnap, setQueueSnap] = useState<CukoQueueView>(EMPTY_QUEUE);
+  const [queueNotice, setQueueNotice] = useState('');
+  useEffect(() => {
+    if (!queueNotice) return;
+    const t = setTimeout(() => setQueueNotice(''), 5000);
+    return () => clearTimeout(t);
+  }, [queueNotice]);
 
   // 工作区状态
   // 工作区状态（持久化）
@@ -1077,6 +1107,7 @@ function ChatApp() {
     const prevId = currentThreadIdRef.current;
     if (prevId && prevId !== id) stashDraft(prevId);
     setThreadId(id);
+    setQueueSnap(EMPTY_QUEUE);
     const [dbMsgs, runs] = await Promise.all([
       window.cukoAPI.getMessages(id),
       Promise.resolve(window.cukoAPI.getRuns?.()).catch(() => [] as any[]),
@@ -1124,6 +1155,11 @@ function ChatApp() {
     setMessages(loadedMsgs);
     setRunningSessions((Array.isArray(runs) ? runs : []).map((r: any) => r.sessionId));
     restoreDraft(id);
+    // [261126-q7mxk2-cuko-message-queue] 读取该会话的排队消息
+    try {
+      const q = await window.cukoAPI.queueGet(id);
+      if (currentThreadIdRef.current === id) setQueueSnap(toQueueView(q));
+    } catch (e) { console.error('读取队列失败', e); }
     
     // 读取该会话绑定的模型与所属工作区
     const session = threads.find(t => t.id === id) || (await window.cukoAPI.listSessions()).find(x => x.id === id);
@@ -1159,6 +1195,7 @@ function ChatApp() {
     }
     setThreadId(newId);
     setMessages([]);
+    setQueueSnap(EMPTY_QUEUE);
     // [261123-q4h7tn-cuko-openai] 新会话用模型默认档位
     setEffort(null);
     restoreDraft(newId);
@@ -1171,6 +1208,7 @@ function ChatApp() {
     if (currentThreadIdRef.current === id) {
       setThreadId('');
       setMessages([]);
+      setQueueSnap(EMPTY_QUEUE);
     }
     await refreshThreads();
   };
@@ -1208,7 +1246,7 @@ function ChatApp() {
   };
 
   // 发送消息：落库用户消息 + 启动主进程后台运行；循环本身不在渲染进程
-  const onNew = useCallback(async (append: AppendMessage) => {
+  const sendNow = useCallback(async (append: AppendMessage) => {
     const text = extractText(append.content);
     const hasAttachments = Array.isArray((append as any).attachments) && (append as any).attachments.length > 0;
     if (!text && !hasAttachments) return;
@@ -1308,6 +1346,8 @@ function ChatApp() {
       setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ ' + (e?.message || '启动失败'), id: crypto.randomUUID() }]);
     }
   }, [config, currentThreadId, threads, activeWorkspace, effort]);
+  // [261126-q7mxk2-cuko-message-queue] 有队列时 assistant-ui 不直接调 onNew：空闲发送经队列接口转到 sendNow
+  const onNew = sendNow;
 
   // 订阅主进程的运行事件：窗口重开 / 切回会话时继续追增量
   useEffect(() => {
@@ -1408,6 +1448,25 @@ function ChatApp() {
           refreshThreads();
           break;
         }
+        // [261126-q7mxk2-cuko-message-queue] 队列变化 / 插话与排队发出的用户消息 / 续发失败
+        case 'queue-update': {
+          if (!isCurrent(sid)) break;
+          setQueueSnap(toQueueView(ev));
+          break;
+        }
+        case 'user-message': {
+          if (!isCurrent(sid) || !ev.messageId) break;
+          const stored = parseStoredContent(ev.content, ev.messageId);
+          setMessages((prev) => (prev.some((m) => m.id === ev.messageId)
+            ? prev
+            : [...prev, { role: 'user', id: ev.messageId, content: stored.content, ...(stored.attachments ? { attachments: stored.attachments } : {}) } as Msg]));
+          break;
+        }
+        case 'queue-error': {
+          if (!isCurrent(sid)) break;
+          setQueueNotice('排队消息发送失败，队列已暂停：' + (ev.error || '未知错误'));
+          break;
+        }
         default:
           break;
       }
@@ -1424,6 +1483,90 @@ function ChatApp() {
   const onCancel = useCallback(async () => {
     await window.cukoAPI.cancelRun(currentThreadIdRef.current);
   }, []);
+
+  // [261126-q7mxk2-cuko-message-queue] 队列接口：数据来自主进程推送；空闲时的发送走原流程 sendNow，回复中交给主进程
+  const isRunningRef = useRef(isRunning);
+  isRunningRef.current = isRunning;
+  const sendNowRef = useRef(sendNow);
+  sendNowRef.current = sendNow;
+  const queueAdapter = useMemo<ExternalThreadQueueAdapter>(() => {
+    const toState = (x: CukoQueueItemView) => ({ id: x.id, prompt: x.text, parts: [{ type: 'text' as const, text: x.text }] });
+    const report = (label: string, p: Promise<any>) => {
+      Promise.resolve(p)
+        .then((r: any) => { if (r && r.success === false) setQueueNotice(label + '：' + (r.error || '未知错误')); })
+        .catch((e: any) => setQueueNotice(label + '：' + (e?.message || String(e))));
+    };
+    const add = (message: AppendMessage, lane: 'queue' | 'steer') => {
+      if (!isRunningRef.current) {
+        void sendNowRef.current(message);
+        return;
+      }
+      const atts = (message as any).attachments;
+      if (Array.isArray(atts) && atts.length > 0) {
+        // 抛错让 assistant-ui 把这条消息退回输入框
+        setQueueNotice('回复中暂不支持附件排队，请等这一轮结束后再发送');
+        throw new Error('回复中暂不支持附件排队');
+      }
+      const text = extractText(message.content);
+      if (!text.trim()) return;
+      const sid = currentThreadIdRef.current;
+      report('加入队列失败', lane === 'steer' ? window.cukoAPI.queueSteer(sid, text) : window.cukoAPI.queueEnqueue(sid, text, 'queue'));
+    };
+    return {
+      items: queueSnap.items.map(toState),
+      steerItems: queueSnap.steerItems.map(toState),
+      enqueue: (message) => add(message, 'queue'),
+      // 默认不插话：回复中发送（Enter / Ctrl+Shift+Enter / 发送按钮）一律进普通排队，点排队区的 ↑ 才插话
+      steer: (message) => add(message, 'queue'),
+      move: (itemId, placement) => {
+        const sid = currentThreadIdRef.current;
+        if (!sid) return;
+        // 空闲时移到插话通道 = 立即发送（停止后剩下的消息靠它手动发出）
+        if (placement && placement.lane === 'steer' && !isRunningRef.current) {
+          report('立即发送失败', window.cukoAPI.queueRunNow(sid, itemId));
+          return;
+        }
+        report('移动失败', window.cukoAPI.queueMove(sid, itemId, placement));
+      },
+      edit: (itemId, message) => {
+        const text = extractText(message.content);
+        if (!text.trim()) { setQueueNotice('排队消息不能为空'); return; }
+        report('修改失败', window.cukoAPI.queueEdit(currentThreadIdRef.current, itemId, text));
+      },
+      remove: (itemId) => {
+        report('删除失败', window.cukoAPI.queueRemove(currentThreadIdRef.current, itemId));
+      },
+      // 停止时主进程已自己暂停队列（cancelCukoRun），这里不用再做
+      __internal_notifyCancelled: () => {},
+    };
+  }, [queueSnap]);
+
+  // [261126-q7mxk2-cuko-message-queue] 排队区按钮：直接调主进程接口，失败给提示
+  const queueReport = (label: string, p: Promise<any>) => {
+    Promise.resolve(p)
+      .then((r: any) => { if (r && r.success === false) setQueueNotice(label + '：' + (r.error || '未知错误')); })
+      .catch((e: any) => setQueueNotice(label + '：' + (e?.message || String(e))));
+  };
+  const queueDockValue: CukoQueueDockValue = {
+    items: queueSnap.items,
+    steerItems: queueSnap.steerItems,
+    paused: queueSnap.paused,
+    isRunning,
+    notice: queueNotice,
+    onEdit: (id, text) => {
+      if (!text.trim()) { setQueueNotice('排队消息不能为空'); return; }
+      queueReport('修改失败', window.cukoAPI.queueEdit(currentThreadIdRef.current, id, text));
+    },
+    onRemove: (id) => queueReport('删除失败', window.cukoAPI.queueRemove(currentThreadIdRef.current, id)),
+    onSteer: (id) => {
+      const sid = currentThreadIdRef.current;
+      if (isRunningRef.current) queueReport('插话失败', window.cukoAPI.queueMove(sid, id, { lane: 'steer', insertAfter: null }));
+      else queueReport('立即发送失败', window.cukoAPI.queueRunNow(sid, id));
+    },
+    // 取消插话：放回普通排队最前（已被发出的会失败并提示）
+    onUnsteer: (id) => queueReport('取消插话失败', window.cukoAPI.queueMove(currentThreadIdRef.current, id, { lane: 'queue', insertAfter: null })),
+    onDismissNotice: () => setQueueNotice(''),
+  };
 
   // 组装 ThreadList Adapter
   const threadListAdapter: ExternalStoreThreadListAdapter = {
@@ -1447,6 +1590,7 @@ function ChatApp() {
     isRunning,
     onNew,
     onCancel,
+    queue: queueAdapter,
     adapters: { threadList: threadListAdapter, attachments: CukoAttachmentAdapter },
     convertMessage: (m: Msg) => {
       let content = Array.isArray(m.content) ? [...m.content] : [{ type: 'text', text: (m.content || '') as string }];
@@ -1553,14 +1697,17 @@ function ChatApp() {
         </div>
         <div className="relative min-h-0 min-w-0 overflow-hidden">
           <ComposerSlotsContext.Provider value={{ extra: composerExtra, usage: usageView }}>
-            <Thread components={{
-              Reasoning: CukoReasoning,
-              ComposerFooter: CukoUsage,
-              UserAttachment: CukoUserAttachment,
-              virtualize: true,
-              ToolFallback: CukoToolFallback,
-              ComposerExtra: CukoComposerExtra,
-            }} />
+            <CukoQueueDockContext.Provider value={queueDockValue}>
+              <Thread components={{
+                Reasoning: CukoReasoning,
+                ComposerFooter: CukoUsage,
+                ComposerTop: CukoQueueDock,
+                UserAttachment: CukoUserAttachment,
+                virtualize: true,
+                ToolFallback: CukoToolFallback,
+                ComposerExtra: CukoComposerExtra,
+              }} />
+            </CukoQueueDockContext.Provider>
           </ComposerSlotsContext.Provider>
         </div>
       </div>
