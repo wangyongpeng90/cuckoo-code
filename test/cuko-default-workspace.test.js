@@ -34,6 +34,11 @@ describe('defaultWorkspaceCandidates', () => {
     expect(c).toEqual([path.join('U', D)]);
   });
 
+  it('macOS 打包版：跳过安装目录（不往 .app 包里写），只用 userData', () => {
+    const c = defaultWorkspaceCandidates({ isPackaged: true, platform: 'darwin', exePath: path.join('Cuckoo-Code.app', 'Contents', 'MacOS', 'Cuckoo-Code'), userData: 'U' });
+    expect(c).toEqual([path.join('U', D)]);
+  });
+
   it('重复目录只保留一个；什么都没有返回空数组', () => {
     const c = defaultWorkspaceCandidates({ isPackaged: true, portableDir: 'I', exePath: path.join('I', 'x.exe'), userData: null });
     expect(c).toEqual([path.join('I', D)]);

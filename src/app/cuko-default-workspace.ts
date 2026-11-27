@@ -4,6 +4,7 @@
  * 会话没绑定工作区时使用：保证第一条消息带系统提示词，工具的相对路径也有根目录。
  * 候选顺序与 MCP 默认工作目录（src/mcp/client.ts getDefaultMcpCwd）一致：
  *   便携版目录 → 安装目录（exe 所在目录，仅打包版）→ userData
+ * macOS 打包版跳过安装目录：exe 在 .app/Contents/MacOS 里，往里写会破坏签名。
  * 逐个创建并做写入探测，第一个可写的胜出。开发版（npm start）没有安装目录，直接用 userData。
  * 详细设计见 docs/requirements/261127-w3pd8n-cuko-default-workspace.md
  */
@@ -23,6 +24,8 @@ export interface DefaultWorkspaceEnv {
   /** 便携版所在目录（PORTABLE_EXECUTABLE_DIR） */
   portableDir?: string | null;
   userData?: string | null;
+  /** process.platform；macOS 上不用安装目录 */
+  platform?: string | null;
 }
 
 /** 候选目录（按优先级，去重） */
@@ -33,7 +36,8 @@ export function defaultWorkspaceCandidates(env: DefaultWorkspaceEnv): string[] {
     const dir = path.join(base, DEFAULT_WORKSPACE_DIRNAME);
     if (!out.includes(dir)) out.push(dir);
   };
-  if (env && env.isPackaged) {
+  // [261127-w3pd8n] macOS：安装目录在 .app 包内，写入会破坏签名，直接用 userData
+  if (env && env.isPackaged && env.platform !== 'darwin') {
     add(env.portableDir);
     if (env.exePath) add(path.dirname(env.exePath));
   }
@@ -68,6 +72,7 @@ function currentEnv(): DefaultWorkspaceEnv {
       exePath: get('exe'),
       portableDir: process.env.PORTABLE_EXECUTABLE_DIR || null,
       userData: get('userData'),
+      platform: process.platform,
     };
   } catch {
     return { isPackaged: false };
