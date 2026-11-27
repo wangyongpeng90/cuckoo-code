@@ -48,6 +48,8 @@ import type { CukoProtocol, ToolRunItem, ModelMeta, ReasoningRequest } from './c
 import { decryptSecret } from './secrets.js';
 // [261126-q7mxk2-cuko-message-queue] 主进程消息队列（插话 / 排队）
 import { cukoQueue } from './cuko-queue.js';
+// [261127-w3pd8n-cuko-default-workspace] 会话没绑定工作区时用默认目录
+import { resolveDefaultWorkspace, DEFAULT_WORKSPACE_NAME } from './cuko-default-workspace.js';
 
 export type CukoRunStatus = 'complete' | 'cancelled' | 'error';
 
@@ -401,6 +403,31 @@ interface BuiltFirstInput {
   input: CukoRunInputPart[];
   /** 本轮实际注入的完整系统提示词（空串表示没有注入） */
   promptText: string;
+}
+
+/**
+ * [261127-w3pd8n-cuko-default-workspace] 会话没绑定工作区：绑定默认目录、写回数据库、加入工作区列表。
+ * 返回最终使用的目录；找不到可写目录时为空串（退回原来的行为）。
+ */
+function ensureSessionProjectDir(db: any, session: any): string {
+  const current = String((session && session.project_dir) || '');
+  if (current || !db || !session || !session.id) return current;
+  const dir = resolveDefaultWorkspace();
+  if (!dir) return '';
+  try {
+    db.prepare('UPDATE cuko_sessions SET project_dir = ? WHERE id = ?').run(dir, session.id);
+    session.project_dir = dir;
+  } catch (err: any) {
+    console.error('[Cuko] 绑定默认工作区失败:', err?.message || err);
+    return dir;
+  }
+  try {
+    db.prepare('INSERT OR IGNORE INTO cuko_workspaces (path, name, created_at) VALUES (?, ?, ?)').run(dir, DEFAULT_WORKSPACE_NAME, nowLocalIso());
+  } catch (err: any) {
+    console.error('[Cuko] 默认工作区加入列表失败:', err?.message || err);
+  }
+  emit({ type: 'session-project', sessionId: String(session.id), projectDir: dir });
+  return dir;
 }
 
 /** 首次对话（无 providerSessionId）时把系统提示词按 # 分段拼到 input 前面 */
@@ -857,7 +884,8 @@ function finishRun(run: CukoRun, status: CukoRunStatus, error?: string): void {
 }
 
 /** 启动一个会话的后台运行；同一会话同时只允许一个 */
-export async function startCukoRun(params: StartRunParams): Promise<{ success: boolean; runId?: string; error?: string }> {
+// [261127-w3pd8n] code：no-model / provider-missing / api-key，界面据此弹窗引导去设置模型
+export async function startCukoRun(params: StartRunParams): Promise<{ success: boolean; runId?: string; error?: string; code?: string }> {
   const sessionId = String(params?.sessionId || '');
   if (!sessionId) return { success: false, error: '缺少会话 ID' };
   if (runs.has(sessionId)) return { success: false, error: '该会话正在运行，请先停止' };
@@ -872,7 +900,7 @@ export async function startCukoRun(params: StartRunParams): Promise<{ success: b
     return { success: false, error: err?.message || '读取会话失败' };
   }
   if (!session) return { success: false, error: '会话不存在' };
-  if (!session.provider_id || !session.model_id) return { success: false, error: '尚未选择模型，请先配置' };
+  if (!session.provider_id || !session.model_id) return { success: false, error: '尚未选择模型，请先配置', code: 'no-model' };
 
   let provider: any;
   try {
@@ -880,14 +908,14 @@ export async function startCukoRun(params: StartRunParams): Promise<{ success: b
   } catch (err: any) {
     return { success: false, error: err?.message || '读取 Provider 失败' };
   }
-  if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在，请重新配置' };
+  if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在，请重新配置', code: 'provider-missing' };
   // [261123-q4h7tn-cuko-openai] 库里的密钥是密文，用前解密；解不开就明确报错，不要拿空密钥去撞 401
   let providerApiKey = '';
   if (provider.api_key) {
     try {
       providerApiKey = await decryptSecret(provider.api_key);
     } catch (err: any) {
-      return { success: false, error: '无法解密 API 密钥：' + String((err && err.message) || err) + '（可能在设置页重新填写）' };
+      return { success: false, error: '无法解密 API 密钥：' + String((err && err.message) || err) + '（可能在设置页重新填写）', code: 'api-key' };
     }
   }
   // [261126-q7mxk2-cuko-message-queue] 解密期间可能已有别的运行开始（队列续发 / 重复发送），再查一次
@@ -898,7 +926,8 @@ export async function startCukoRun(params: StartRunParams): Promise<{ success: b
 
   const protocol = normalizeProtocol(provider.protocol);
   const providerSessionId = session.provider_session_id || '';
-  const projectDir = session.project_dir || '';
+  // [261127-w3pd8n-cuko-default-workspace] 没绑定工作区就用默认目录，保证第一条消息带系统提示词
+  const projectDir = ensureSessionProjectDir(db, session);
   let firstInput: CukoRunInputPart[] = input;
   if (protocol === 'openai') {
     // [261123-q4h7tn-cuko-openai] 用户消息由主进程落库并固定原文（第一条拼上系统提示词）
@@ -1029,7 +1058,7 @@ export async function continueAfterSwitch(params: ContinueAfterSwitchParams): Pr
     aborted: false,
     finished: false,
     providerSessionId: session.provider_session_id,
-    projectDir: session.project_dir || '',
+    projectDir: ensureSessionProjectDir(db, session),
     baseUrl: provider.base_url,
     apiKey: providerApiKey,
     modelId: session.model_id,
@@ -1556,7 +1585,7 @@ function switchToOpenAiModel(db: any, session: any, providerId: string, modelId:
   let systemPrompt = String(session.system_prompt || '').trim();
   const firstUser = rows.find((r) => r.role === 'user');
   if (firstUser && !firstUser.sent_role && !systemPrompt) {
-    systemPrompt = buildSystemPromptText(String(session.project_dir || ''));
+    systemPrompt = buildSystemPromptText(ensureSessionProjectDir(db, session));
     if (systemPrompt) persistSystemPrompt(sessionId, systemPrompt);
   }
 

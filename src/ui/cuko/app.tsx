@@ -37,6 +37,10 @@ import { buildCompressHistory } from '@/ui/cuko/compress-history';
 import { RequestLogDialog } from '@/ui/cuko/request-log-dialog';
 // [261126-q7mxk2-cuko-message-queue] 输入框上方的排队区
 import { CukoQueueDock, CukoQueueDockContext, type CukoQueueDockValue } from '@/ui/cuko/queue-dock';
+// [261127-w3pd8n-cuko-default-workspace] 未选项目目录时的提示弹窗
+import { WorkspacePromptDialog } from '@/ui/cuko/workspace-prompt-dialog';
+// [261127-w3pd8n] 没有可用模型时的提示弹窗
+import { ModelRequiredDialog } from '@/ui/cuko/model-required-dialog';
 import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
 import { sessionCacheTotals, formatHitPercent, lastPromptTokens, contextDisplay, reasoningLevelsOf, effectiveEffort, effortLabel, reasoningUnsupportedReason, sessionTokenTotals, formatTokenCount, formatExactCount, usageDetailRows, type ContextDisplay, type UsageDetailRow } from '@/ui/cuko/composer-stats';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
@@ -85,6 +89,13 @@ type Msg = ThreadMessageLike & { think?: string; usage?: Usage; };
 interface CukoQueueItemView { id: string; text: string; }
 interface CukoQueueView { items: CukoQueueItemView[]; steerItems: CukoQueueItemView[]; paused: boolean; }
 const EMPTY_QUEUE: CukoQueueView = { items: [], steerItems: [], paused: false };
+
+// [261127-w3pd8n] 主进程 startRun 的错误类型 → 弹窗里的原因（不在表里的错误照旧显示成 ⚠️ 消息）
+const MODEL_ERROR_REASONS: Record<string, string> = {
+  'no-model': '当前会话还没有选择模型。',
+  'provider-missing': '当前会话绑定的模型提供商已被删除，或没有填写接口地址。',
+  'api-key': 'API 密钥无法读取（可能换了电脑或系统账户），需要在设置里重新填写。',
+};
 function toQueueView(q: any): CukoQueueView {
   const list = (v: any): CukoQueueItemView[] => (Array.isArray(v) ? v : [])
     .filter((x: any) => x && typeof x.id === 'string' && typeof x.text === 'string')
@@ -129,7 +140,7 @@ declare global {
       saveAttachments: (sessionId: string, messageId: string, files: any[]) => Promise<{ success: boolean; attachments?: any[]; error?: string }>;
       readAttachment: (relPath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
       // 后台运行（主进程执行，窗口关掉也继续）
-      startRun: (params: { sessionId: string; input: any[] }) => Promise<{ success: boolean; runId?: string; error?: string }>;
+      startRun: (params: { sessionId: string; input: any[] }) => Promise<{ success: boolean; runId?: string; error?: string; code?: string }>;
       switchModel: (params: { sessionId: string; providerId: string; modelId: string; history: Array<{ type: string; text: string }> }) => Promise<{
         success: boolean;
         error?: string;
@@ -157,6 +168,10 @@ declare global {
       queueEdit: (sessionId: string, itemId: string, text: string) => Promise<{ success: boolean; error?: string }>;
       queueRemove: (sessionId: string, itemId: string) => Promise<{ success: boolean; error?: string }>;
       queueRunNow: (sessionId: string, itemId: string) => Promise<{ success: boolean; error?: string }>;
+      // [261127-w3pd8n-cuko-default-workspace] 默认工作区完整路径
+      getDefaultWorkspace: () => Promise<{ success: boolean; dir?: string; error?: string }>;
+      // [261127-w3pd8n] 打开网页版窗口（已有就聚焦）
+      openWebWindow: () => Promise<{ success: boolean; error?: string }>;
     };
   }
 }
@@ -858,6 +873,14 @@ function ChatApp() {
   // [261126-q7mxk2-cuko-message-queue] 当前会话的排队消息（主进程推送）；提示 5 秒后自动消失
   const [queueSnap, setQueueSnap] = useState<CukoQueueView>(EMPTY_QUEUE);
   const [queueNotice, setQueueNotice] = useState('');
+  // [261127-w3pd8n-cuko-default-workspace] 没选项目目录时的弹窗；当前会话实际的项目目录（队列接口里同步判断用）
+  const [wsPrompt, setWsPrompt] = useState<{ defaultDir: string; loadError?: string | undefined } | null>(null);
+  const currentProjectDirRef = useRef('');
+  // [261127-w3pd8n] 没有可用模型时的弹窗；当前模型的问题（空串 = 没问题，队列接口里同步判断用）
+  const [modelPrompt, setModelPrompt] = useState<{ reason: string; detail?: string | undefined } | null>(null);
+  const modelProblemRef = useRef('');
+  const boundDirRef = useRef<{ sid: string; dir: string } | null>(null);
+  const wsPromptRef = useRef<() => void>(() => {});
   useEffect(() => {
     if (!queueNotice) return;
     const t = setTimeout(() => setQueueNotice(''), 5000);
@@ -1246,6 +1269,26 @@ function ChatApp() {
   };
 
   // 发送消息：落库用户消息 + 启动主进程后台运行；循环本身不在渲染进程
+  // [261127-w3pd8n-cuko-default-workspace] 当前会话实际的项目目录：已有会话看库里的 project_dir，新会话看当前工作区
+  {
+    const t = currentThreadId ? threads.find((x) => x.id === currentThreadId) : undefined;
+    const bound = boundDirRef.current && boundDirRef.current.sid === currentThreadId ? boundDirRef.current.dir : '';
+    currentProjectDirRef.current = currentThreadId && t ? (t.project_dir || bound) : (activeWorkspace?.path || bound);
+  }
+
+  // [261127-w3pd8n] 当前选中的模型是否可用
+  {
+    const p = providers.find((x) => x.id === config.providerId);
+    const m = p ? p.models.find((x) => x.id === config.modelId) : undefined;
+    modelProblemRef.current = !providers.some((x) => Array.isArray(x.models) && x.models.length > 0)
+      ? '还没有配置任何模型。'
+      : (!config.providerId || !config.modelId)
+        ? '当前会话还没有选择模型。'
+        : !m
+          ? '当前选中的模型已不存在（可能已在设置里删除）。'
+          : '';
+  }
+
   const sendNow = useCallback(async (append: AppendMessage) => {
     const text = extractText(append.content);
     const hasAttachments = Array.isArray((append as any).attachments) && (append as any).attachments.length > 0;
@@ -1255,7 +1298,7 @@ function ChatApp() {
     if (!activeThreadId) {
       activeThreadId = crypto.randomUUID();
       try {
-        await (window.cukoAPI as any).createSession(activeThreadId, config.providerId, config.modelId, activeWorkspace?.path || undefined);
+        await (window.cukoAPI as any).createSession(activeThreadId, config.providerId, config.modelId, currentProjectDirRef.current || activeWorkspace?.path || undefined);
         setThreadId(activeThreadId);
         // [261123-q4h7tn-cuko-openai] 建会话前选过的推理等级，建好后保存
         if (effort) await window.cukoAPI.updateSessionEffort(activeThreadId, effort);
@@ -1263,6 +1306,14 @@ function ChatApp() {
       } catch (e: any) {
         setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ 创建会话失败: ' + e.message, id: crypto.randomUUID() }]);
         return;
+      }
+    }
+
+    // [261127-w3pd8n] 会话建立时还没配模型（库里模型为空）：用当前选中的模型补上，避免主进程报「尚未选择模型」
+    {
+      const t = threads.find((x) => x.id === activeThreadId);
+      if (t && (!t.provider_id || !t.model_id) && config.providerId && config.modelId) {
+        try { await window.cukoAPI.updateSessionModel(activeThreadId, config.providerId, config.modelId); } catch (e) { console.error('补绑定模型失败', e); }
       }
     }
 
@@ -1339,7 +1390,18 @@ function ChatApp() {
       const res = await window.cukoAPI.startRun(runParams);
       if (!res?.success) {
         setRunningSessions((prev) => prev.filter((id) => id !== activeThreadId));
-        setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ ' + (res?.error || '启动失败'), id: crypto.randomUUID() }]);
+        const reason = MODEL_ERROR_REASONS[String(res?.code || '')];
+        if (reason) {
+          // [261127-w3pd8n] 模型相关错误：撤回刚显示的用户消息、文字放回输入框，弹窗引导去设置
+          setMessages((prev) => prev.filter((m) => m.id !== userId));
+          try {
+            const c = runtimeRef.current?.thread?.composer;
+            if (c && !c.getState?.()?.text) c.setText(text);
+          } catch { /* 输入框还没挂载，忽略 */ }
+          setModelPrompt({ reason, detail: res?.error });
+        } else {
+          setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ ' + (res?.error || '启动失败'), id: crypto.randomUUID() }]);
+        }
       }
     } catch (e: any) {
       setRunningSessions((prev) => prev.filter((id) => id !== activeThreadId));
@@ -1462,6 +1524,19 @@ function ChatApp() {
             : [...prev, { role: 'user', id: ev.messageId, content: stored.content, ...(stored.attachments ? { attachments: stored.attachments } : {}) } as Msg]));
           break;
         }
+        // [261127-w3pd8n-cuko-default-workspace] 主进程给会话绑定了默认目录：刷新工作区列表与左侧
+        case 'session-project': {
+          const dir = String(ev.projectDir || '');
+          Promise.resolve(api.listWorkspaces())
+            .then((list: any) => {
+              const arr = Array.isArray(list) ? list : [];
+              setWorkspaces(arr);
+              if (dir && isCurrent(sid)) setActiveWorkspace(arr.find((w: any) => w.path === dir) || { path: dir, name: '默认工作区' });
+            })
+            .catch(() => {});
+          refreshThreads();
+          break;
+        }
         case 'queue-error': {
           if (!isCurrent(sid)) break;
           setQueueNotice('排队消息发送失败，队列已暂停：' + (ev.error || '未知错误'));
@@ -1498,6 +1573,16 @@ function ChatApp() {
     };
     const add = (message: AppendMessage, lane: 'queue' | 'steer') => {
       if (!isRunningRef.current) {
+        // [261127-w3pd8n] 没有可用模型：弹窗；抛错让 assistant-ui 把消息（含附件）退回输入框
+        if (modelProblemRef.current) {
+          setModelPrompt({ reason: modelProblemRef.current });
+          throw new Error('尚未选择模型');
+        }
+        // [261127-w3pd8n-cuko-default-workspace] 没选项目目录：弹窗；抛错让 assistant-ui 把消息退回输入框（取消时内容保留）
+        if (!currentProjectDirRef.current) {
+          wsPromptRef.current();
+          throw new Error('尚未选择项目目录');
+        }
         void sendNowRef.current(message);
         return;
       }
@@ -1566,6 +1651,40 @@ function ChatApp() {
     // 取消插话：放回普通排队最前（已被发出的会失败并提示）
     onUnsteer: (id) => queueReport('取消插话失败', window.cukoAPI.queueMove(currentThreadIdRef.current, id, { lane: 'queue', insertAfter: null })),
     onDismissNotice: () => setQueueNotice(''),
+  };
+
+  // [261127-w3pd8n-cuko-default-workspace] 没选项目目录：弹窗；绑定目录后把退回输入框的消息重新发出
+  const openWorkspacePrompt = () => {
+    setWsPrompt({ defaultDir: '' });
+    Promise.resolve(window.cukoAPI.getDefaultWorkspace())
+      .then((r) => setWsPrompt((p) => (p ? (r && r.success && r.dir ? { defaultDir: r.dir } : { defaultDir: '', loadError: (r && r.error) || '找不到可写的默认目录' }) : p)))
+      .catch((e: any) => setWsPrompt((p) => (p ? { defaultDir: '', loadError: e?.message || String(e) } : p)));
+  };
+  wsPromptRef.current = openWorkspacePrompt;
+  const bindWorkspaceAndSend = async (ws: { path: string; name: string }) => {
+    await handleSelectWorkspace(ws);
+    boundDirRef.current = { sid: currentThreadIdRef.current, dir: ws.path };
+    currentProjectDirRef.current = ws.path;
+    setWsPrompt(null);
+    try { runtimeRef.current?.thread?.composer?.send(); } catch (e) { console.error('重新发送失败', e); }
+  };
+  const addWorkspaceAndSend = async (dir: string, name: string) => {
+    const added = await window.cukoAPI.addWorkspace(dir, name);
+    if (added && added.success === false) throw new Error(added.error || '写入工作区失败');
+    const list = await window.cukoAPI.listWorkspaces();
+    setWorkspaces(list);
+    await bindWorkspaceAndSend(list.find((w) => w.path === dir) || { path: dir, name });
+  };
+  const chooseDirAndSend = async () => {
+    const res = await window.cukoAPI.selectDirectory();
+    if (!res || !res.success || !res.dir) return; // 选文件夹时取消：弹窗保留
+    const parts = String(res.dir).replace(/[\\/]+$/, '').split(/[\\/]/);
+    await addWorkspaceAndSend(res.dir, parts[parts.length - 1] || res.dir);
+  };
+  const sendWithDefaultDir = async () => {
+    const dir = wsPrompt?.defaultDir;
+    if (!dir) throw new Error('默认目录不可用');
+    await addWorkspaceAndSend(dir, '默认工作区');
   };
 
   // 组装 ThreadList Adapter
@@ -1690,6 +1809,21 @@ function ChatApp() {
             >
               <span className="text-muted-foreground">🧾</span> 请求日志
             </button>
+            {/* [261127-w3pd8n] 打开网页版窗口（已有就聚焦） */}
+            <button
+              onClick={async () => {
+                try {
+                  const r = await window.cukoAPI.openWebWindow();
+                  if (r && r.success === false) setQueueNotice('打开网页版窗口失败：' + (r.error || '未知错误'));
+                } catch (e: any) {
+                  setQueueNotice('打开网页版窗口失败：' + (e?.message || String(e)));
+                }
+              }}
+              title="打开网页版 AI 窗口（DeepSeek / Claude / ChatGPT 等）"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <span className="text-muted-foreground">🌐</span> 打开网页版窗口
+            </button>
             <button onClick={() => setSettingsOpen(true)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
               <span className="text-muted-foreground">⚙️</span> 设置
             </button>
@@ -1736,6 +1870,23 @@ function ChatApp() {
         />
       )}
       {requestLogOpen && <RequestLogDialog onClose={() => setRequestLogOpen(false)} />}
+      {modelPrompt && (
+        <ModelRequiredDialog
+          reason={modelPrompt.reason}
+          detail={modelPrompt.detail}
+          onCancel={() => setModelPrompt(null)}
+          onOpenSettings={() => { setModelPrompt(null); setSettingsOpen(true); }}
+        />
+      )}
+      {wsPrompt && (
+        <WorkspacePromptDialog
+          defaultDir={wsPrompt.defaultDir}
+          loadError={wsPrompt.loadError}
+          onCancel={() => setWsPrompt(null)}
+          onChooseDir={chooseDirAndSend}
+          onUseDefault={sendWithDefaultDir}
+        />
+      )}
     </AssistantRuntimeProvider>
   );
 }

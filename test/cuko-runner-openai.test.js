@@ -9,9 +9,13 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import Module from 'node:module';
 import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // 隔离用户目录（项目测试规则）：别读写真实的 ~/.cuckoo
 process.env.CUCKOO_HOME = os.tmpdir() + '/cuko-runner-openai-test-' + process.pid;
+// [261127-w3pd8n] userData 用独立临时目录：默认工作区会建在这里，跑完删掉，不污染系统临时目录
+const USER_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'cuko-runner-openai-test-ud-'));
 
 // 外部边界替身：运行器 → prompt-builder → mcp/client → infra/paths 在加载时调用 app.getAppPath()，
 // Node 测试环境没有 electron app，照 test/session/prompt-builder.test.js 用 Module._load 拦截。
@@ -21,7 +25,7 @@ const electronStub = {
   app: {
     isPackaged: false,
     getAppPath: () => process.cwd(),
-    getPath: () => os.tmpdir(),
+    getPath: () => USER_DATA,
     getVersion: () => '0.0.0-test',
     on() {},
     once() {},
@@ -112,6 +116,7 @@ afterAll(async () => {
   }
   delete globalThis.__globalDb;
   Module._load = realLoad;
+  fs.rmSync(USER_DATA, { recursive: true, force: true });
 });
 
 beforeEach(() => {
@@ -138,7 +143,14 @@ async function runTurn(sessionId, text) {
   return waitFor(() => events.find((e) => e.type === 'run-complete' && e.runId === runId));
 }
 
-const rowsOf = (sid) => db.prepare('SELECT role, content, sent_role, sent_text, usage_json FROM cuko_messages WHERE session_id = ? ORDER BY rowid ASC').all(sid);
+// [261127-w3pd8n] 会话没绑定工作区时用默认目录：首轮会多一条 role='system' 的提示词留档，这里只看对话行
+const rowsOf = (sid) => db.prepare("SELECT role, content, sent_role, sent_text, usage_json FROM cuko_messages WHERE session_id = ? AND role != 'system' ORDER BY rowid ASC").all(sid);
+// 第一条用户原文 = 系统提示词 + 分隔线 + 原话：取分隔线后面的原话
+const userText = (content) => {
+  const c = String(content);
+  const i = c.lastIndexOf('\n\n---\n\n');
+  return i >= 0 ? c.slice(i + 7) : c;
+};
 
 describe('cuko-runner：OpenAI 协议', () => {
   it('两轮对话：第二轮请求以第一轮为前缀，不用 system 角色，地址不重复拼 /v1，缓存命中落库', async () => {
@@ -155,7 +167,11 @@ describe('cuko-runner：OpenAI 协议', () => {
     expect(a.url).toBe('/v1/chat/completions');
     expect(a.auth).toBe('Bearer k-test');
     expect(a.body).toMatchObject({ model: 'm1', stream: true, stream_options: { include_usage: true } });
-    expect(a.body.messages).toEqual([{ role: 'user', content: 'hi' }]);
+    // [261127-w3pd8n] 第一条带系统提示词（默认工作区），原话仍是 hi
+    expect(a.body.messages).toHaveLength(1);
+    expect(a.body.messages[0].role).toBe('user');
+    expect(userText(a.body.messages[0].content)).toBe('hi');
+    expect(a.body.messages[0].content.length).toBeGreaterThan('hi'.length);
     expect(b.body.messages).toEqual([...a.body.messages, { role: 'assistant', content: '你好' }, { role: 'user', content: 'again' }]);
     const sa = JSON.stringify(a.body.messages);
     expect(JSON.stringify(b.body.messages).startsWith(sa.slice(0, sa.length - 1))).toBe(true);
@@ -207,7 +223,10 @@ describe('cuko-runner：OpenAI 协议', () => {
 
     handlers = [(res) => sendText(res, 'ok')];
     expect((await runTurn(sid, 'again')).status).toBe('complete');
-    expect(requests[1].body.messages).toEqual([{ role: 'user', content: 'hi\n\nagain' }]);
+    // [261127-w3pd8n] 失败那轮不进历史：两条用户消息合并，前面带系统提示词
+    expect(requests[1].body.messages).toHaveLength(1);
+    expect(requests[1].body.messages[0].role).toBe('user');
+    expect(userText(requests[1].body.messages[0].content)).toBe('hi\n\nagain');
   }, 20000);
 
   it('用户停止：状态为已停止，已输出的部分进历史', async () => {
