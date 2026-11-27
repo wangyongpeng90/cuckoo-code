@@ -77,6 +77,8 @@ contextBridge.exposeInMainWorld('cukoAPI', {
   queueEdit: (sessionId: string, itemId: string, text: string) => ipcRenderer.invoke('cuko:queue-edit', sessionId, itemId, text),
   queueRemove: (sessionId: string, itemId: string) => ipcRenderer.invoke('cuko:queue-remove', sessionId, itemId),
   queueRunNow: (sessionId: string, itemId: string) => ipcRenderer.invoke('cuko:queue-run-now', sessionId, itemId),
+  // [261127-w3pd8n-cuko-default-workspace] 默认工作区完整路径
+  getDefaultWorkspace: () => ipcRenderer.invoke('cuko:get-default-workspace'),
 });
 
 const shellAPI = {

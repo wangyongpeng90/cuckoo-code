@@ -10,9 +10,13 @@ import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import Module from 'node:module';
 import os from 'node:os';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // 隔离用户目录：别读写真实的 ~/.cuckoo
 process.env.CUCKOO_HOME = os.tmpdir() + '/cuko-runner-queue-test-' + process.pid;
+// [261127-w3pd8n] userData 用独立临时目录：默认工作区会建在这里，跑完删掉，不污染系统临时目录
+const USER_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'cuko-runner-queue-test-ud-'));
 
 // 外部边界替身：运行器加载链路会调用 electron app，测试环境用 Module._load 拦截
 const realLoad = Module._load;
@@ -20,7 +24,7 @@ const electronStub = {
   app: {
     isPackaged: false,
     getAppPath: () => process.cwd(),
-    getPath: () => os.tmpdir(),
+    getPath: () => USER_DATA,
     getVersion: () => '0.0.0-test',
     on() {},
     once() {},
@@ -88,6 +92,12 @@ async function waitFor(fn, ms = 10000) {
 const of = (sid, type) => events.filter((e) => e.sessionId === sid && e.type === type);
 const lastMsg = (req) => req.body.messages[req.body.messages.length - 1];
 const queueTexts = (sid) => cukoQueue.get(sid).items.map((x) => x.text);
+// [261127-w3pd8n] 会话没绑定工作区时用默认目录，第一条消息前面拼着系统提示词：只取用户原话
+const firstUserText = (req) => {
+  const c = String(lastMsg(req).content);
+  const i = c.lastIndexOf('\n\n---\n\n');
+  return i >= 0 ? c.slice(i + 7) : c;
+};
 
 function newSession(providerId) {
   const sid = randomUUID();
@@ -135,6 +145,7 @@ afterAll(async () => {
   await new Promise((r) => server.close(r));
   delete globalThis.__globalDb;
   Module._load = realLoad;
+  fs.rmSync(USER_DATA, { recursive: true, force: true });
 });
 
 beforeEach(() => {
@@ -289,7 +300,7 @@ describe('cuko-runner + 队列：界面触发的续发', () => {
     kickCukoQueue(sid);
     await waitFor(() => of(sid, 'run-complete').length === 1);
     expect(requests).toHaveLength(1);
-    expect(lastMsg(requests[0])).toEqual({ role: 'user', content: '空闲入队' });
+    expect(firstUserText(requests[0])).toBe('空闲入队');
     expect(of(sid, 'user-message').some((e) => e.content === '空闲入队' && e.source === 'queue')).toBe(true);
     expect(queueTexts(sid)).toEqual([]);
   });
@@ -306,7 +317,7 @@ describe('cuko-runner + 队列：界面触发的续发', () => {
     await sleep(100);
     expect(of(sid, 'run-complete')).toHaveLength(2);
     expect(requests).toHaveLength(2);
-    expect(lastMsg(requests[0])).toEqual({ role: 'user', content: 'a' });
+    expect(firstUserText(requests[0])).toBe('a');
     expect(lastMsg(requests[1])).toEqual({ role: 'user', content: 'b' });
   });
 
@@ -320,7 +331,7 @@ describe('cuko-runner + 队列：界面触发的续发', () => {
     handlers.push((_b, res) => sendText(res, 'r1'));
     expect(runQueueItemNow(sid, b.id)).toMatchObject({ success: true });
     await waitFor(() => of(sid, 'run-complete').length === 2);
-    expect(lastMsg(requests[0])).toEqual({ role: 'user', content: '排队2' });
+    expect(firstUserText(requests[0])).toBe('排队2');
     expect(lastMsg(requests[1])).toEqual({ role: 'user', content: '排队1' });
     expect(queueTexts(sid)).toEqual([]);
     expect(cukoQueue.isPaused(sid)).toBe(false);

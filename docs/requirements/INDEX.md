@@ -43,5 +43,6 @@
 | 261109-8ms69z-cuko-api | feature | [Cuko API 客户端与独立工作窗口](./261109-8ms69z-cuko-api.md) | done | feat/261109-8ms69z-cuko-api | 2026-11-17 |
 | 261123-q4h7tn-cuko-openai | feature | [Cuko 接入 OpenAI 兼容接口（Chat Completions）](./261123-q4h7tn-cuko-openai.md) | review | feat/261123-q4h7tn-cuko-openai | 2026-11-24 |
 | 261126-q7mxk2-cuko-message-queue | feature | [Cuko 消息发送队列与插话](./261126-q7mxk2-cuko-message-queue.md) | done | feat/261126-q7mxk2-cuko-message-queue | 2026-11-26 |
+| 261127-w3pd8n-cuko-default-workspace | fix | [Cuko 未选工作区时使用默认工作区（保证首条消息带系统提示词）](./261127-w3pd8n-cuko-default-workspace.md) | review | fix/261127-w3pd8n-cuko-default-workspace | 2026-11-27 |
 
-共 38 个需求。
+共 39 个需求。

@@ -33,6 +33,8 @@ import {
 } from '../cuko-runner.js';
 // [261126-q7mxk2-cuko-message-queue] 消息队列
 import { cukoQueue } from '../cuko-queue.js';
+// [261127-w3pd8n-cuko-default-workspace] 默认工作区
+import { resolveDefaultWorkspace } from '../cuko-default-workspace.js';
 import { kickCukoQueue, runQueueItemNow } from '../cuko-runner.js';
 const require = createRequire(import.meta.url);
 const { ipcMain } = require('electron');
@@ -551,6 +553,16 @@ export function registerCukoIpc(): void {
     });
     if (!result || result.length === 0) return { success: false, canceled: true };
     return { success: true, dir: result[0] };
+  });
+
+  // [261127-w3pd8n-cuko-default-workspace] 默认工作区完整路径（不存在就创建）；不会加入工作区列表
+  ipcMain.handle('cuko:get-default-workspace', () => {
+    try {
+      const dir = resolveDefaultWorkspace();
+      return dir ? { success: true, dir } : { success: false, error: '找不到可写的默认目录' };
+    } catch (err: any) {
+      return { success: false, error: err?.message || String(err) };
+    }
   });
 
   ipcMain.handle('cuko:delete-session', (_event: any, sessionId: string) => {
