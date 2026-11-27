@@ -884,7 +884,8 @@ function finishRun(run: CukoRun, status: CukoRunStatus, error?: string): void {
 }
 
 /** 启动一个会话的后台运行；同一会话同时只允许一个 */
-export async function startCukoRun(params: StartRunParams): Promise<{ success: boolean; runId?: string; error?: string }> {
+// [261127-w3pd8n] code：no-model / provider-missing / api-key，界面据此弹窗引导去设置模型
+export async function startCukoRun(params: StartRunParams): Promise<{ success: boolean; runId?: string; error?: string; code?: string }> {
   const sessionId = String(params?.sessionId || '');
   if (!sessionId) return { success: false, error: '缺少会话 ID' };
   if (runs.has(sessionId)) return { success: false, error: '该会话正在运行，请先停止' };
@@ -899,7 +900,7 @@ export async function startCukoRun(params: StartRunParams): Promise<{ success: b
     return { success: false, error: err?.message || '读取会话失败' };
   }
   if (!session) return { success: false, error: '会话不存在' };
-  if (!session.provider_id || !session.model_id) return { success: false, error: '尚未选择模型，请先配置' };
+  if (!session.provider_id || !session.model_id) return { success: false, error: '尚未选择模型，请先配置', code: 'no-model' };
 
   let provider: any;
   try {
@@ -907,14 +908,14 @@ export async function startCukoRun(params: StartRunParams): Promise<{ success: b
   } catch (err: any) {
     return { success: false, error: err?.message || '读取 Provider 失败' };
   }
-  if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在，请重新配置' };
+  if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在，请重新配置', code: 'provider-missing' };
   // [261123-q4h7tn-cuko-openai] 库里的密钥是密文，用前解密；解不开就明确报错，不要拿空密钥去撞 401
   let providerApiKey = '';
   if (provider.api_key) {
     try {
       providerApiKey = await decryptSecret(provider.api_key);
     } catch (err: any) {
-      return { success: false, error: '无法解密 API 密钥：' + String((err && err.message) || err) + '（可能在设置页重新填写）' };
+      return { success: false, error: '无法解密 API 密钥：' + String((err && err.message) || err) + '（可能在设置页重新填写）', code: 'api-key' };
     }
   }
   // [261126-q7mxk2-cuko-message-queue] 解密期间可能已有别的运行开始（队列续发 / 重复发送），再查一次

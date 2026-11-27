@@ -39,6 +39,8 @@ import { RequestLogDialog } from '@/ui/cuko/request-log-dialog';
 import { CukoQueueDock, CukoQueueDockContext, type CukoQueueDockValue } from '@/ui/cuko/queue-dock';
 // [261127-w3pd8n-cuko-default-workspace] 未选项目目录时的提示弹窗
 import { WorkspacePromptDialog } from '@/ui/cuko/workspace-prompt-dialog';
+// [261127-w3pd8n] 没有可用模型时的提示弹窗
+import { ModelRequiredDialog } from '@/ui/cuko/model-required-dialog';
 import { parseStoredContent, serializeUserMessage, toUserAttachment, type UserAttachment } from '@/ui/cuko/persisted-content';
 import { sessionCacheTotals, formatHitPercent, lastPromptTokens, contextDisplay, reasoningLevelsOf, effectiveEffort, effortLabel, reasoningUnsupportedReason, sessionTokenTotals, formatTokenCount, formatExactCount, usageDetailRows, type ContextDisplay, type UsageDetailRow } from '@/ui/cuko/composer-stats';
 import { SettingsModal } from '@/ui/shell/scripts/pages/settings-react';
@@ -87,6 +89,13 @@ type Msg = ThreadMessageLike & { think?: string; usage?: Usage; };
 interface CukoQueueItemView { id: string; text: string; }
 interface CukoQueueView { items: CukoQueueItemView[]; steerItems: CukoQueueItemView[]; paused: boolean; }
 const EMPTY_QUEUE: CukoQueueView = { items: [], steerItems: [], paused: false };
+
+// [261127-w3pd8n] 主进程 startRun 的错误类型 → 弹窗里的原因（不在表里的错误照旧显示成 ⚠️ 消息）
+const MODEL_ERROR_REASONS: Record<string, string> = {
+  'no-model': '当前会话还没有选择模型。',
+  'provider-missing': '当前会话绑定的模型提供商已被删除，或没有填写接口地址。',
+  'api-key': 'API 密钥无法读取（可能换了电脑或系统账户），需要在设置里重新填写。',
+};
 function toQueueView(q: any): CukoQueueView {
   const list = (v: any): CukoQueueItemView[] => (Array.isArray(v) ? v : [])
     .filter((x: any) => x && typeof x.id === 'string' && typeof x.text === 'string')
@@ -131,7 +140,7 @@ declare global {
       saveAttachments: (sessionId: string, messageId: string, files: any[]) => Promise<{ success: boolean; attachments?: any[]; error?: string }>;
       readAttachment: (relPath: string) => Promise<{ success: boolean; data?: string; error?: string }>;
       // 后台运行（主进程执行，窗口关掉也继续）
-      startRun: (params: { sessionId: string; input: any[] }) => Promise<{ success: boolean; runId?: string; error?: string }>;
+      startRun: (params: { sessionId: string; input: any[] }) => Promise<{ success: boolean; runId?: string; error?: string; code?: string }>;
       switchModel: (params: { sessionId: string; providerId: string; modelId: string; history: Array<{ type: string; text: string }> }) => Promise<{
         success: boolean;
         error?: string;
@@ -867,6 +876,9 @@ function ChatApp() {
   // [261127-w3pd8n-cuko-default-workspace] 没选项目目录时的弹窗；当前会话实际的项目目录（队列接口里同步判断用）
   const [wsPrompt, setWsPrompt] = useState<{ defaultDir: string; loadError?: string | undefined } | null>(null);
   const currentProjectDirRef = useRef('');
+  // [261127-w3pd8n] 没有可用模型时的弹窗；当前模型的问题（空串 = 没问题，队列接口里同步判断用）
+  const [modelPrompt, setModelPrompt] = useState<{ reason: string; detail?: string | undefined } | null>(null);
+  const modelProblemRef = useRef('');
   const boundDirRef = useRef<{ sid: string; dir: string } | null>(null);
   const wsPromptRef = useRef<() => void>(() => {});
   useEffect(() => {
@@ -1264,6 +1276,19 @@ function ChatApp() {
     currentProjectDirRef.current = currentThreadId && t ? (t.project_dir || bound) : (activeWorkspace?.path || bound);
   }
 
+  // [261127-w3pd8n] 当前选中的模型是否可用
+  {
+    const p = providers.find((x) => x.id === config.providerId);
+    const m = p ? p.models.find((x) => x.id === config.modelId) : undefined;
+    modelProblemRef.current = !providers.some((x) => Array.isArray(x.models) && x.models.length > 0)
+      ? '还没有配置任何模型。'
+      : (!config.providerId || !config.modelId)
+        ? '当前会话还没有选择模型。'
+        : !m
+          ? '当前选中的模型已不存在（可能已在设置里删除）。'
+          : '';
+  }
+
   const sendNow = useCallback(async (append: AppendMessage) => {
     const text = extractText(append.content);
     const hasAttachments = Array.isArray((append as any).attachments) && (append as any).attachments.length > 0;
@@ -1281,6 +1306,14 @@ function ChatApp() {
       } catch (e: any) {
         setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ 创建会话失败: ' + e.message, id: crypto.randomUUID() }]);
         return;
+      }
+    }
+
+    // [261127-w3pd8n] 会话建立时还没配模型（库里模型为空）：用当前选中的模型补上，避免主进程报「尚未选择模型」
+    {
+      const t = threads.find((x) => x.id === activeThreadId);
+      if (t && (!t.provider_id || !t.model_id) && config.providerId && config.modelId) {
+        try { await window.cukoAPI.updateSessionModel(activeThreadId, config.providerId, config.modelId); } catch (e) { console.error('补绑定模型失败', e); }
       }
     }
 
@@ -1357,7 +1390,18 @@ function ChatApp() {
       const res = await window.cukoAPI.startRun(runParams);
       if (!res?.success) {
         setRunningSessions((prev) => prev.filter((id) => id !== activeThreadId));
-        setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ ' + (res?.error || '启动失败'), id: crypto.randomUUID() }]);
+        const reason = MODEL_ERROR_REASONS[String(res?.code || '')];
+        if (reason) {
+          // [261127-w3pd8n] 模型相关错误：撤回刚显示的用户消息、文字放回输入框，弹窗引导去设置
+          setMessages((prev) => prev.filter((m) => m.id !== userId));
+          try {
+            const c = runtimeRef.current?.thread?.composer;
+            if (c && !c.getState?.()?.text) c.setText(text);
+          } catch { /* 输入框还没挂载，忽略 */ }
+          setModelPrompt({ reason, detail: res?.error });
+        } else {
+          setMessages((prev) => [...prev, { role: 'assistant', content: '⚠️ ' + (res?.error || '启动失败'), id: crypto.randomUUID() }]);
+        }
       }
     } catch (e: any) {
       setRunningSessions((prev) => prev.filter((id) => id !== activeThreadId));
@@ -1529,6 +1573,11 @@ function ChatApp() {
     };
     const add = (message: AppendMessage, lane: 'queue' | 'steer') => {
       if (!isRunningRef.current) {
+        // [261127-w3pd8n] 没有可用模型：弹窗；抛错让 assistant-ui 把消息（含附件）退回输入框
+        if (modelProblemRef.current) {
+          setModelPrompt({ reason: modelProblemRef.current });
+          throw new Error('尚未选择模型');
+        }
         // [261127-w3pd8n-cuko-default-workspace] 没选项目目录：弹窗；抛错让 assistant-ui 把消息退回输入框（取消时内容保留）
         if (!currentProjectDirRef.current) {
           wsPromptRef.current();
@@ -1821,6 +1870,14 @@ function ChatApp() {
         />
       )}
       {requestLogOpen && <RequestLogDialog onClose={() => setRequestLogOpen(false)} />}
+      {modelPrompt && (
+        <ModelRequiredDialog
+          reason={modelPrompt.reason}
+          detail={modelPrompt.detail}
+          onCancel={() => setModelPrompt(null)}
+          onOpenSettings={() => { setModelPrompt(null); setSettingsOpen(true); }}
+        />
+      )}
       {wsPrompt && (
         <WorkspacePromptDialog
           defaultDir={wsPrompt.defaultDir}
