@@ -61,6 +61,22 @@ const _path = require('node:path');
 interface PluginSlot { pluginId: string; slot: string; id: string; order: number; spec: any }
 const pluginSlots: PluginSlot[] = [];
 
+// [261125-p3vk8w-cuko-plugin-slots] 除主窗口外，订阅了插槽事件的窗口（如 Cuko 窗口）也要收到注册/注销
+const slotSubscribers = new Set<any>();
+function broadcastSlotEvent(channel: string, payload: any): void {
+  const sent = new Set<number>();
+  const mainWin: any = (windowState as any).getMainWindow ? (windowState as any).getMainWindow() : null;
+  if (mainWin && mainWin.webContents && !mainWin.webContents.isDestroyed()) {
+    mainWin.webContents.send(channel, payload);
+    sent.add(mainWin.webContents.id);
+  }
+  for (const wc of [...slotSubscribers]) {
+    if (!wc || wc.isDestroyed()) { slotSubscribers.delete(wc); continue; }
+    if (sent.has(wc.id)) continue;
+    wc.send(channel, payload);
+  }
+}
+
 /** 注册/更新一个插件槽位（同 pluginId+slot+id 覆盖），并广播给壳页面 */
 function registerPluginSlot({ pluginId, slot, id, order, spec }: any = {}): { success: boolean; error?: string } {
   if (!pluginId || !slot || !id) return { success: false, error: '缺 pluginId/slot/id' };
@@ -68,8 +84,7 @@ function registerPluginSlot({ pluginId, slot, id, order, spec }: any = {}): { su
   const exist = pluginSlots.find((s) => s.pluginId === pluginId && s.slot === slot && s.id === id);
   if (exist) { exist.order = o; exist.spec = spec; }
   else pluginSlots.push({ pluginId, slot, id, order: o, spec });
-  const mainWin: any = (windowState as any).getMainWindow ? (windowState as any).getMainWindow() : null;
-  if (mainWin && mainWin.webContents) mainWin.webContents.send('shell-slot-register', { pluginId, slot, id, order: o, spec });
+  broadcastSlotEvent('shell-slot-register', { pluginId, slot, id, order: o, spec });
   return { success: true };
 }
 
@@ -811,7 +826,13 @@ function registerPluginIpc(): void {
       if (enabled) {
         // 尝试立即加载（工具已注册会覆盖告警，无碍）
         const entry = listProfilePluginEntries().find((e) => e.id === id);
-        if (entry) { try { await loadPluginFromDir(entry.dir, toolRegistry); } catch (_) { /* 已加载或失败，重启兜底 */ } }
+        if (entry) {
+          try {
+            const { buildCuckooHost } = await import('../cuckoo-host.js');
+            const host = buildCuckooHost({ db: (global as any).__globalDb, logicIdMap: (global as any).__globalLogicIdMap });
+            await loadPluginFromDir(entry.dir, toolRegistry, host);
+          } catch (_) { /* 已加载或失败，重启兜底 */ }
+        }
       }
       return { success: true };
     } catch (err: any) {
@@ -882,12 +903,20 @@ function registerPluginIpc(): void {
   ipcMain.handle('plugin-slot-unregister', async (_event: any, { pluginId, slot, id }: any = {}) => {
     try {
       const ok = unregisterPluginSlot(pluginId, slot, id);
-      const mainWin: any = windowState.getMainWindow ? windowState.getMainWindow() : null;
-      if (ok && mainWin && mainWin.webContents) mainWin.webContents.send('shell-slot-unregister', { pluginId, slot, id });
+      if (ok) broadcastSlotEvent('shell-slot-unregister', { pluginId, slot, id });
       return { success: true };
     } catch (err: any) { return { success: false, error: err && err.message ? err.message : String(err) }; }
   });
   ipcMain.handle('plugin-slot-list', async () => ({ success: true, slots: listPluginSlots() }));
+  // [261125-p3vk8w-cuko-plugin-slots] 其它窗口（如 Cuko）订阅插槽注册/注销事件；窗口销毁时自动退订
+  ipcMain.handle('plugin-slot-subscribe', async (event: any) => {
+    const wc = event && event.sender;
+    if (wc && !slotSubscribers.has(wc)) {
+      slotSubscribers.add(wc);
+      wc.once('destroyed', () => { slotSubscribers.delete(wc); });
+    }
+    return { success: true };
+  });
 
   // ===== DSH 插件 client 入口源码（壳页面加载执行）=====
   // 返回已启用的 profile 插件的 ./client 源码。

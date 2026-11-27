@@ -87,11 +87,13 @@ describe('GoalDoneTool', () => {
     assert.strictEqual(events.length, 0);
   });
 
-  test('apiMetas.usage 说明结束语义', async () => {
+  test('apiMetas.doc 说明结束语义', async () => {
+    // [261125] usage 字段已合并进 doc（api.d.ts 精简）
     const { apiMetas } = await import('../../src/tools/impl/goal-done.js');
-    const usage = apiMetas[0].usage;
-    assert.ok(typeof usage === 'string' && usage.length > 0, 'usage 应存在');
-    assert.ok(usage.includes('goalDone()'));
-    assert.ok(usage.includes('完成'));
+    const doc = apiMetas[0].doc;
+    assert.ok(typeof doc === 'string' && doc.length > 0, 'doc 应存在');
+    // 说明是 /goal 目标的结束动作，且强调"确实完成后"才调用
+    assert.ok(doc.includes('/goal'));
+    assert.ok(doc.includes('完成'));
   });
 });

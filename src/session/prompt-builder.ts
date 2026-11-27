@@ -16,6 +16,8 @@ import { getPluginScanRoots } from '../plugins/roots.js';
 import type { PluginScanRoots } from '../plugins/roots.js';
 // DSH 插件注册的提示词段（C4）
 import { getPromptSections as getDshPromptSections } from '../plugins/dsh-compat/prompt-sections.js';
+// [261125-bmsfsh] 阶段 4：把插件注册的 system-prompt/assemble 监听器接进提示词组装
+import { waterfallDshEvent } from '../plugins/cuckoo-plugins/event-bridge.js';
 
 // 提示词模板目录（D20：锚定应用根，与 dist 结构解耦）
 const PROMPT_DIR = resolveSrc('prompt');
@@ -172,7 +174,7 @@ function readProjectIntro(selectedDir: string): string {
  * @param opts { providerId, selectedDir, isCompaction }
  * @returns { prompt, error? }，error 存在时 prompt 为空
  */
-function buildPrompt(opts: { providerId: string; selectedDir: string; isCompaction?: boolean }): { prompt: string; error?: string } {
+async function buildPrompt(opts: { providerId: string; selectedDir: string; isCompaction?: boolean }): Promise<{ prompt: string; error?: string }> {
   const { providerId, selectedDir, isCompaction } = opts;
 
   const tpl = loadTemplate(providerId);
@@ -245,6 +247,39 @@ function buildPrompt(opts: { providerId: string; selectedDir: string; isCompacti
   // 压缩后初始化：末尾追加提示，让 AI 接着之前的工作继续
   if (isCompaction) {
     combined += '\n\n---\n\n请继续你之前的工作';
+  }
+
+  // [261125-bmsfsh] 阶段 4：走一遍 DSH 的 system-prompt/assemble 瀑布，
+  // 让插件（如 dsh-purge）能改写最终提示词。
+  //
+  // DSH 契约（packages/core/system-prompt/src/index.ts:684）：
+  //   ctx.waterfall('system-prompt/assemble', assembly, context, () => Promise.resolve(assembly))
+  // 其中 assembly = { sections, contexts, variables, tools }。
+  //
+  // Cuckoo 的提示词是「一整段字符串」而非分段结构，所以这里把整段文本
+  // 塞进 sections[0]，插件改写后再拼回来——语义上等价，改动最小。
+  try {
+    const assembly = {
+      sections: [{ name: 'cuckoo-prompt', text: combined, interpolate: false }],
+      contexts: [],
+      variables: { cwd: selectedDir, projectDir: selectedDir },
+      tools: [],
+    };
+    const transformed = await waterfallDshEvent(
+      'system-prompt/assemble',
+      assembly,
+      { projectDir: selectedDir, providerId },
+      () => Promise.resolve(assembly),
+    );
+    if (transformed && Array.isArray(transformed.sections) && transformed.sections.length) {
+      const text = transformed.sections
+        .map((s: any) => (s && typeof s.text === 'string' ? s.text : ''))
+        .filter(Boolean)
+        .join('\n\n');
+      if (text) combined = text;
+    }
+  } catch (e: any) {
+    console.error('[Cuckoo Code] system-prompt/assemble 瀑布失败，用原始提示词:', e && e.message ? e.message : e);
   }
 
   return { prompt: combined };

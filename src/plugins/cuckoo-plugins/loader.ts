@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { DshRuntime } from '../dsh-compat/runtime.js';
 import { setDshSession } from '../dsh-compat/shim.js';
 import { EventBus } from '../runtime/events.js';
@@ -24,6 +25,7 @@ import { createLlm, createAgentDefaultModelFromWindow } from '../dsh-compat/llm-
 import { CHILD_PROCESS_SHIM_CODE } from '../dsh-compat/cp-shim-code.js';
 import { getProfileDir, getProfilePatchPath, ensureProfile, DEFAULT_PROFILE, listProfilePluginEntries } from '../profile/index.js';
 import { getPnpmInvocation } from '../profile/pnpm.js';
+import { parseBundlePatch } from '../profile/patch.js';
 
 const require = createRequire(import.meta.url);
 const { app } = require('electron');
@@ -136,6 +138,15 @@ async function bundlePlugin(entryFile: string): Promise<string> {
 
   const esbuild = require('esbuild');
   const shim = shimPath();
+  // [261125-bmsfsh] 阶段 3：CJS 里没有 import.meta → 注入真实文件 URL。
+  //
+  // 很多 DSH 插件用 `fileURLToPath(import.meta.url)` / `createRequire(import.meta.url)`
+  // 定位自身目录和资源（dsh-purge 有 14 处）。打成 cjs 后 import.meta 变成 `{}`，
+  // 于是 `fileURLToPath(undefined)` 抛「path argument ... Received undefined」。
+  //
+  // 做法：把 import.meta.url 定义成**入口文件的 file:// URL**（真实路径，不是虚拟值），
+  // 这样 createRequire / new URL(rel, import.meta.url) / fileURLToPath 全都照常工作。
+  const entryUrl = require('node:url').pathToFileURL(entryFile).href;
   const result = await esbuild.build({
     entryPoints: [entryFile],
     bundle: true,
@@ -143,6 +154,9 @@ async function bundlePlugin(entryFile: string): Promise<string> {
     format: 'cjs',
     platform: 'node',
     logLevel: 'silent',
+    define: {
+      'import.meta.url': JSON.stringify(entryUrl),
+    },
     plugins: [{
       name: 'cuckoo-dsh-shim',
       setup(build: any) {
@@ -254,6 +268,8 @@ interface CuckooHost {
 /** 一个"假 ctx"——收集插件注册的工具；未知属性用 stub 兜底（够用空接口） */
 function createCollectorCtx(pluginName: string, host?: CuckooHost, runtime?: any): { ctx: any; tools: any[]; bus: EventBus; disposers: Array<() => void> } {
   const tools: any[] = [];
+  // 插件服务注册表（DSH ctx.provide / ctx.get）——bundle 子插件（如 dsh-purge/redteam/store）靠它共享服务
+  const services = new Map<string, any>();
   // HMR：收集所有"卸载"函数（effect 返回 / 工具注销 / 插槽注销 / 路由注销）
   const disposers: Array<() => void> = [];
   const addDisposer = (d: any) => { if (typeof d === 'function') disposers.push(d); return d || (() => {}); };
@@ -361,9 +377,15 @@ function createCollectorCtx(pluginName: string, host?: CuckooHost, runtime?: any
       }
     },
     scope() { return { effect: () => () => {}, on: () => () => {}, dispose() {}, disposed: false }; },
-    provide() { return () => {}; },
-    // 服务查找（DSH ctx.get(服务名)）：把已有服务 + 补齐的方法暴露出来
+    provide(name: string, value?: any) {
+      const key = String(name || '');
+      if (!key) return () => {};
+      services.set(key, value);
+      return addDisposer(() => { services.delete(key); });
+    },
+    // 服务查找（DSH ctx.get(服务名)）：先查子插件 provide 的服务，再落到宿主能力
     get(key: string) {
+      if (services.has(key)) return services.get(key);
       // webServer：动态 HTTP 路由
       if (key === 'webServer') {
         return {
@@ -501,6 +523,8 @@ function createCollectorCtx(pluginName: string, host?: CuckooHost, runtime?: any
     get(t, prop) {
       if (prop in t) return (t as any)[prop];
       if (typeof prop === 'symbol') return undefined;
+      // 子插件 ctx.provide 的服务也要能按属性访问（DSH 的 ctx.redteam / ctx.foo）
+      if (services.has(String(prop))) return services.get(String(prop));
       return makeStub('ctx.' + String(prop));
     },
   });
@@ -518,6 +542,45 @@ function dbg(msg: string): void {
     fs.appendFileSync(file, new Date().toISOString() + ' ' + msg + String.fromCharCode(10), 'utf-8');
   } catch (_) { /* ignore */ }
   try { console.log('[cuckoo-plugin] ' + msg); } catch (_) {}
+}
+
+/**
+ * 加载 bundle patch 里声明的「包内子插件」（如 dsh-purge/redteam、.../store、.../ui）。
+ * Cuckoo 的 profile 加载器只执行主入口，而 DSH bundle 会把子模块作为独立插件 insert；
+ * 这里按 patch 顺序用原生 ESM 加载，共享同一个 ctx（provide/get/effect/webServer）。
+ */
+async function loadBundleSubPlugins(pluginDir: string, mainName: string, ctx: any): Promise<void> {
+  let pkg: any;
+  try { pkg = JSON.parse(fs.readFileSync(path.join(pluginDir, 'package.json'), 'utf8')); } catch { return; }
+  const rel = pkg && pkg.dsh && pkg.dsh.bundle && pkg.dsh.bundle.patch;
+  if (!rel || typeof rel !== 'string') return;
+  let text = '';
+  try { text = fs.readFileSync(path.resolve(pluginDir, rel), 'utf8'); } catch { return; }
+  const pkgName = (typeof pkg.name === 'string' && pkg.name) ? pkg.name : mainName;
+  const rows = parseBundlePatch(text);
+  if (!rows.length) return;
+  const req = createRequire(path.join(pluginDir, 'package.json'));
+  for (const row of rows) {
+    const name = String((row && row.moduleName) || '');
+    if (!name || name === pkgName || name === mainName) continue;
+    if (!name.startsWith(pkgName + '/')) continue;
+    let entry = '';
+    try { entry = req.resolve(name); } catch (e: any) {
+      dbg('子插件解析失败 @' + name + ': ' + (e && e.message ? e.message : String(e)));
+      continue;
+    }
+    try {
+      const mod: any = await import(pathToFileURL(entry).href);
+      const sub = (mod && mod.default && typeof mod.default === 'object') ? mod.default : mod;
+      if (!sub || typeof sub.apply !== 'function') continue;
+      dbg('开始 apply 子插件 @' + name);
+      await sub.apply(ctx, {});
+      dbg('apply 完成 子插件 @' + name);
+    } catch (e: any) {
+      dbg('子插件 apply 失败 @' + name + ': ' + (e && e.message ? e.message : String(e)));
+      if (e && e.stack) dbg(String(e.stack).slice(0, 800));
+    }
+  }
 }
 
 async function loadCuckooPlugin(pluginDir: string, host?: CuckooHost): Promise<{ pluginName: string; tools: any[]; runtime: any; bus: any; disposers: Array<() => void> }> {
@@ -562,6 +625,8 @@ async function loadCuckooPlugin(pluginDir: string, host?: CuckooHost): Promise<{
   } else {
     dbg('插件无 apply 函数 @' + pluginName);
   }
+  try { await loadBundleSubPlugins(pluginDir, pluginName, ctx); }
+  catch (e: any) { dbg('bundle 子插件加载失败 @' + pluginName + ': ' + (e && e.message ? e.message : String(e))); }
   return { pluginName, tools, runtime, bus, disposers };
 }
 

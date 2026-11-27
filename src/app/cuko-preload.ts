@@ -90,6 +90,31 @@ const shellAPI = {
   setAiViewVisible: (visible: boolean) => ipcRenderer.invoke('shell-set-ai-view-visible', { visible }),
   // Cuko 窗口里也有设置弹窗（市场卡片要跳 GitHub），必须和壳窗口一样暴露
   openExternal: (url: string) => ipcRenderer.invoke('open-external', { url }),
+  // [261125-p3vk8w-cuko-plugin-slots] DSH 插件 client 运行时 + 插槽（与 shell-preload 同名同通道）
+  cuckooPluginClientSources: () => ipcRenderer.invoke('cuckoo-plugin-client-sources'),
+  onCuckooReload: (cb: (d: any) => void) => { ipcRenderer.on('cuckoo-reload-dsh-clients', (_e: any, d: any) => cb(d)); },
+  pluginSlotSubscribe: () => ipcRenderer.invoke('plugin-slot-subscribe'),
+  commandInvoke: (commandId: string) => ipcRenderer.invoke('plugin-command-invoke', { commandId }),
+  commandList: () => ipcRenderer.invoke('plugin-command-list'),
+  webRoutes: () => ipcRenderer.invoke('plugin-web-routes'),
+  webServerInfo: () => ipcRenderer.invoke('plugin-webserver-info'),
+  getShellToken: () => ipcRenderer.invoke('shell-token'),
+  // [261125-p3vk8w-cuko-plugin-slots] DSH remote.pluginManager / remote.$on（与 shell-preload 同名同通道，原样复制）
+  onRemoteEvent: (cb: (evt: string, data: any) => void) => {
+    ipcRenderer.on('plugin-manager-changed', (_e: any, d: any) => cb('plugin-manager/changed', d));
+    ipcRenderer.on('plugin-manager-install-log', (_e: any, d: any) => cb('plugin-manager/install-log', d));
+    ipcRenderer.on('plugin-manager-install-state', (_e: any, d: any) => cb('plugin-manager/install-state', d));
+  },
+  pluginManagerListBundles: () => ipcRenderer.invoke('plugin-manager-list-bundles'),
+  pluginManagerListPlugins: () => ipcRenderer.invoke('plugin-manager-list-plugins'),
+  pluginManagerSetEnabled: (id: string, enabled: boolean) => ipcRenderer.invoke('plugin-manager-set-enabled', { id, enabled }),
+  pluginManagerRemoveBundle: (name: string) => ipcRenderer.invoke('plugin-manager-remove-bundle', { name }),
+  pluginManagerInstallBundle: (spec: string, opts?: any) => ipcRenderer.invoke('plugin-manager-install-bundle', { spec, opts }),
+  pluginManagerInspect: (spec: string) => ipcRenderer.invoke('plugin-manager-inspect', { spec }),
+  pluginManagerCancelInstall: () => ipcRenderer.invoke('plugin-manager-cancel-install'),
+  pluginInventoryList: () => ipcRenderer.invoke('plugin-inventory-list'),
+  // [261125-bmsfsh] 探针/插件调试日志（写主进程 plugin-debug.log，供阶段 0 落盘判定）
+  pluginDebugLog: (msg: string) => { try { ipcRenderer.send('plugin-debug-log', { msg: String(msg) }); } catch (_) { /* ignore */ } },
 };
 
 contextBridge.exposeInMainWorld('shellAPI', shellAPI);

@@ -11,13 +11,15 @@ test('McpCallTool 构造器', () => {
   assert.ok(t.parameters.required.includes('tool'));
 });
 
-test('McpCallTool apiMetas.usage 提到前置查询工具', async () => {
+test('McpCallTool apiMetas.doc 提到前置查询工具', async () => {
+  // [261125] usage 字段已合并进 doc（api.d.ts 精简），断言改为看 doc
   const { apiMetas } = await import('../../src/tools/impl/mcp-call.js');
-  const usage = apiMetas[0].usage;
-  assert.ok(typeof usage === 'string' && usage.length > 0, 'usage 应存在');
-  assert.match(usage, /mcpCall/);
-  assert.match(usage, /mcpListServers/);
-  assert.match(usage, /mcpGetTools/);
+  const doc = apiMetas[0].doc;
+  assert.ok(typeof doc === 'string' && doc.length > 0, 'doc 应存在');
+  // 说明"调用 MCP 工具"，并指向两个前置查询工具
+  assert.match(doc, /MCP server 的工具/);
+  assert.match(doc, /mcpListServers/);
+  assert.match(doc, /mcpGetTools/);
 });
 
 test('McpCallTool 缺 server 返回错误', async () => {

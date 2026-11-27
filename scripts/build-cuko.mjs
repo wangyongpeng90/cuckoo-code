@@ -33,7 +33,10 @@ async function main() {
   const compCss = fs.existsSync(compCssPath) ? fs.readFileSync(compCssPath, 'utf8') : '';
   const pagesCss = fs.existsSync(pagesCssPath) ? fs.readFileSync(pagesCssPath, 'utf8') : '';
   
-  const css = baseCss + '\n' + compCss + '\n' + pagesCss + '\n' + twCss;
+  // [261125-p3vk8w-cuko-plugin-slots] DSH 设计令牌（--dsw-*），插件界面在 Cuko 窗口里也要用
+  const dshTokensPath = path.join(ROOT, 'src', 'ui', 'shell', 'styles', 'dsh-tokens.css');
+  const dshTokensCss = fs.existsSync(dshTokensPath) ? fs.readFileSync(dshTokensPath, 'utf8') : '';
+  const css = baseCss + '\n' + compCss + '\n' + pagesCss + '\n' + dshTokensCss + '\n' + twCss;
 
   // 2. esbuild 打包 JS（加 @/ alias）
   console.log('[build-cuko] 打包 JS...');

@@ -17,6 +17,11 @@ import * as updater from '../updater/index.js';
 import * as mcpConfig from '../mcp/config.js';
 import * as mcpClient from '../mcp/client.js';
 import { resolveAsset, resolveSrc } from '../infra/paths.js';
+import { applyCuckooDshHome } from '../infra/dsh-home.js';
+
+// [261125-bmsfsh] 在加载任何 DSH 插件前，把插件的用户目录指到 ~/.cuckoo，
+// 避免 dsh-purge 等插件把数据库/技能/预设写进真正的 DSH 目录（~/.dsh）。
+applyCuckooDshHome();
 
 const require = createRequire(import.meta.url);
 const { app, BrowserWindow, WebContentsView, Menu, dialog, screen, session, nativeTheme, ipcMain: ipcMainForProfile } = require('electron');

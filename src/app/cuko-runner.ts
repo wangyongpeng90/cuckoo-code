@@ -395,10 +395,10 @@ interface BuiltFirstInput {
 }
 
 /** 首次对话（无 providerSessionId）时把系统提示词按 # 分段拼到 input 前面 */
-function withSystemPrompt(input: CukoRunInputPart[], projectDir: string, providerSessionId: string): BuiltFirstInput {
+async function withSystemPrompt(input: CukoRunInputPart[], projectDir: string, providerSessionId: string): Promise<BuiltFirstInput> {
   if (providerSessionId || !projectDir) return { input, promptText: '' };
   try {
-    const built = buildPrompt({ providerId: 'cuko', selectedDir: projectDir });
+    const built = await buildPrompt({ providerId: 'cuko', selectedDir: projectDir });
     if (built.error || !built.prompt) return { input, promptText: '' };
     const segments = splitPromptByH1(built.prompt).filter((s) => s && s.trim());
     if (segments.length === 0) return { input, promptText: '' };
@@ -793,10 +793,10 @@ export async function startCukoRun(params: StartRunParams): Promise<{ success: b
   let firstInput: CukoRunInputPart[] = input;
   if (protocol === 'openai') {
     // [261123-q4h7tn-cuko-openai] 用户消息由主进程落库并固定原文（第一条拼上系统提示词）
-    const prep = prepareOpenAiUserTurn(sessionId, projectDir, params.userMessage);
+    const prep = await prepareOpenAiUserTurn(sessionId, projectDir, params.userMessage);
     if (!prep.ok) return { success: false, error: prep.error };
   } else {
-    const first = withSystemPrompt(input, projectDir, providerSessionId);
+    const first = await withSystemPrompt(input, projectDir, providerSessionId);
     firstInput = first.input;
     if (first.promptText) persistSystemPrompt(sessionId, first.promptText);
     // 新版界面把用户消息交给主进程落库；旧版界面自己存（不传 userMessage）
@@ -978,7 +978,7 @@ export async function switchModelWithHistory(params: SwitchModelParams): Promise
   if (!session) return { success: false, error: '会话不存在' };
   if (!provider || !provider.base_url) return { success: false, error: 'Provider 不存在' };
   // [261123-q4h7tn-cuko-openai] 目标是 OpenAI 协议：历史本来就在本地，不发 compress，直接改绑定并补齐原文
-  if (normalizeProtocol(provider.protocol) === 'openai') return switchToOpenAiModel(db, session, providerId, modelId);
+  if (normalizeProtocol(provider.protocol) === 'openai') return await switchToOpenAiModel(db, session, providerId, modelId);
 
   const history = Array.isArray(params.history)
     ? params.history.filter((p) => p && p.type === 'text' && typeof p.text === 'string' && p.text.trim())
@@ -1170,10 +1170,10 @@ function toolSentFields(run: CukoRun, results: ToolExecResult[], total: number):
 }
 
 /** 首轮完整系统提示词（未绑定工作区时为空） */
-function buildSystemPromptText(projectDir: string): string {
+async function buildSystemPromptText(projectDir: string): Promise<string> {
   if (!projectDir) return '';
   try {
-    const built = buildPrompt({ providerId: 'cuko', selectedDir: projectDir });
+    const built = await buildPrompt({ providerId: 'cuko', selectedDir: projectDir });
     if (built.error || !built.prompt) return '';
     return String(built.prompt).trim();
   } catch (err: any) {
@@ -1185,7 +1185,7 @@ function buildSystemPromptText(projectDir: string): string {
 type PrepareUserTurnResult = { ok: true } | { ok: false; error: string };
 
 /** OpenAI 协议：用户消息由主进程落库并固定原文；会话还没有任何原文时拼上系统提示词 */
-function prepareOpenAiUserTurn(sessionId: string, projectDir: string, userMessage: StartRunParams['userMessage']): PrepareUserTurnResult {
+async function prepareOpenAiUserTurn(sessionId: string, projectDir: string, userMessage: StartRunParams['userMessage']): Promise<PrepareUserTurnResult> {
   if (!userMessage || !userMessage.id) {
     return { ok: false, error: 'OpenAI 协议需要由主进程保存用户消息，当前界面版本过旧，请更新后重试' };
   }
@@ -1203,7 +1203,7 @@ function prepareOpenAiUserTurn(sessionId: string, projectDir: string, userMessag
   }
   let sentText = parsed.text;
   if (isFirst) {
-    const prompt = buildSystemPromptText(projectDir);
+    const prompt = await buildSystemPromptText(projectDir);
     if (prompt) {
       persistSystemPrompt(sessionId, prompt);
       sentText = composeFirstUserText(prompt, sentText);
@@ -1424,7 +1424,7 @@ async function streamOpenAiRound(run: CukoRun): Promise<RoundResult> {
  * - 判断为不需要补的旧行标 none，以后不再处理
  * - 补齐 + 改绑定在一个事务里，失败整体回滚，原绑定不变
  */
-function switchToOpenAiModel(db: any, session: any, providerId: string, modelId: string): { success: boolean; error?: string; inputCount?: number } {
+async function switchToOpenAiModel(db: any, session: any, providerId: string, modelId: string): Promise<{ success: boolean; error?: string; inputCount?: number }> {
   const sessionId = String(session.id);
   let rows: any[] = [];
   try {
@@ -1437,7 +1437,7 @@ function switchToOpenAiModel(db: any, session: any, providerId: string, modelId:
   let systemPrompt = String(session.system_prompt || '').trim();
   const firstUser = rows.find((r) => r.role === 'user');
   if (firstUser && !firstUser.sent_role && !systemPrompt) {
-    systemPrompt = buildSystemPromptText(String(session.project_dir || ''));
+    systemPrompt = await buildSystemPromptText(String(session.project_dir || ''));
     if (systemPrompt) persistSystemPrompt(sessionId, systemPrompt);
   }
 

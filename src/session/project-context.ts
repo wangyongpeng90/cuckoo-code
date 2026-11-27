@@ -147,7 +147,7 @@ async function sendSystemPrompt(
   const tStart = Date.now();
   const stepLog = (msg: string) => logWithFile(providerId, '[Cuckoo Code][耗时] ' + msg + ' +' + (Date.now() - tStart) + 'ms');
 
-  const built = buildPrompt({ providerId, selectedDir, isCompaction });
+  const built = await buildPrompt({ providerId, selectedDir, isCompaction });
   if (built.error) {
     return { success: false, message: built.error };
   }

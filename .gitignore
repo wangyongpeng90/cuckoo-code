@@ -73,3 +73,6 @@ npm-install.log
 test/session/*.tmp
 src/ui/cuko/built.html
 src/ui/cuko/built.css
+
+# 插件/工具运行产生的临时附件（本地生成，不进仓库）
+deepseek-web-attachments/

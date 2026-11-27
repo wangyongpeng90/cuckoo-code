@@ -29,6 +29,7 @@ import { AttachmentUI } from '@/components/assistant-ui/elements/attachment.aui'
 import { useAttachmentState } from '@/components/assistant-ui/elements/attachment-state';
 import { Thread } from '@/components/assistant-ui/elements/thread.aui';
 import { SessionTree } from '@/ui/cuko/session-tree';
+import { CukoSidebarPanels, CukoSidebarFooter, CukoMainPanel, CukoOverlayLayer, CukoSessionHeaderUtilities, CukoInputRight } from '@/ui/cuko/plugin-slots';
 import { SessionIdDialog } from '@/ui/cuko/session-id-dialog';
 import { SystemPromptDialog } from '@/ui/cuko/system-prompt-dialog';
 import { ModelSwitchDialog } from '@/ui/cuko/model-switch-dialog';
@@ -1491,6 +1492,8 @@ function ChatApp() {
   }
   const composerExtra = (
     <div className="flex items-center gap-1">
+      {/* [261125-bmsfsh] DSH conversation.input.right：插件在输入框右侧的按钮 */}
+      <CukoInputRight sessionId={currentThreadId} />
       <WorkspaceSelector
         workspaces={workspaces}
         activeWorkspace={activeWorkspace}
@@ -1525,6 +1528,7 @@ function ChatApp() {
               <span className="text-base leading-none">+</span> 新对话
             </button>
           </div>
+          <CukoSidebarPanels />
           <div className="flex-1 overflow-y-auto p-2">
             <SessionTree
               threads={threads}
@@ -1539,6 +1543,7 @@ function ChatApp() {
               runningSessionIds={runningSessions}
             />
           </div>
+          <CukoSidebarFooter />
           <div className="border-t p-2">
             <button
               onClick={() => setRequestLogOpen(true)}
@@ -1551,7 +1556,12 @@ function ChatApp() {
             </button>
           </div>
         </div>
-        <div className="relative min-h-0 min-w-0 overflow-hidden">
+        <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
+          {/* [261125-bmsfsh] DSH conversation.session.header.utilities：会话头部工具位 */}
+          <div className="flex shrink-0 items-center justify-end gap-1 px-2 pt-1">
+            <CukoSessionHeaderUtilities sessionId={currentThreadId} />
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
           <ComposerSlotsContext.Provider value={{ extra: composerExtra, usage: usageView }}>
             <Thread components={{
               Reasoning: CukoReasoning,
@@ -1562,8 +1572,12 @@ function ChatApp() {
               ComposerExtra: CukoComposerExtra,
             }} />
           </ComposerSlotsContext.Provider>
+          </div>
+          <CukoMainPanel />
         </div>
       </div>
+      {/* [261125-bmsfsh] DSH shell.overlay：全屏浮层槽位（没插件时不占位、不挡点击） */}
+      <CukoOverlayLayer />
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
       {sessionIdEditing && (
         <SessionIdDialog

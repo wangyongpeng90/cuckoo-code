@@ -474,10 +474,10 @@ export function registerCukoIpc(): void {
   });
 
   // 组装完整系统提示词并按一级标题切分成段
-  ipcMain.handle('cuko:build-system-prompt', (_event: any, projectDir: string) => {
+  ipcMain.handle('cuko:build-system-prompt', async (_event: any, projectDir: string) => {
     try {
       if (!projectDir) return { success: true, segments: [] };
-      const built = buildPrompt({ providerId: 'cuko', selectedDir: projectDir });
+      const built = await buildPrompt({ providerId: 'cuko', selectedDir: projectDir });
       if (built.error) return { success: false, error: built.error };
       const segments = splitPromptByH1(built.prompt);
       return { success: true, segments };

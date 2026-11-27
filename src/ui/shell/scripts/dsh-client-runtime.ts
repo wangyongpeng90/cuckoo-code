@@ -325,6 +325,93 @@ function makeSessions(): any {
   };
 }
 
+/**
+ * [261125-bmsfsh] 阶段 4：conversation 服务（会话输入面板）。
+ *
+ * dsh-purge 的 rewind / 草稿回填依赖它，契约来自 DSH：
+ *   packages/client/ui-conversation/src/client/contract/input.ts
+ *
+ * 它只需要「按会话拿到输入面板」，两套取法都要支持：
+ *   - `input.shell(sessionId)`        —— 直接按 id 拿（dsh-purge 首选）
+ *   - `input.for(actx)`              —— 按 session 作用域拿（DSH 原生）
+ *
+ * 面板本身提供：setDraft / insertQuote / state.getSnapshot() / notify / focus ...
+ * Cuckoo 没有真实的 composer 句柄可复用，所以做成**按 sessionId 的内存草稿仓**：
+ * setDraft 记下值，getSnapshot().draft 读回来。这样插件的 rewind 能「写回草稿」，
+ * 用户看得见结果（Cuko 的输入框可以后续接上，见文档遗留）。
+ */
+const conversationDrafts = new Map<string, string>();
+const conversationDraftSubs = new Map<string, Set<() => void>>();
+
+/** 内存草稿的状态快照（对齐 DSH InputState 的 draft 字段） */
+function makeConversationInputState(sessionId: string): any {
+  return {
+    getSnapshot() {
+      return {
+        draft: conversationDrafts.get(sessionId) || '',
+        pendingAttachments: [] as any[],
+      };
+    },
+    subscribe(cb: () => void) {
+      if (!conversationDraftSubs.has(sessionId)) conversationDraftSubs.set(sessionId, new Set());
+      conversationDraftSubs.get(sessionId)!.add(cb);
+      return () => { const s = conversationDraftSubs.get(sessionId); if (s) s.delete(cb); };
+    },
+  };
+}
+
+/** 一个会话的输入面板（SessionInput 的最小可用实现） */
+function makeSessionInput(sessionId: string): any {
+  const state = makeConversationInputState(sessionId);
+  const emit = () => {
+    const subs = conversationDraftSubs.get(sessionId);
+    if (subs) for (const cb of [...subs]) { try { cb(); } catch { /* ignore */ } }
+  };
+  return {
+    state,
+    setDraft(text: string) {
+      conversationDrafts.set(sessionId, String(text == null ? '' : text));
+      emit();
+    },
+    insertQuote(text: string) {
+      const prev = conversationDrafts.get(sessionId) || '';
+      conversationDrafts.set(sessionId, prev + (prev ? '\n\n' : '') + String(text || ''));
+      emit();
+      return true;
+    },
+    addAttachments() { return false; },
+    removeAttachment() { return false; },
+    pruneAttachments() { /* noop */ },
+    submit() { /* Cuko 的发送由 UI 驱动；插件触发发送不在本阶段范围 */ },
+    notify(_level: string, _text: string) { /* 无 DOM 提示位，静默 */ },
+    focus() { /* noop */ },
+    beginCommand() { return false; },
+    insertReference() { return false; },
+    bindDraftPersistence() { /* noop */ },
+    requestDraftInitialization() { return 'applied'; },
+  };
+}
+
+/** conversation 服务本体 */
+function makeConversation(): any {
+  return {
+    input: {
+      /** 按 sessionId 直接拿输入面板（dsh-purge 首选这条路） */
+      shell(sessionId: string) {
+        if (!sessionId) return null;
+        return makeSessionInput(String(sessionId));
+      },
+      /** 按 session 作用域拿（DSH 原生签名：for(actx)） */
+      for(actx: any) {
+        const id = actx && (actx.sessionId || (actx.session && actx.session.id) || actx.id);
+        if (!id) throw new Error('conversation.input.for requires a retained Session scope');
+        return makeSessionInput(String(id));
+      },
+      requestDraftInitialization() { return 'applied'; },
+    },
+  };
+}
+
 /** 工作区服务（最小） */
 function makeWorkspaces(): any {
   const list = makeObservable({ items: [] as any[] });
@@ -597,6 +684,15 @@ function makeServices(): Record<string, any> {
     settingsScope: makeSettingsScope(),
     configForms: makeConfigForms(),
     forms: makeConfigForms(),
+    // [261125-bmsfsh] 阶段 4：conversation（dsh-purge 的 rewind / 草稿回填）
+    conversation: makeConversation(),
+    // [261125-bmsfsh] agentPresets：dsh-purge 读它（list/register），Cuko 暂无预设体系 → 空列表
+    agentPresets: {
+      list: async () => ({ result: { value: { presets: [] } } }),
+      register: () => ({ dispose() { /* noop */ } }),
+      get: () => undefined,
+      subscribe: () => () => { /* noop */ },
+    },
     tools: makeStub('tools'),
     store: makeStub('store'),
     __evBus: evBus,
@@ -604,9 +700,86 @@ function makeServices(): Record<string, any> {
   };
 }
 
-/** 构造给插件 client 的 ctx（增强版） */
-function makeCtx(pluginId: string, services: Record<string, any>): any {
-  const effects: Array<() => void> = [];
+/**
+ * [261125-bmsfsh] 阶段 2——事件派发基础设施。
+ *
+ * DSH 的 cordis 事件有 5 种派发：emit / parallel / serial / bail / waterfall。
+ * waterfall（瀑布）是本次补齐重点：每个监听器拿 `(value, ...args, next)`，
+ * 调 `next()` 取下游结果，返回自己的加工结果交给下一个监听器。
+ *
+ * ```js
+ * ctx.on('system-prompt/assemble', async (assembly, context, next) => {
+ *   const downstream = await next();              // 下游结果
+ *   return { ...downstream, sections: [...] };    // 自己的加工结果
+ * }, { global: true, prepend: true });
+ * ```
+ *
+ * dsh-purge 正是这样改写系统提示词的（lib/index.js:747）。
+ */
+
+/** 一条事件监听记录（带选项，waterfall 排序用） */
+interface EventListener {
+  fn: Function;
+  /** 前置：比普通监听器先执行 */
+  prepend?: boolean;
+  /** 全局：跨作用域也执行（Cuckoo 不区分作用域，仅作记录） */
+  global?: boolean;
+  /** 注册序号（稳定排序兜底） */
+  seq: number;
+}
+
+let listenerSeq = 0;
+
+/** 取某事件的有序监听器（prepend 在前，其余按注册顺序） */
+function orderedListeners(bus: Map<string, Set<EventListener>>, evt: string): EventListener[] {
+  const set = bus.get(evt);
+  if (!set || set.size === 0) return [];
+  return [...set].sort((a, b) => {
+    if (!!a.prepend !== !!b.prepend) return a.prepend ? -1 : 1;
+    return a.seq - b.seq;
+  });
+}
+
+/**
+ * 每个插件的 ctx 作用域登记表。
+ * 键可能是全名（@scope/name）或短名（name），dispose 时两种都认。
+ * DSH 的 Cordis fiber 语义：插件卸载 → 它的所有 effect 逆序清理。
+ */
+const pluginCtxs = new Map<string, { effects: Array<() => void>; ctx: any }>();
+
+/** 取某插件的作用域（含短名/全名归一化查找） */
+function findPluginCtx(pluginId: string): { effects: Array<() => void>; ctx: any } | undefined {
+  if (!pluginId) return undefined;
+  const short = pluginId.includes('/') ? (pluginId.split('/').pop() || pluginId) : pluginId;
+  return pluginCtxs.get(pluginId) || pluginCtxs.get(short);
+}
+
+/**
+ * 回收一个插件的 ctx 作用域：逆序执行所有 cleanup（后注册的先清理，与 plugin-system.md 约定一致）。
+ * @returns 实际执行的 cleanup 数量
+ */
+export function disposePluginCtx(pluginId: string): number {
+  const scope = findPluginCtx(pluginId);
+  if (!scope) return 0;
+  const short = pluginId.includes('/') ? (pluginId.split('/').pop() || pluginId) : pluginId;
+  pluginCtxs.delete(pluginId);
+  pluginCtxs.delete(short);
+  let n = 0;
+  for (let i = scope.effects.length - 1; i >= 0; i -= 1) {
+    try { scope.effects[i](); n += 1; } catch (e) { console.error('[dsh-client] cleanup 失败 ' + pluginId, e); }
+  }
+  scope.effects.length = 0;
+  return n;
+}
+
+/**
+ * 构造给插件 client 的 ctx（增强版）
+ * @param parentEffects [261125-bmsfsh] 父作用域的 cleanup 数组；子插件的 effect 直接挂进去，
+ *                      这样父插件卸载时能一并回收（不必单独 dispose 子 ctx）。
+ */
+function makeCtx(pluginId: string, services: Record<string, any>, parentEffects?: Array<() => void>): any {
+  const ownEffects: Array<() => void> = parentEffects || [];
+  const effects: Array<() => void> = ownEffects;
   const slots = {
     inject(name: string, cb: () => any) {
       try {
@@ -728,45 +901,170 @@ function makeCtx(pluginId: string, services: Record<string, any>): any {
     pluginId,
     slots,
     ...services,
+    /** [261125-bmsfsh] 真正的资源回收：逆序跑本作用域的 cleanup */
+    dispose() {
+      let n = 0;
+      for (let i = effects.length - 1; i >= 0; i -= 1) {
+        try { effects[i](); n += 1; } catch (e) { console.error('[dsh-client] dispose cleanup 失败 ' + pluginId, e); }
+      }
+      effects.length = 0;
+      return n;
+    },
     effect(fn: any) {
       try { const c = fn(); const d = typeof c === 'function' ? c : () => {}; effects.push(d); return d; }
       catch (e) { console.error('[dsh-client] effect 失败 ' + pluginId, e); return () => {}; }
     },
-    on(evt: string, fn: any) {
-      const bus = services.__evBus as Map<string, Set<Function>>;
+    /**
+     * [261125-bmsfsh] 监听事件。第三参支持 DSH 的选项：{ global, prepend }。
+     * dsh-purge 用 `ctx.on('agent/pre-step', fn, { global: true, prepend: true })`。
+     */
+    on(evt: string, fn: any, opts?: any) {
+      const bus = services.__evBus as Map<string, Set<EventListener>>;
       if (!bus || typeof fn !== 'function') return () => {};
       if (!bus.has(evt)) bus.set(evt, new Set());
-      bus.get(evt)!.add(fn);
-      return () => { const s = bus.get(evt); if (s) s.delete(fn); };
+      const rec: EventListener = { fn, prepend: !!(opts && opts.prepend), global: !!(opts && opts.global), seq: ++listenerSeq };
+      bus.get(evt)!.add(rec);
+      return () => { const s = bus.get(evt); if (s) s.delete(rec); };
     },
-    once(evt: string, fn: any) {
-      const off = (ctx as any).on(evt, (...args: any[]) => { off(); fn(...args); });
+    once(evt: string, fn: any, opts?: any) {
+      const off = (ctx as any).on(evt, (...args: any[]) => { off(); fn(...args); }, opts);
       return off;
     },
-    off(evt: string, fn: any) { const s = (services.__evBus as any)?.get(evt); if (s) s.delete(fn); },
-    emit(evt: string, ...args: any[]) { const f = services.__emit; if (typeof f === 'function') f(evt, ...args); },
-    // cordis：依赖就绪后回调（简化：立即执行）
-    inject(_names: any, cb: any) {
+    off(evt: string, fn: any) {
+      const s = (services.__evBus as any)?.get(evt) as Set<EventListener> | undefined;
+      if (!s) return;
+      for (const rec of [...s]) { if (rec.fn === fn) s.delete(rec); }
+    },
+    emit(evt: string, ...args: any[]) {
+      const bus = services.__evBus as Map<string, Set<EventListener>>;
+      for (const rec of orderedListeners(bus, evt)) {
+        try { const r = rec.fn(...args); if (r && typeof r.then === 'function') r.catch(() => {}); }
+        catch (e) { console.error('[dsh-client] emit 监听失败 ' + evt, e); }
+      }
+    },
+    /** [261125-bmsfsh] parallel：并行执行，返回结果数组 */
+    async parallel(evt: string, ...args: any[]): Promise<any[]> {
+      const bus = services.__evBus as Map<string, Set<EventListener>>;
+      const out: any[] = [];
+      for (const rec of orderedListeners(bus, evt)) {
+        try { out.push(await rec.fn(...args)); }
+        catch (e) { console.error('[dsh-client] parallel 监听失败 ' + evt, e); out.push(undefined); }
+      }
+      return out;
+    },
+    /** [261125-bmsfsh] serial：串行执行，返回最后一个结果 */
+    async serial(evt: string, ...args: any[]): Promise<any> {
+      const bus = services.__evBus as Map<string, Set<EventListener>>;
+      let last: any;
+      for (const rec of orderedListeners(bus, evt)) {
+        try { last = await rec.fn(...args); }
+        catch (e) { console.error('[dsh-client] serial 监听失败 ' + evt, e); }
+      }
+      return last;
+    },
+    /** [261125-bmsfsh] bail：第一个非 undefined 结果即返回 */
+    async bail(evt: string, ...args: any[]): Promise<any> {
+      const bus = services.__evBus as Map<string, Set<EventListener>>;
+      for (const rec of orderedListeners(bus, evt)) {
+        try { const r = await rec.fn(...args); if (r !== undefined) return r; }
+        catch (e) { console.error('[dsh-client] bail 监听失败 ' + evt, e); }
+      }
+      return undefined;
+    },
+    /**
+     * [261125-bmsfsh] waterfall（瀑布）：DSH 核心派发机制。
+     *
+     * 签名对齐 DSH：`ctx.waterfall(name, value, ...args, next?)`
+     * 每个监听器收到 `(value, ...args, next)`：
+     * - `next()` 调下游，返回下游结果（不调则下游被跳过）
+     * - 监听器返回自己的加工结果，作为下一个监听器的 value
+     *
+     * 与 dsh-purge 的用法完全一致（它自己 catch 了 next() 抛错的情况）。
+     */
+    async waterfall(evt: string, value: any, ...rest: any[]): Promise<any> {
+      const bus = services.__evBus as Map<string, Set<EventListener>>;
+      const listeners = orderedListeners(bus, evt);
+      // 最后一个参数若已是函数，视作最末端的 next
+      const tailNext = (rest.length && typeof rest[rest.length - 1] === 'function')
+        ? rest.pop()
+        : ((v: any) => Promise.resolve(v));
+      let idx = 0;
+      const run = async (current: any): Promise<any> => {
+        if (idx >= listeners.length) {
+          // 链尾：交给调用方给的 tailNext（DSH 里是 `() => Promise.resolve(assembly)`）
+          return tailNext(current);
+        }
+        const rec = listeners[idx];
+        idx += 1;
+        let called = false;
+        const next = async (override?: any) => {
+          if (called) return override;
+          called = true;
+          return run(override === undefined ? current : override);
+        };
+        const result = await rec.fn(current, ...rest, next);
+        // 监听器返回 undefined 视为「不改变，沿用下游结果」
+        return result === undefined ? await next() : result;
+      };
+      return run(value);
+    },
+    // cordis：依赖就绪后回调（[261125-bmsfsh] 改为真正等待服务就绪）
+    inject(names: any, cb: any) {
       if (typeof cb !== 'function') return () => {};
-      try { const ret = cb(ctx); if (typeof ret === 'function') return ret; } catch (e) { console.error('[dsh-client] inject 回调失败 ' + pluginId, e); }
-      return () => {};
+      const wanted = Array.isArray(names) ? names.filter((n: any) => typeof n === 'string') : [];
+      // 注意：服务真身在 services 上（provide 写这里）；ctx 只是展开的副本，
+      // 后提供的新服务不会出现在 ctx 上，所以两个都要查。
+      const ready = () => wanted.every((n: string) => (services as any)[n] !== undefined || (ctx as any)[n] !== undefined);
+      const fire = (): boolean => {
+        if (!ready()) return false;
+        try { const ret = cb(ctx); if (typeof ret === 'function') effects.push(ret); }
+        catch (e) { console.error('[dsh-client] inject 回调失败 ' + pluginId, e); }
+        return true;
+      };
+      if (fire()) return () => {};
+      // 未就绪：登记 pending，等 provide() / 后续服务补齐时 flush；5s 超时兜底强制执行
+      const pending = (services.__pendingInjects as Array<() => boolean>) || [];
+      pending.push(fire);
+      services.__pendingInjects = pending;
+      const timer = setTimeout(() => {
+        const i = pending.indexOf(fire);
+        if (i >= 0) pending.splice(i, 1);
+        if (!fire()) {
+          console.warn('[dsh-client] inject 超时（服务未就绪）: ' + wanted.join(',') + ' @' + pluginId);
+        }
+      }, 5000);
+      return () => { clearTimeout(timer); const i = pending.indexOf(fire); if (i >= 0) pending.splice(i, 1); };
     },
     // 真挂子插件（DSH 聚合插件靠它）：执行 definition.apply(子 ctx)
     plugin(definition: any) {
       const def = typeof definition === 'function' ? { apply: definition, name: pluginId + ':child' } : (definition || {});
       const childName = def.name || pluginId + ':child';
-      const childCtx = makeCtx(childName, services);
+      // [261125-bmsfsh] 子 ctx 的 effect 直接挂进父作用域，父卸载时一并回收
+      const childCtx = makeCtx(childName, services, effects);
       // 注入：把 def.inject 里的服务挂到 childCtx（已在 services 里，直接可见）
+      const disposeChild = () => { try { return childCtx.dispose ? childCtx.dispose() : 0; } catch (_) { return 0; } };
       try {
         if (typeof def.apply === 'function') {
           const ret = def.apply(childCtx);
-          if (ret && typeof ret.then === 'function') return ret.then(() => ({ dispose() {} }));
+          if (ret && typeof ret.then === 'function') return ret.then(() => ({ dispose: disposeChild }));
         }
       } catch (e) { console.error('[dsh-client] 子插件 apply 失败 ' + childName, e); }
-      return { dispose() {} };
+      return { dispose: disposeChild };
     },
     get(key: string) { return services[key]; },
-    provide(key: string, val: any) { services[key] = val; return () => { delete services[key]; }; },
+    provide(key: string, val: any) {
+      services[key] = val;
+      // [261125-bmsfsh] 服务就绪 → flush 等待中的 inject 回调
+      const pending = services.__pendingInjects as Array<() => boolean> | undefined;
+      if (pending && pending.length) {
+        for (const fire of [...pending]) {
+          let done = false;
+          try { done = fire(); } catch (_) { done = false; }
+          if (done) { const i = pending.indexOf(fire); if (i >= 0) pending.splice(i, 1); }
+        }
+      }
+      return () => { delete services[key]; };
+    },
     logger: { warn: (...a: any[]) => console.warn('[dsh-client:' + pluginId + ']', ...a), info: (...a: any[]) => console.info('[dsh-client:' + pluginId + ']', ...a), error: (...a: any[]) => console.error('[dsh-client:' + pluginId + ']', ...a) },
     log: (...a: any[]) => console.log('[dsh-client:' + pluginId + ']', ...a),
   };
@@ -777,7 +1075,12 @@ function makeCtx(pluginId: string, services: Record<string, any>): any {
 function applyClient(pluginId: string, mod: any): void {
   const client = mod && (mod.default || mod);
   if (client && typeof client.apply === 'function') {
-    try { client.apply(makeCtx(pluginId, makeServices())); }
+    // [261125-bmsfsh] 先回收旧作用域（重复加载时避免 cleanup 泄漏）
+    try { disposePluginCtx(pluginId); } catch (_) { /* ignore */ }
+    const scope: Array<() => void> = [];
+    const ctx = makeCtx(pluginId, makeServices(), scope);
+    pluginCtxs.set(pluginId, { effects: scope, ctx });
+    try { client.apply(ctx); }
     catch (e) { console.error('[dsh-client] apply 失败 ' + pluginId, e); }
   }
 }
@@ -957,6 +1260,8 @@ function installModuleLoader(): void {
 
 /** HMR：清空所有插槽（用于重载前） */
 export function clearAllSlots(): void {
+  // [261125-bmsfsh] 顺带回收所有插件作用域（否则 effect cleanup 永远不执行）
+  for (const id of [...pluginCtxs.keys()]) { try { disposePluginCtx(id); } catch (_) { /* ignore */ } }
   slotTable.clear();
   notify();
 }
@@ -964,6 +1269,8 @@ export function clearAllSlots(): void {
 /** HMR：只清某插件的插槽（按 pluginId = 包名） */
 export function clearSlotsByPlugin(pluginId: string): void {
   if (!pluginId) return;
+  // [261125-bmsfsh] 先回收该插件的 ctx 作用域（逆序跑 cleanup）
+  try { disposePluginCtx(pluginId); } catch (_) { /* ignore */ }
   const touched: string[] = [];
   for (const [slotName, items] of [...slotTable.entries()]) {
     const next = items.filter((x) => x.pluginId !== pluginId);

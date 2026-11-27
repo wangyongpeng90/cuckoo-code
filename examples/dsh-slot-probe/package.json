@@ -1,0 +1,13 @@
+{
+  "name": "dsh-slot-probe",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cuko 窗口 DSH 插槽兼容性探针（阶段 0 回归夹具）",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  }
+}

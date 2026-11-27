@@ -91,10 +91,10 @@ test('loadTemplate provider.getPromptTemplate 抛错时回退文件模板', asyn
   }
 });
 
-test('buildPrompt 替换核心占位符', () => {
+test('buildPrompt 替换核心占位符', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
   try {
-    const r = pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
+    const r = await pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
     assert.ok(!r.error, r.error);
     const p = r.prompt;
     // 占位符应已被替换（不再残留）
@@ -112,20 +112,20 @@ test('buildPrompt 替换核心占位符', () => {
   }
 });
 
-test('buildPrompt PLATFORM_INFO 含当前平台信息', () => {
+test('buildPrompt PLATFORM_INFO 含当前平台信息', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
   try {
-    const r = pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
+    const r = await pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
     assert.ok(r.prompt.includes('操作系统'));
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
 
-test('buildPrompt isCompaction 末尾追加"请继续你之前的工作"', () => {
+test('buildPrompt isCompaction 末尾追加"请继续你之前的工作"', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
   try {
-    const r = pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp, isCompaction: true });
+    const r = await pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp, isCompaction: true });
     assert.ok(r.prompt.includes('请继续你之前的工作'));
     assert.ok(r.prompt.trimEnd().endsWith('请继续你之前的工作'));
   } finally {
@@ -133,10 +133,10 @@ test('buildPrompt isCompaction 末尾追加"请继续你之前的工作"', () =>
   }
 });
 
-test('buildPrompt 无 CUCKOO.md 时 PROJECT_INTRO_SECTION 为空', () => {
+test('buildPrompt 无 CUCKOO.md 时 PROJECT_INTRO_SECTION 为空', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
   try {
-    const r = pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
+    const r = await pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
     // 没有项目介绍章节
     assert.ok(!r.prompt.includes('## 项目介绍'));
   } finally {
@@ -144,13 +144,13 @@ test('buildPrompt 无 CUCKOO.md 时 PROJECT_INTRO_SECTION 为空', () => {
   }
 });
 
-test('buildPrompt 读取 CUCKOO.md 并注入项目介绍', () => {
+test('buildPrompt 读取 CUCKOO.md 并注入项目介绍', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
   try {
     const dir = path.join(tmp, '.cuckooCode');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'CUCKOO.md'), '这是一个测试项目的介绍内容', 'utf-8');
-    const r = pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
+    const r = await pb.buildPrompt({ providerId: 'deepseek', selectedDir: tmp });
     assert.ok(r.prompt.includes('## 项目介绍'));
     assert.ok(r.prompt.includes('这是一个测试项目的介绍内容'));
   } finally {
@@ -158,10 +158,10 @@ test('buildPrompt 读取 CUCKOO.md 并注入项目介绍', () => {
   }
 });
 
-test('buildPrompt 不存在的模板文件走 default（未知 provider）', () => {
+test('buildPrompt 不存在的模板文件走 default（未知 provider）', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cuckoo-pb-'));
   try {
-    const r = pb.buildPrompt({ providerId: 'nonexistent-xyz', selectedDir: tmp });
+    const r = await pb.buildPrompt({ providerId: 'nonexistent-xyz', selectedDir: tmp });
     assert.ok(!r.error);
     assert.ok(r.prompt.length > 0);
   } finally {

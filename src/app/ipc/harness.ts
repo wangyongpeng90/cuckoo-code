@@ -221,7 +221,7 @@ function registerHarnessIpc(): void {
     if (projectDir) {
       try {
         const providerId = ctx.providerId || '';
-        const built = buildPrompt({ providerId, selectedDir: projectDir });
+        const built = await buildPrompt({ providerId, selectedDir: projectDir });
         if (built && !built.error && built.prompt) {
           text = built.prompt + '\n\n---\n\n' + text;
         }
