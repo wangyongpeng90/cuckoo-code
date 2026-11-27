@@ -161,6 +161,8 @@ declare global {
       queueRunNow: (sessionId: string, itemId: string) => Promise<{ success: boolean; error?: string }>;
       // [261127-w3pd8n-cuko-default-workspace] 默认工作区完整路径
       getDefaultWorkspace: () => Promise<{ success: boolean; dir?: string; error?: string }>;
+      // [261127-w3pd8n] 打开网页版窗口（已有就聚焦）
+      openWebWindow: () => Promise<{ success: boolean; error?: string }>;
     };
   }
 }
@@ -1757,6 +1759,21 @@ function ChatApp() {
               className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
             >
               <span className="text-muted-foreground">🧾</span> 请求日志
+            </button>
+            {/* [261127-w3pd8n] 打开网页版窗口（已有就聚焦） */}
+            <button
+              onClick={async () => {
+                try {
+                  const r = await window.cukoAPI.openWebWindow();
+                  if (r && r.success === false) setQueueNotice('打开网页版窗口失败：' + (r.error || '未知错误'));
+                } catch (e: any) {
+                  setQueueNotice('打开网页版窗口失败：' + (e?.message || String(e)));
+                }
+              }}
+              title="打开网页版 AI 窗口（DeepSeek / Claude / ChatGPT 等）"
+              className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+            >
+              <span className="text-muted-foreground">🌐</span> 打开网页版窗口
             </button>
             <button onClick={() => setSettingsOpen(true)} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-sidebar-accent hover:text-sidebar-accent-foreground">
               <span className="text-muted-foreground">⚙️</span> 设置

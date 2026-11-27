@@ -1237,6 +1237,43 @@ function openCukoWindow(options?: { focus?: boolean }): void {
   });
 }
 
+/**
+ * [261127-w3pd8n] 打开（或聚焦）Cuko 窗口；页面文件缺失或创建失败时，
+ * 没有任何网页版窗口就退回打开一个，避免启动后一个窗口都看不到
+ */
+function openCukoOrFallback(): void {
+  try {
+    if (!fs.existsSync(resolveSrc('ui/cuko/built.html'))) {
+      throw new Error('Cuko 页面文件不存在（是否没运行 npm run compile？）');
+    }
+    openCukoWindow({ focus: true });
+    return;
+  } catch (err: any) {
+    console.error('[Cuko API] 打开失败，改为打开网页版窗口:', err?.message || err);
+  }
+  if (windowState.getAllWindows().length === 0) createWindow(null);
+}
+
+// [261127-w3pd8n] Cuko 窗口左下角「打开网页版窗口」：已有网页版窗口就聚焦，没有就按默认规则（上次活跃 / 第一个）打开
+ipcMainForProfile.handle('cuko:open-web-window', (event: any) => {
+  if (!cukoWindow || cukoWindow.isDestroyed() || event.sender !== cukoWindow.webContents) {
+    return { success: false, error: 'Unauthorized sender' };
+  }
+  try {
+    const main = windowState.getMainWindow();
+    if (main && !main.isDestroyed()) {
+      if (main.isMinimized()) main.restore();
+      main.show();
+      main.focus();
+      return { success: true };
+    }
+    createWindow(null);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || String(err) };
+  }
+});
+
 ipcMainForProfile.handle('shell-open-cuko-window', (event: any) => {
   const ctx = windowState.getContextByWebContents(event.sender);
   if (
@@ -1544,6 +1581,9 @@ if (!gotSingleInstanceLock) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
+    } else {
+      // [261127-w3pd8n] 没有网页版窗口（只用 Cuko 的用户）：打开 / 聚焦 Cuko 窗口
+      openCukoOrFallback();
     }
   });
 
@@ -1582,24 +1622,24 @@ if (!gotSingleInstanceLock) {
     }).catch(() => {});
     // 清理子代理窗口遗留的 session 存储文件（历史 bug：子代理不需要持久化）
     try { profileManager.cleanupSubagentStores(); } catch (_) { /* ignore */ }
-    // 启动时打开所有"默认打开"的窗口；若一个都没勾，回退默认（上次活跃的或第一个）
+    // [261127-w3pd8n] 启动：
+    // - 有"默认打开"的窗口：照旧打开它们，Cuko 窗口随后不抢焦点地打开
+    // - 一个都没勾（含新用户）：只打开 Cuko 窗口并聚焦；Cuko 打不开再退回打开一个网页版窗口
     const autoOpen = profileManager.getAutoOpenProfiles();
     if (autoOpen.length > 0) {
       console.log('[Cuckoo Code] 启动默认打开 ' + autoOpen.length + ' 个窗口');
       for (const p of autoOpen) createWindow(p);
+      setTimeout(() => {
+        try {
+          openCukoWindow({ focus: false });
+        } catch (err: any) {
+          console.error('[Cuko API] 自动打开失败:', err?.message || err);
+        }
+      }, 800);
     } else {
-      createWindow(null);
+      console.log('[Cuckoo Code] 没有默认打开的窗口，只打开 Cuko API 窗口');
+      openCukoOrFallback();
     }
-
-    // 启动时自动打开 Cuko API 工作窗口（与主窗口并行，不抢焦点）
-    // 需要关闭时把下面的调用去掉即可
-    setTimeout(() => {
-      try {
-        openCukoWindow({ focus: false });
-      } catch (err: any) {
-        console.error('[Cuko API] 自动打开失败:', err?.message || err);
-      }
-    }, 800);
 
     });
 }
@@ -1630,7 +1670,8 @@ app.on('before-quit', (event: any) => {
 });
 
 app.on('activate', () => {
+  // [261127-w3pd8n] 没有网页版窗口：打开 / 聚焦 Cuko 窗口（不再弹出选择平台页）
   if (windowState.getAllWindows().length === 0) {
-    createWindow(null);
+    openCukoOrFallback();
   }
 });
